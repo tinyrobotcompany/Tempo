@@ -23,9 +23,19 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 22
+      # An installation token posts as the app's bot, never as a PAT owner.
+      # With no app configured, retain the built-in github-actions[bot] identity.
+      - name: Create Codex Code Review bot token
+        if: ${{ vars.CODEX_REVIEW_APP_ID != '' }}
+        id: review-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ vars.CODEX_REVIEW_APP_ID }}
+          private-key: ${{ secrets.CODEX_REVIEW_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
       - name: Review exact PR head (fail closed)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.review-token.outputs.token || github.token }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5.5' }}
           CODEX_REVIEW_DIFF_MAX: 120000

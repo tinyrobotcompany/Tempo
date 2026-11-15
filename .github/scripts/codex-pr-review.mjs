@@ -148,7 +148,7 @@ if (openAiPayload.status !== 'completed' || !extractedReviewBody || !structurall
 }
 const reviewBody = extractedReviewBody;
 await assertCurrentHead();
-const taggedBody = `${codexReviewMarker}\n${reviewBody}`;
+const taggedBody = `${codexReviewMarker}\n## Codex Code Review\n\n${reviewBody}`;
 
 await githubRequest(`/repos/${owner}/${repo}/pulls/${pr.number}/reviews`, {
   method: 'POST',
