@@ -18,6 +18,16 @@ function sarif(severity, results=[{ruleId:'test',ruleIndex:0}]) {
 test('security gate blocks high and critical findings', () => {
   for (const severity of ['7.0', '9.8']) assert.equal(check(sarif(severity)).status, 1);
 });
+test('blocking findings identify the rule and location without printing sensitive evidence', () => {
+  const result = {ruleId:'test', ruleIndex:0, message:{text:'private evidence'},
+    locations:[{physicalLocation:{artifactLocation:{uri:'tests/example.py'},
+      region:{startLine:49, snippet:{text:'private evidence'}}}}]};
+  const output = check(sarif('7.5', [result]));
+  assert.equal(output.status, 1);
+  assert.match(output.stdout, /"rule":"test"/);
+  assert.match(output.stdout, /"path":"tests\/example.py","line":49/);
+  assert.doesNotMatch(output.stdout + output.stderr, /private evidence/);
+});
 test('security gate permits clean results and lower severity findings', () => {
   assert.equal(check(sarif('9.8', [])).status, 0);
   assert.equal(check(sarif('6.9')).status, 0);

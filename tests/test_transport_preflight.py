@@ -30,6 +30,20 @@ class PreflightTests(unittest.TestCase):
             {'Status': False, 'ErrorCondition': {}}, {'MonitoredStopVisit': [{}]}]}}})
         self.assertEqual(result, {'delivery_count': 2, 'visits': 1, 'provider_errors': 1})
 
+    def test_key_loading_parses_in_memory_configuration(self):
+        contents = '# comment\nOTHER=value\nexport IDFM_PRIM_API_KEY="test-only-placeholder"\n'
+        with patch.object(Path, 'read_text', autospec=True, return_value=contents) as read:
+            self.assertEqual(probe.load_key(), 'test-only-placeholder')
+        read.assert_called_once_with(probe.ROOT / '.env')
+
+    def test_key_loading_rejects_missing_empty_duplicate_and_whitespace_values(self):
+        for contents in ['', 'IDFM_PRIM_API_KEY=',
+                         'IDFM_PRIM_API_KEY=one\nIDFM_PRIM_API_KEY=two',
+                         'IDFM_PRIM_API_KEY=contains whitespace']:
+            with self.subTest(contents=contents), patch.object(Path, 'read_text', return_value=contents):
+                with self.assertRaises(ValueError):
+                    probe.load_key()
+
     def test_successful_capture_is_filtered_bounded_and_redacted(self):
         secret = 'test-secret-do-not-print'
         nearby = {'places_nearby': [{'embedded_type': 'stop_point', 'stop_point': {
@@ -46,13 +60,17 @@ class PreflightTests(unittest.TestCase):
                 return Response(json.dumps(replies.pop(0)).encode())
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / '.env').write_text('IDFM_PRIM_API_KEY=' + secret)
-            with patch.object(probe, 'ROOT', root), patch.object(probe.urllib.request, 'build_opener', return_value=Opener()), patch('sys.argv', ['probe', '--latitude', '48.8', '--longitude', '2.2']):
+            # Keep credentials in memory; key parsing is covered independently above.
+            with patch.object(probe, 'load_key', return_value=secret), patch.object(probe, 'ROOT', root), patch.object(probe.urllib.request, 'build_opener', return_value=Opener()), patch('sys.argv', ['probe', '--latitude', '48.8', '--longitude', '2.2']):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
                     self.assertEqual(probe.main(), 0)
             self.assertNotIn(secret, output.getvalue())
-            for path in (root / 'build-host/transport-preflight').glob('*.json'):
+            self.assertFalse((root / '.env').exists())
+            captures = list((root / 'build-host/transport-preflight').glob('*.json'))
+            self.assertEqual({path.name for path in captures},
+                             {'nearby.json', 'departures-1.json', 'traffic-compact.json', 'report.json'})
+            for path in captures:
                 self.assertNotIn(secret, path.read_text())
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         self.assertEqual(len(requests), 3)
