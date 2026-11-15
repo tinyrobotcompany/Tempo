@@ -1,0 +1,72 @@
+name: CI
+on:
+  workflow_call:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  host-tests:
+    name: All Unit Tests
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+      - name: Install host validation tools
+        run: brew install cmake actionlint
+      - name: Run complete test suite
+        run: bash scripts/test-all.sh
+  firmware:
+    name: ESP32-P4 Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Checkout tested ESP-IDF revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: espressif/esp-idf
+          ref: fff9895c82d744c7237be8847347bdd1b07c6643
+          path: .artifacts/esp-idf
+          submodules: recursive
+          persist-credentials: false
+      - name: Install ESP32-P4 toolchain
+        run: .artifacts/esp-idf/install.sh esp32p4
+      - name: Build without production credentials and verify PSRAM placement
+        shell: bash
+        run: |
+          test ! -f .env
+          source .artifacts/esp-idf/export.sh
+          idf.py -C firmware build
+          python3 scripts/check-transport-memory.py
+  changeset:
+    name: Changeset Check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: bash .github/scripts/changeset-check.sh
+  required:
+    name: CI Required
+    runs-on: ubuntu-24.04
+    needs: [host-tests, firmware, changeset]
+    if: always()
+    steps:
+      - name: Require all validation jobs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: python3 -c 'import json,os; assert all(j["result"] == "success" for j in json.loads(os.environ["RESULTS"]).values())'

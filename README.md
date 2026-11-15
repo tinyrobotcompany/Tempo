@@ -27,3 +27,7 @@ cp .env.example .env
 Follow [development instructions](docs/DEVELOPMENT.md) for initial flashing, hardware configuration and host tests.
 
 Start `python3 scripts/watch-device.py` once in a normal Terminal from this folder to build and app-flash changes automatically. Close other serial monitors first. The watcher never flashes a failed build and refuses partition layout changes. This is USB development automation; it is not OTA. See [development instructions](docs/DEVELOPMENT.md).
+
+## Contribution checks
+
+Install the mandatory local commit hook with `bash scripts/setup-hooks.sh` in each clone. Run the full suite with `bash scripts/test-all.sh`. See [repository guardrails](docs/REPOSITORY_GUARDRAILS.md) for prerequisites, PR checks, Codex review secrets, required-check activation and draft releases.
