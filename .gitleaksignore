@@ -1,0 +1,5 @@
+# Only these three historical findings: deterministic QR test token
+# 0123456789abcdef0123456789abcdef, never a real device credential.
+1f2e981e09ffedf6e42241de545d7f0b25e1c691:tests/test_ui.c:generic-api-key:56
+1f2e981e09ffedf6e42241de545d7f0b25e1c691:tests/test_ui.c:generic-api-key:188
+1f2e981e09ffedf6e42241de545d7f0b25e1c691:tests/test_ui.c:generic-api-key:190

@@ -5,14 +5,11 @@ import process from 'process';
 import {
   buildSystemPrompt,
   buildUserPrompt,
-  buildFallbackReviewBody,
   buildOpenAiErrorDiagnostics,
   buildOpenAiReviewRequestPayload,
   buildOpenAiResponseDiagnostics,
   extractReviewBodyFromOpenAiPayload,
   isStructurallyValidReviewBody,
-  isChangesetReleasePr,
-  isDependabotPr,
   loadSkillRubrics,
 } from './codex-pr-review-core.mjs';
 
@@ -31,7 +28,7 @@ if (!pr) {
 
 const repoSlug = process.env.GITHUB_REPOSITORY || '';
 const [owner, repo] = repoSlug.split('/');
-if (!owner || !repo) {
+if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repoSlug)) {
   console.error('GITHUB_REPOSITORY is not set or invalid.');
   process.exit(1);
 }
@@ -48,7 +45,15 @@ if (!openAiKey) {
   process.exit(1);
 }
 
-const githubApi = process.env.GITHUB_API_URL || 'https://api.github.com';
+// Credentials may only go to the intended GitHub service; never follow redirects.
+const githubApi = 'https://api.github.com';
+if (process.env.GITHUB_API_URL && process.env.GITHUB_API_URL !== githubApi) {
+  throw new Error('Unsupported GitHub API origin');
+}
+if (!Number.isSafeInteger(pr.number) || pr.number <= 0 ||
+    !/^[a-f0-9]{40}$/.test(pr.head?.sha || '') || !/^[a-f0-9]{40}$/.test(pr.base?.sha || '')) {
+  throw new Error('Invalid PR identity');
+}
 const model = process.env.CODEX_REVIEW_MODEL || 'gpt-5.2';
 const maxDiffChars = Number.parseInt(process.env.CODEX_REVIEW_DIFF_MAX || '120000', 10);
 const maxOutputTokens = Number.parseInt(process.env.CODEX_REVIEW_MAX_OUTPUT_TOKENS || '6000', 10);
@@ -58,6 +63,7 @@ const codexReviewMarker = `<!-- codex-review:${pr.head?.sha || process.env.GITHU
 async function githubRequest(path, options = {}) {
   const response = await fetch(`${githubApi}${path}`, {
     ...options,
+    redirect: 'error',
     signal: AbortSignal.timeout(60000),
     headers: {
       Authorization: `Bearer ${githubToken}`,
@@ -102,6 +108,7 @@ const userPrompt = buildUserPrompt(pr, diff, maxDiffChars, diffTruncated);
 
 const openAiResponse = await fetch('https://api.openai.com/v1/responses', {
   method: 'POST',
+  redirect: 'error',
   signal: AbortSignal.timeout(600000),
   headers: {
     Authorization: `Bearer ${openAiKey}`,

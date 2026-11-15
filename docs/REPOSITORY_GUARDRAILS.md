@@ -18,7 +18,7 @@ Tests include core/settings/calendar, networking, weather, transport/parser/filt
 ## Pull requests and CI
 
 - `All Unit Tests`: full macOS host suite (unit, host integration and regression), exactly the same runner as the commit hook; enforced 80% coverage gates and retained CI reports. See [testing scope](TESTING.md).
-- `ESP32-P4 Build`: clean build with the tested immutable ESP-IDF revision, no production token, and linked PSRAM placement checks. No flashing.
+- `ESP32-P4 Build`: runs only when firmware build inputs change (source, configuration, embedded assets, credential generator or embedded Shortcut). A non-secret CI sentinel keeps transport paths linked for the PSRAM placement check; the generator refuses this mode if `.env` exists. No production token or flashing. The aggregate gate accepts a skip only when the detector explicitly reports no firmware change.
 - `Changeset Check`: required change note for firmware, companion, tests, scripts, hooks and workflow changes.
 - `Branch Name` / `PR Title (Conventional Commits)`: template naming conventions.
 - `Secret Scan`: pinned Gitleaks CLI, full-history scan with redacted output.
