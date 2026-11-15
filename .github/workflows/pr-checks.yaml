@@ -21,16 +21,7 @@ jobs:
         env:
           BRANCH: ${{ github.head_ref }}
         run: |
-<<<<<<< HEAD
-          if [[ "$BRANCH" == dependabot/* ]] || [[ "$BRANCH" == renovate/* ]]; then
-            echo "Branch name '$BRANCH' is an automated dependency branch; skipping branch naming check."
-            exit 0
-          fi
-
-          PATTERN='^(feature|fix|hardening|chore|docs|refactor|test|ci)/[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)?$'
-=======
           PATTERN='^((feature|fix|hardening|chore|docs|refactor|test|ci)/[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)?|dependabot/[a-z0-9._-]+(/[a-z0-9._-]+)+)$'
->>>>>>> origin/main
           if echo "$BRANCH" | grep -qE "$PATTERN"; then
             echo "Branch name '$BRANCH' matches required pattern."
           else
