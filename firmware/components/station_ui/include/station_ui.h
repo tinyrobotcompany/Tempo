@@ -27,6 +27,7 @@ typedef struct {
     bool (*refresh_weather)(void);
     bool (*save)(const station_settings_t *settings);
     int (*save_state)(void);
+    /* 0 means backlight off; 1..100 means PWM brightness. False means state uncertain. */
     bool (*brightness)(unsigned percent);
     bool (*set_time)(time_t value);
     bool (*scan_wifi)(void);

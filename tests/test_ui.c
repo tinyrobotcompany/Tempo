@@ -19,8 +19,9 @@ static void wifi_scan_status(station_wifi_scan_t*s){*s=scan_result;}
 static void snapshot(station_network_status_t*s){*s=status;}
 static int save_state(void){return 2;}
 static bool save(const station_settings_t*s){assert(station_settings_valid(s));saved=*s;saves++;return true;}
-static unsigned backlight;
-static bool dim(unsigned p){backlight=p;return p<=100;}
+static unsigned backlight, brightness_calls;
+static bool brightness_failure;
+static bool dim(unsigned p){brightness_calls++;backlight=p;return !brightness_failure&&p<=100;}
 static const char *expected_password="12345678";
 static bool connect_wifi(const char*s,const char*p){assert(!strcmp(s,"Home"));assert(!strcmp(p,expected_password));connections++;status.connecting=true;status.connected=false;return true;}
 static bool city(unsigned i){city_request=i;return true;}
@@ -231,6 +232,15 @@ int main(void){
  status.source=TIME_NETWORK;status.connected=true;
  phone_command=(station_phone_command_t){.change_settings=true,.settings=initial,.change_view=true,.view=VIEW_CLOCK};phone_pending=true;tick();
  assert(backlight==65);
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ /* Model a driver that changes hardware but returns an error. */
+ assert(station_ui_touch(true));assert(station_ui_touch(false));
+ brightness_failure=true;for(unsigned i=0;i<600;i++)tick();assert(backlight==0);
+ unsigned failed_calls=brightness_calls;for(unsigned i=0;i<20;i++)tick();assert(brightness_calls==failed_calls);
+ assert(station_ui_touch(true));assert(station_ui_touch(false));
+ assert(station_ui_touch(true));assert(station_ui_touch(false)); /* unknown state: no click-through */
+ brightness_failure=false;for(unsigned i=0;i<55;i++)tick();assert(backlight==65);
+ assert(!station_ui_touch(true));assert(!station_ui_touch(false));
  for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
  unsigned sleeping_beat=station_ui_heartbeat();for(unsigned i=0;i<20;i++)tick();assert(station_ui_heartbeat()>sleeping_beat);
  assert(station_ui_touch(true));assert(backlight==65);assert(station_ui_touch(true));assert(station_ui_touch(false));assert(!station_ui_touch(false));

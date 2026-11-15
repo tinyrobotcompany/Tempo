@@ -29,7 +29,9 @@ static station_settings_t settings;
 static station_ui_actions_t actions;
 static station_network_status_t network;
 static uint64_t awake_until_ms;
-static unsigned applied_brightness=UINT32_MAX;
+static unsigned applied_brightness=UINT32_MAX, requested_brightness=UINT32_MAX;
+static bool brightness_failed;
+static uint64_t brightness_retry_ms;
 static bool consume_wake_touch;
 static lv_obj_t *night_level_text;
 static lv_obj_t *night_mode_picker, *night_level, *night_start_hour, *night_start_minute, *night_end_hour, *night_end_minute;
@@ -1124,17 +1126,29 @@ static void update_power(void)
     time_t now=time(NULL);struct tm local={0};
     bool valid=network.source!=TIME_UNSET && localtime_r(&now,&local)!=NULL;
     unsigned level=station_power_brightness(&settings,valid,(unsigned)(local.tm_hour*60+local.tm_min),elapsed_ms,awake_until_ms);
-    if(level!=applied_brightness && actions.brightness && actions.brightness(level)) {
+    if(level!=requested_brightness){requested_brightness=level;brightness_retry_ms=0;}
+    if((!brightness_failed&&level==applied_brightness)||elapsed_ms<brightness_retry_ms)return;
+    if(actions.brightness && actions.brightness(level)) {
+        if(brightness_failed&&view==VIEW_SETTINGS&&page==PAGE_POWER&&settings_status)
+            lv_label_set_text(settings_status,"Backlight restored.");
+        brightness_failed=false;brightness_retry_ms=0;
         applied_brightness=level;
 #ifdef ESP_PLATFORM
         ESP_LOGI("power","Backlight %u%%; night mode=%u, clock trusted=%d",level,settings.night_mode,valid);
 #endif
+    } else {
+        brightness_failed=true;brightness_retry_ms=elapsed_ms+5000;
+#ifdef ESP_PLATFORM
+        ESP_LOGW("power","Backlight request %u%% failed; state uncertain, retrying in 5 s",level);
+#endif
+        if(view==VIEW_SETTINGS&&page==PAGE_POWER&&settings_status)
+            lv_label_set_text(settings_status,"Backlight change failed. Retrying…");
     }
 }
 bool station_ui_touch(bool pressed)
 {
     if(pressed) {
-        if(applied_brightness==0)consume_wake_touch=true;
+        if(requested_brightness==0||applied_brightness==0||brightness_failed)consume_wake_touch=true;
         awake_until_ms=elapsed_ms+60000;
         update_power();
     }
@@ -1176,7 +1190,7 @@ static void tick(lv_timer_t *timer)
 void station_ui_start(const station_settings_t *initial,station_ui_actions_t handlers)
 {
     station_text_fonts_init();
-    settings=*initial; actions=handlers;awake_until_ms=0;applied_brightness=UINT32_MAX;consume_wake_touch=false;
+    settings=*initial; actions=handlers;awake_until_ms=0;applied_brightness=requested_brightness=UINT32_MAX;brightness_failed=false;brightness_retry_ms=0;consume_wake_touch=false;
     lv_obj_t *screen=lv_screen_active(); lv_obj_remove_style_all(screen);
     lv_obj_set_style_bg_color(screen,lv_color_hex(BG),0); lv_obj_set_style_bg_opa(screen,LV_OPA_COVER,0);
     lv_obj_remove_flag(screen,LV_OBJ_FLAG_SCROLLABLE);

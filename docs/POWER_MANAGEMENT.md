@@ -21,7 +21,7 @@ Settings → Power & night mode, or the iPhone appearance form, provides:
 
 The saved location's time-zone rules determine local time and daylight-saving transitions. With no trusted clock after cold boot, normal brightness remains available for setup until time synchronises. Editing/saving settings or choosing a view on the phone wakes the display for 60 seconds. Physical touch also restores normal brightness for 60 seconds from the last touch. The entire first gesture on a dark screen is consumed so it cannot activate a hidden control; lift and touch again to interact.
 
-Only the backlight is switched off. Touch scanning, the UI heartbeat, system clock, Wi-Fi, phone server and data workers continue. This is not ESP deep sleep, and no deep-sleep power figures apply. Dimming/screen-off does not write settings on every timer tick. Backlight changes and clock-trust state are logged under `power`.
+Only the backlight is switched off. Touch scanning, the UI heartbeat, system clock, Wi-Fi, phone server and data workers continue. This is not ESP deep sleep, and no deep-sleep power figures apply. Dimming/screen-off does not write settings on every timer tick. Backlight changes and clock-trust state are logged under `power`. The BSP explicitly supports 0% via zero PWM duty. Driver failures are logged, retried at five-second intervals (or immediately for a changed target), and treated as uncertain physical state: touches are consumed until wake succeeds. The power-settings page also reports failures.
 
 ## Power loss and network loss
 
