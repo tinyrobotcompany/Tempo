@@ -63,10 +63,21 @@ static bool contains_text(lv_obj_t *obj,const char *text){
  for(unsigned i=0;i<lv_obj_get_child_count(obj);i++)if(contains_text(lv_obj_get_child(obj,i),text))return true;
  return false;
 }
-int main(void){
+int main(int argc,char **argv){
  lv_init();lv_display_t*d=lv_display_create(1280,800);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB888);
  void*buf=malloc(1280*800*3);assert(buf);lv_display_set_buffers(d,buf,NULL,1280*800*3,LV_DISPLAY_RENDER_MODE_FULL);lv_display_set_flush_cb(d,flush);
- station_settings_t initial=station_defaults();station_ui_start(&initial,(station_ui_actions_t){.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});tick();
+ station_settings_t initial=station_defaults();
+ unsigned boot_level=0;
+ if(argc>1){
+  setenv("TZ","UTC0",1);tzset();struct tm boot={.tm_year=126,.tm_mon=10,.tm_mday=14,.tm_hour=23};
+  initial.night_mode=strcmp(argv[1],"--boot-dim")==0?1:2;
+  status.source=strcmp(argv[1],"--boot-unset")==0?TIME_UNSET:TIME_NETWORK;
+  if(strcmp(argv[1],"--boot-day")==0)boot.tm_hour=12;
+  test_now=mktime(&boot);boot_level=status.source==TIME_UNSET||boot.tm_hour==12?65:initial.night_mode==1?10:0;
+ }
+ station_ui_start(&initial,(station_ui_actions_t){.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});
+ if(argc>1){assert(brightness_calls==1&&backlight==boot_level);tick();assert(brightness_calls==1&&backlight==boot_level);printf("PASS: %s starts directly at %u%% with no normal-brightness flash\n",argv[1],boot_level);lv_deinit();free(buf);return 0;}
+ tick();
  const lv_font_t *text_fonts[]={&station_text_18,&station_text_24,&station_text_32,&station_text_48};
  const uint32_t accents[]={0xe2,0xe9,0xe8,0xea,0xeb,0xe0,0xe7,0xee,0xef,0xf4,0xf9,0xfb,0xfc,0xff,0xc9,0x153,0x152,0xdf,0x2019};
  for(unsigned f=0;f<4;f++)for(unsigned c=0;c<sizeof(accents)/sizeof(accents[0]);c++){lv_font_glyph_dsc_t g;assert(lv_font_get_glyph_dsc(text_fonts[f],&g,accents[c],0));assert(g.box_w>0);}

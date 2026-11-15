@@ -1202,6 +1202,9 @@ void station_ui_start(const station_settings_t *initial,station_ui_actions_t han
     lv_obj_set_width(welcome,580);lv_label_set_long_mode(welcome,LV_LABEL_LONG_DOT);
     const char *names[]={"Clock","Weather","Transport","Settings"};
     for(unsigned i=0;i<4;i++) nav[i]=button(screen,names[i],32+i*312,726,280,navigate_tab,(void *)(uintptr_t)i);
-    show_view(VIEW_CLOCK); lv_timer_create(tick,100,NULL);
+    show_view(VIEW_CLOCK);
+    /* show_view refreshes clock trust; apply policy before releasing the display lock. */
+    update_power();
+    lv_timer_create(tick,100,NULL);
 }
 unsigned station_ui_heartbeat(void) { return atomic_load(&heartbeat); }
