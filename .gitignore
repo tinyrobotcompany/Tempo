@@ -12,3 +12,9 @@
 *.log
 
 /.artifacts/
+
+# Mechanical CAD: generated exports and the local uv environment
+/mechanical/cad/.venv/
+/mechanical/exports/**
+!/mechanical/exports/**/
+!/mechanical/exports/.gitkeep
