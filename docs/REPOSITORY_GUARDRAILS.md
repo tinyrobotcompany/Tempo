@@ -19,13 +19,13 @@ Tests include core/settings/calendar, networking, weather, transport/parser/filt
 
 - `All Unit Tests`: full macOS host suite (unit, host integration and regression), exactly the same runner as the commit hook; enforced 80% coverage gates and retained CI reports. See [testing scope](TESTING.md).
 - `ESP32-P4 Build`: runs only when firmware build inputs change (source, configuration, embedded assets, credential generator or embedded Shortcut). A non-secret CI sentinel keeps transport paths linked for the PSRAM placement check; the generator refuses this mode if `.env` exists. No production token or flashing. The aggregate gate accepts a skip only when the detector explicitly reports no firmware change.
-- `Changeset Check`: required change note for firmware, companion, tests, scripts, hooks and workflow changes.
+- `Changeset Check`: required change note for firmware, companion, tests, scripts, hooks and substantive workflow changes, regardless of PR author or triggering actor. A diff containing only SHA/version-annotation updates to existing remote action references in existing workflow files is exempt. Commands, inputs, permissions, action identity changes, file additions/deletions, and mixed application changes still require notes.
 - `Branch Name` / `PR Title (Conventional Commits)`: template naming conventions.
 - `Secret Scan`: pinned Gitleaks CLI, full-history scan with redacted output.
 - `CodeQL Scripts`: JavaScript, Python and GitHub Actions, with a high-severity SARIF gate.
 - `CI Required` and `Security Audit Required`: fail unless every dependency succeeds; cancellations/skips do not count as success.
-- Dependabot maintains GitHub Actions pins; CODEOWNERS and the PR template provide review ownership and evidence prompts.
-- CodeQL action updates are grouped into one Dependabot PR: `init` and `analyze` must use the same commit because they share versioned configuration. The local suite checks this invariant. Keep both steps together when resolving or replacing dependency PRs; do not bypass security or changeset checks to accept a partial update.
+- Dependabot proposes routine GitHub Actions version updates monthly in one grouped PR, with at most one routine update PR open. This schedule does not change CI: tests, security scans, builds and reviews still run on their existing PR/push triggers. Security updates remain separate from the monthly version-update group and limit; keep Dependabot security updates enabled in repository settings. CODEOWNERS and the PR template provide review ownership and evidence prompts.
+- CodeQL `init` and `analyze` must use the same commit because they share versioned configuration. Routine updates are included together in the monthly group; CodeQL security updates have their own group. The local suite checks this invariant. After a replacement PR is merged, close superseded partial updates rather than merging them or weakening checks.
 
 C firmware validation is build + host tests + sanitizers, not a claim of complete C static analysis. Hardware, timing, display DMA and provider behaviour still require device testing.
 
@@ -47,13 +47,7 @@ The workflow must first be merged into main before pull_request_target can execu
 
 Every review includes a visible **Codex Code Review** heading. GitHub derives the author from the authentication token; changing the heading or workflow name cannot rename the author. The built-in workflow token posts as `github-actions[bot]`, not the person who triggered the workflow. Reviews posted separately using a personal access token appear under that person's account.
 
-To use a dedicated Codex review bot:
-
-1. Register a GitHub App with the display name **Codex Code Review** (or an available organization-specific variant). Disable webhooks; this app only authenticates outbound API calls. Grant repository **Pull requests: Read and write** permission and install it on this repository.
-2. Set the Actions repository variable `CODEX_REVIEW_APP_ID` to its app ID.
-3. Generate an app private key and store the PEM as the Actions repository secret `CODEX_REVIEW_APP_PRIVATE_KEY`. The existing secret-sync helper does not upload this key.
-
-The workflow uses [actions/create-github-app-token](https://github.com/actions/create-github-app-token) to obtain a short-lived installation token scoped to the current repository and revoke it after the job. Reviews then appear under the app's bot identity (`<app-slug>[bot]`). If the app ID is absent, reviews use `github-actions[bot]`; an invalid configured app/key fails the job instead of silently falling back. Remove the app ID variable to return to the built-in bot. Existing reviews keep their original authors. Because the workflow uses trusted base files, this change takes effect after it is merged into main.
+The workflow always uses the built-in `github.token`. No separate GitHub App, app-token action, or private key is needed. Legacy `CODEX_REVIEW_APP_ID` and `CODEX_REVIEW_APP_PRIVATE_KEY` settings are unused and can be removed after this change is merged. Existing reviews keep their original authors. Workflow changes take effect after merging into main because review code comes from the trusted base.
 
 ## Required checks — activation is separate from workflow files
 
