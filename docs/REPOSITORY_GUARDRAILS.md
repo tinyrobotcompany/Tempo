@@ -72,3 +72,5 @@ Azure/IaC deployments, .NET, Swift app builds, TestFlight, project-board automat
 GitHub check-run names (queried from the commits/check-runs API on PR #1) are `CI Required`, `Security Audit Required`, `Branch Name`, and `PR Title (Conventional Commits)`. The workflow prefix shown in the PR interface is not part of these API names. Required contexts must match the API names, not the combined UI labels. `Codex Review` is the configured review job name and the initial bootstrap status context.
 
 The release checkout explicitly fetches main with full history and tags. Validation peels both the event SHA and tag ref to commits, requires equality, and detaches at that commit before checking ancestry and release metadata.
+
+Branch naming accepts both `feature/description` and its `feat/description` alias. Other accepted human prefixes and the existing Dependabot pattern remain unchanged; whitespace, malformed paths and unsupported prefixes are rejected.

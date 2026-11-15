@@ -22,6 +22,18 @@ int main(void) {
  cJSON_ReplaceItemInObject(j,"nightEnd",cJSON_CreateNumber(1380));assert(!station_phone_parse_settings(j,&s));
  cJSON_ReplaceItemInObject(j,"nightEnd",cJSON_CreateNumber(420.5));assert(!station_phone_parse_settings(j,&s));
  cJSON_Delete(j);
+ /* A rejected partial or complete schedule cannot mutate the caller's state. */
+ s=station_defaults();s.night_mode=2;strcpy(s.user_name,"Original");s.brightness=42;
+ unsigned char before[sizeof(s)];memcpy(before,&s,sizeof(s));
+ j=cJSON_Parse(text);cJSON_AddNumberToObject(j,"nightMode",1);
+ assert(!station_phone_parse_settings(j,&s));assert(!memcmp(before,&s,sizeof(s)));
+ cJSON_AddNumberToObject(j,"nightBrightness",8);cJSON_AddNumberToObject(j,"nightStart",1380);cJSON_AddNumberToObject(j,"nightEnd",1380);
+ assert(!station_phone_parse_settings(j,&s));assert(!memcmp(before,&s,sizeof(s)));
+ cJSON_ReplaceItemInObject(j,"nightEnd",cJSON_CreateNumber(420.5));
+ assert(!station_phone_parse_settings(j,&s));assert(!memcmp(before,&s,sizeof(s)));
+ cJSON_Delete(j);j=cJSON_Parse(text);
+ assert(station_phone_parse_settings(j,&s));assert(s.night_mode==2&&s.night_start==1380&&s.night_end==420);
+ assert(s.brightness==65&&!strcmp(s.user_name,"Simon"));cJSON_Delete(j);
  char coordinates[64],name[64];j=cJSON_Parse("{\"latitude\":48.81,\"longitude\":2.22,\"name\":\"Home\"}");
  assert(station_phone_parse_home(j,coordinates,name));assert(!strcmp(coordinates,"48.810000,2.220000"));
  cJSON_ReplaceItemInObject(j,"name",cJSON_CreateString("Châtenay-Malabry – L’Haÿ-les-Roses"));assert(station_phone_parse_home(j,coordinates,name));assert(!strcmp(name,"Châtenay-Malabry – L’Haÿ-les-Roses"));
