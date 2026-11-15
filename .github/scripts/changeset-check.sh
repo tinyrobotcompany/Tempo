@@ -6,7 +6,7 @@ if [[ "${GITHUB_EVENT_NAME:-}" != "pull_request" ]]; then
   exit 0
 fi
 
-if [[ "${GITHUB_ACTOR:-}" == "dependabot[bot]" ]]; then
+if [[ "${GITHUB_ACTOR:-}" == "dependabot[bot]" ]] || [[ "${GITHUB_HEAD_REF:-}" == dependabot/* ]] || [[ "${GITHUB_REF_NAME:-}" == dependabot/* ]]; then
   echo "Skipping changeset check for dependabot."
   exit 0
 fi
