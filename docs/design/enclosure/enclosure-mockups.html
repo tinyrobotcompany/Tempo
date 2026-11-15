@@ -1,0 +1,501 @@
+<title>Tempo Enclosure Concepts</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: studio light-box — a single dark product-shot world; drawings sit on lit plinths, specs in mono beneath. */
+:root {
+  color-scheme: dark;
+  --bg: #0f1215;
+  --plinth: #171b20;
+  --plinth-hi: #1d2228;
+  --line: #2a3038;
+  --fg: #e7eaee;
+  --muted: #8d96a0;
+  --c-bezel: #141619;
+  --c-body: #22272d;
+  --c-accent: #3fd8c4;
+  --font-display: "Sora", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+}
+.wrap {
+  max-width: 1120px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+  display: grid; gap: 56px;
+}
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.4vw, 44px); font-weight: 700; }
+h2 { font-size: 24px; font-weight: 600; }
+h3 { font-size: 18px; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font: 500 12px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--font-mono); font-size: 13px; }
+.muted { color: var(--muted); }
+header { display: grid; gap: 14px; }
+header p { color: var(--muted); }
+
+/* Colourway bar */
+.colourway {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
+  padding: 12px max(16px, env(safe-area-inset-left, 0px));
+  display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.preset {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--plinth); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 12px 6px 6px; font: 500 13px var(--font-body); cursor: pointer;
+}
+.preset[aria-pressed="true"] { border-color: var(--c-accent); }
+.preset:focus-visible, .picker input:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.dots { display: inline-flex; }
+.dots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--plinth); margin-left: -5px; display: block; }
+.dots i:first-child { margin-left: 0; }
+.pickers { display: flex; gap: 14px; flex-wrap: wrap; }
+.picker { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--font-mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.picker input { width: 30px; height: 26px; border: 1px solid var(--line); border-radius: 6px; background: none; padding: 0; cursor: pointer; }
+
+/* Recommendation */
+.verdict {
+  display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: center;
+  background: var(--plinth); border: 1px solid var(--line); border-radius: 14px; padding: 28px;
+}
+.verdict ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.tag { display: inline-block; font: 600 11px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--bg); background: var(--c-accent); padding: 5px 8px; border-radius: 4px; }
+
+/* Concepts */
+.concepts { display: grid; gap: 28px; }
+.concept { display: grid; gap: 18px; border-top: 1px solid var(--line); padding-top: 28px; }
+.concept-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+.views { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; }
+.views.three { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.6fr); }
+figure { margin: 0; background: radial-gradient(120% 90% at 50% 20%, var(--plinth-hi), var(--plinth)); border-radius: 12px; padding: 14px; display: grid; gap: 6px; }
+figure svg { width: 100%; height: auto; display: block; }
+figcaption { font: 500 11px var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.notes h4 { margin: 0 0 6px; font: 600 12px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+
+/* SVG paint zones */
+.f-bezel { fill: var(--c-bezel); }
+.f-body { fill: var(--c-body); }
+.f-accent { fill: var(--c-accent); }
+.s-accent { stroke: var(--c-accent); }
+.dim { stroke: var(--muted); stroke-width: 0.5; fill: none; }
+.dimtxt { fill: var(--muted); font: 500 6.5px var(--font-mono); }
+.lbl { fill: var(--fg); font: 600 12px var(--font-body); }
+.lbl2 { fill: var(--muted); font: 500 10px var(--font-mono); }
+
+/* Tables */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 11px var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); background: var(--plinth); }
+tr:last-child td { border-bottom: none; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid #ffffff22; }
+.ev { font: 600 10px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 6px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.ev.v { color: #9fe3a0; border-color: #355a3a; }
+.ev.d { color: #e3d29f; border-color: #5a5235; }
+.ev.a { color: #e3a99f; border-color: #5a3a35; }
+
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+
+@media (max-width: 820px) {
+  .verdict, .two, .notes { grid-template-columns: minmax(0, 1fr); }
+  .views, .views.three { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .f-body, .f-accent, .f-bezel { transition: fill 240ms ease; }
+}
+</style>
+
+<!-- Shared screen artwork: Tempo clock view at 1280 × 800 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="ui" viewBox="0 0 1280 800">
+      <rect width="1280" height="800" fill="#0a111b"/>
+      <g font-family="Inter, 'IBM Plex Sans', sans-serif">
+        <text x="40" y="44" font-size="22" fill="#c9d2dc">Welcome home</text>
+        <text x="1196" y="44" font-size="22" fill="#c9d2dc" text-anchor="end">Châtenay-Malabry</text>
+        <text x="640" y="272" font-size="220" font-weight="300" fill="#3fd8c4" text-anchor="middle" letter-spacing="-4">07:27</text>
+        <text x="640" y="308" font-size="28" fill="#e6ebf0" text-anchor="middle">Sunday, 15 November 2026</text>
+        <rect x="32" y="350" width="592" height="328" rx="16" fill="#121c29"/>
+        <rect x="656" y="350" width="592" height="328" rx="16" fill="#121c29"/>
+        <text x="56" y="392" font-size="20" fill="#8d9aaa">LOCAL WEATHER</text>
+        <circle cx="88" cy="460" r="22" fill="#dbe4ee"/>
+        <text x="136" y="476" font-size="56" fill="#3fd8c4">15°</text>
+        <text x="300" y="454" font-size="28" fill="#e6ebf0">Overcast</text>
+        <text x="300" y="488" font-size="20" fill="#8d9aaa">Feels like 13°</text>
+        <polyline points="62,595 330,610 486,619 594,619" fill="none" stroke="#3fd8c4" stroke-width="4"/>
+        <text x="680" y="392" font-size="20" fill="#8d9aaa">Robinson</text>
+        <rect x="680" y="438" width="44" height="40" rx="10" fill="#2a4560"/>
+        <text x="740" y="458" font-size="28" fill="#e6ebf0">Mitry–Claye</text>
+        <text x="1222" y="462" font-size="34" fill="#3fd8c4" text-anchor="end">4 min</text>
+        <rect x="680" y="532" width="44" height="40" rx="10" fill="#2a4560"/>
+        <text x="740" y="552" font-size="28" fill="#e6ebf0">Aéroport CDG</text>
+        <text x="1222" y="556" font-size="34" fill="#3fd8c4" text-anchor="end">7 min</text>
+        <rect x="320" y="718" width="148" height="52" rx="10" fill="#2c4a40"/>
+        <text x="394" y="752" font-size="22" fill="#e6ebf0" text-anchor="middle">Clock</text>
+        <text x="554" y="752" font-size="22" fill="#e6ebf0" text-anchor="middle">Weather</text>
+        <text x="714" y="752" font-size="22" fill="#e6ebf0" text-anchor="middle">Transport</text>
+        <text x="874" y="752" font-size="22" fill="#e6ebf0" text-anchor="middle">Settings</text>
+      </g>
+    </symbol>
+    <linearGradient id="glare" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.07"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.18"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Tempo · feature/enclosure-design · proposal v0.1</span>
+    <h1>A printed case for the 10.1″ ESP32-P4 display</h1>
+    <p>Three enclosure directions for the Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1 kit. Each one keeps a matte-black front bezel and moves colour into separate printed parts. You can change a colour by reprinting one small part, with no multi-material printer needed. Pick a colourway below to recolour every drawing.</p>
+  </header>
+
+  <div class="colourway" role="group" aria-label="Colourway">
+    <div class="presets" id="presets"></div>
+    <div class="pickers">
+      <label class="picker" for="pk-accent">Accent <input type="color" id="pk-accent" value="#3fd8c4"></label>
+      <label class="picker" for="pk-body">Body <input type="color" id="pk-body" value="#22272d"></label>
+      <label class="picker" for="pk-bezel">Bezel <input type="color" id="pk-bezel" value="#141619"></label>
+    </div>
+  </div>
+
+  <section class="verdict">
+    <div style="display:grid;gap:14px">
+      <span class="tag">Recommended · Concept C</span>
+      <h2>The Wedge with swappable side cheeks</h2>
+      <p class="muted">A desk-clock wedge with a wide, heavy footprint. It stays put when you press the touchscreen, and its rear volume leaves room for the board, cabling and a convection path. The colour sits on two side cheeks and a rear service hatch. Each is a small, flat print you can make in any colour.</p>
+      <ul>
+        <li>Most stable under touch of the three; no kickstand to fold or tip.</li>
+        <li>Colour panels are large enough to read across a room, yet each uses little filament.</li>
+        <li>The rear hatch gives access to USB-C, BOOT/RESET and C6 pads without removing the bezel.</li>
+        <li>Every part prints flat on a 256 × 256 mm bed (assumed; see the open questions).</li>
+      </ul>
+    </div>
+    <figure>
+      <svg viewBox="0 0 320 220" role="img" aria-label="Concept C front view in the current colourway">
+        <use href="#c-front"/>
+      </svg>
+      <figcaption>Front · 3/4 scale drawing</figcaption>
+    </figure>
+  </section>
+
+  <section class="concepts">
+    <div style="display:grid;gap:8px">
+      <span class="eyebrow">Directions</span>
+      <h2>Three concepts</h2>
+    </div>
+
+    <!-- CONCEPT C -->
+    <article class="concept">
+      <div class="concept-head"><h3>C · Wedge</h3><span class="mono muted">~264 W × 176 H × ~108 D mm · ≈13° tilt</span></div>
+      <div class="views three">
+        <figure>
+          <svg viewBox="0 0 320 220" role="img" aria-label="Wedge front view">
+            <g id="c-front">
+              <ellipse cx="160" cy="203" rx="150" ry="5" fill="#000" opacity="0.35"/>
+              <rect x="44" y="196" width="22" height="5" rx="2" fill="#0a0a0a"/>
+              <rect x="254" y="196" width="22" height="5" rx="2" fill="#0a0a0a"/>
+              <rect x="18" y="20" width="24" height="178" rx="8" class="f-accent"/>
+              <rect x="278" y="20" width="24" height="178" rx="8" class="f-accent"/>
+              <rect x="18" y="20" width="24" height="178" rx="8" fill="url(#shade)"/>
+              <rect x="278" y="20" width="24" height="178" rx="8" fill="url(#shade)"/>
+              <rect x="34" y="22" width="252" height="174" rx="4" class="f-bezel"/>
+              <use href="#ui" x="51" y="34" width="218" height="136"/>
+              <rect x="51" y="34" width="218" height="136" fill="url(#glare)"/>
+              <rect x="50.5" y="33.5" width="219" height="137" fill="none" stroke="#000" stroke-width="1"/>
+              <rect x="130" y="183" width="60" height="1.8" rx="0.9" class="f-accent"/>
+            </g>
+          </svg>
+          <figcaption>Front</figcaption>
+        </figure>
+        <figure>
+          <svg viewBox="0 0 200 220" role="img" aria-label="Wedge side profile">
+            <line x1="10" y1="201" x2="190" y2="201" stroke="#2a3038" stroke-width="1"/>
+            <polygon points="54,198 93,24 124,24 158,198" class="f-accent" stroke-linejoin="round" stroke-width="6" style="stroke:var(--c-accent)"/>
+            <polygon points="54,198 93,24 124,24 158,198" fill="url(#shade)"/>
+            <polygon points="66,186 98,38 118,38 146,186" fill="#000" opacity="0.10"/>
+            <polygon points="49,199 89,21 96,21 56,199" class="f-bezel"/>
+            <rect x="58" y="199" width="16" height="3" rx="1" fill="#0a0a0a"/>
+            <rect x="140" y="199" width="16" height="3" rx="1" fill="#0a0a0a"/>
+            <path d="M156 186 C 172 188, 178 200, 194 200" fill="none" stroke="#3a3f45" stroke-width="3"/>
+            <circle cx="156" cy="186" r="3" fill="#0a0a0a"/>
+            <path class="dim" d="M54 211 H158 M54 208 V214 M158 208 V214"/>
+            <text class="dimtxt" x="106" y="219" text-anchor="middle">≈108</text>
+            <path class="dim" d="M54 170 A 30 30 0 0 1 61 168"/>
+            <text class="dimtxt" x="20" y="170">≈13°</text>
+          </svg>
+          <figcaption>Side · accent cheek</figcaption>
+        </figure>
+        <figure>
+          <svg viewBox="0 0 320 220" role="img" aria-label="Wedge rear view with service hatch">
+            <ellipse cx="160" cy="203" rx="150" ry="5" fill="#000" opacity="0.35"/>
+            <rect x="18" y="20" width="24" height="178" rx="8" class="f-accent"/>
+            <rect x="278" y="20" width="24" height="178" rx="8" class="f-accent"/>
+            <rect x="34" y="22" width="252" height="174" rx="6" class="f-body"/>
+            <rect x="34" y="22" width="252" height="174" rx="6" fill="url(#shade)"/>
+            <g fill="#000" opacity="0.38">
+              <rect x="70" y="36" width="8" height="30" rx="3"/><rect x="86" y="36" width="8" height="30" rx="3"/>
+              <rect x="102" y="36" width="8" height="30" rx="3"/><rect x="118" y="36" width="8" height="30" rx="3"/>
+              <rect x="134" y="36" width="8" height="30" rx="3"/><rect x="150" y="36" width="8" height="30" rx="3"/>
+              <rect x="166" y="36" width="8" height="30" rx="3"/><rect x="182" y="36" width="8" height="30" rx="3"/>
+              <rect x="198" y="36" width="8" height="30" rx="3"/><rect x="214" y="36" width="8" height="30" rx="3"/>
+              <rect x="230" y="36" width="8" height="30" rx="3"/><rect x="246" y="36" width="8" height="30" rx="3"/>
+            </g>
+            <rect x="108" y="92" width="104" height="62" rx="6" class="f-accent"/>
+            <rect x="108" y="92" width="104" height="62" rx="6" fill="url(#shade)"/>
+            <g fill="#000" opacity="0.45">
+              <circle cx="117" cy="101" r="2.2"/><circle cx="203" cy="101" r="2.2"/>
+              <circle cx="117" cy="145" r="2.2"/><circle cx="203" cy="145" r="2.2"/>
+            </g>
+            <circle cx="160" cy="180" r="5" fill="#0a0a0a"/>
+            <circle cx="160" cy="180" r="2.2" fill="#3a3f45"/>
+            <rect x="12" y="200" width="0" height="0"/>
+          </svg>
+          <figcaption>Rear · vents, hatch, cable grommet</figcaption>
+        </figure>
+      </div>
+      <div class="notes">
+        <div><h4>Colour zones</h4><ul><li>Cheeks ×2 (accent)</li><li>Service hatch (accent)</li><li>Rear shell (body)</li><li>Optional chin inlay line (accent, filament swap)</li></ul></div>
+        <div><h4>Strengths</h4><ul><li>Best touch stability and thermal volume</li><li>Swapping a colour only means reprinting cheeks and the hatch</li><li>Hides the cable exit at rear-bottom</li></ul></div>
+        <div><h4>Trade-offs</h4><ul><li>Deepest footprint (~11 cm)</li><li>Rear shell is the largest print and is near bed limits</li><li>Fixed tilt; pick the angle once</li></ul></div>
+      </div>
+    </article>
+
+    <!-- CONCEPT A -->
+    <article class="concept">
+      <div class="concept-head"><h3>A · Slab with trim band</h3><span class="mono muted">~252 W × 170 H × ~28 D mm · 15° kickstand</span></div>
+      <div class="views">
+        <figure>
+          <svg viewBox="0 0 320 220" role="img" aria-label="Slab front view">
+            <ellipse cx="160" cy="203" rx="120" ry="4" fill="#000" opacity="0.35"/>
+            <rect x="112" y="184" width="96" height="16" rx="5" class="f-accent"/>
+            <rect x="34" y="20" width="252" height="170" rx="9" class="f-accent"/>
+            <rect x="36.6" y="22.6" width="246.8" height="164.8" rx="7.5" class="f-bezel"/>
+            <use href="#ui" x="51" y="34" width="218" height="136"/>
+            <rect x="51" y="34" width="218" height="136" fill="url(#glare)"/>
+            <rect x="50.5" y="33.5" width="219" height="137" fill="none" stroke="#000" stroke-width="1"/>
+          </svg>
+          <figcaption>Front · accent edge band</figcaption>
+        </figure>
+        <figure>
+          <svg viewBox="0 0 200 220" role="img" aria-label="Slab side profile with kickstand">
+            <line x1="10" y1="201" x2="190" y2="201" stroke="#2a3038" stroke-width="1"/>
+            <g transform="translate(66,198) rotate(15)">
+              <rect x="0" y="-170" width="7" height="170" rx="2" class="f-bezel"/>
+              <rect x="7" y="-170" width="4" height="170" class="f-accent"/>
+              <rect x="11" y="-170" width="17" height="170" rx="4" class="f-body"/>
+              <rect x="0" y="-170" width="28" height="170" rx="3" fill="url(#shade)"/>
+            </g>
+            <path d="M116 118 L 150 198" class="s-accent" stroke-width="7" stroke-linecap="round" fill="none"/>
+            <rect x="138" y="197" width="26" height="4" rx="2" class="f-accent"/>
+            <path class="dim" d="M66 175 A 26 26 0 0 1 72 173"/>
+            <text class="dimtxt" x="34" y="176">15°</text>
+            <path class="dim" d="M56 211 H164 M56 208 V214 M164 208 V214"/>
+            <text class="dimtxt" x="110" y="219" text-anchor="middle">≈100 incl. stand</text>
+          </svg>
+          <figcaption>Side · bezel / band / shell / stand</figcaption>
+        </figure>
+      </div>
+      <div class="notes">
+        <div><h4>Colour zones</h4><ul><li>Trim band around the whole edge (accent)</li><li>Kickstand (accent)</li><li>Rear shell (body)</li></ul></div>
+        <div><h4>Strengths</h4><ul><li>Slimmest and lightest; reads like a picture frame</li><li>Trim band gives a crisp colour outline from the front</li><li>The stand could later be swapped for a wall cleat</li></ul></div>
+        <div><h4>Trade-offs</h4><ul><li>Can rock or slide when the top edge is tapped</li><li>Trim band is a long thin ring that may need splitting into 2–4 segments</li><li>Little air volume behind the board</li></ul></div>
+      </div>
+    </article>
+
+    <!-- CONCEPT B -->
+    <article class="concept">
+      <div class="concept-head"><h3>B · Cradle base</h3><span class="mono muted">~268 W × 185 H × ~130 D mm · ≈12° tilt</span></div>
+      <div class="views">
+        <figure>
+          <svg viewBox="0 0 320 220" role="img" aria-label="Cradle front view">
+            <ellipse cx="160" cy="203" rx="150" ry="5" fill="#000" opacity="0.35"/>
+            <rect x="40" y="12" width="240" height="160" rx="6" class="f-bezel"/>
+            <use href="#ui" x="51" y="22" width="218" height="136"/>
+            <rect x="51" y="22" width="218" height="136" fill="url(#glare)"/>
+            <rect x="50.5" y="21.5" width="219" height="137" fill="none" stroke="#000" stroke-width="1"/>
+            <rect x="26" y="164" width="268" height="36" rx="9" class="f-accent"/>
+            <rect x="26" y="164" width="268" height="36" rx="9" fill="url(#shade)"/>
+            <rect x="44" y="184" width="232" height="1.2" fill="#000" opacity="0.22"/>
+          </svg>
+          <figcaption>Front · coloured base</figcaption>
+        </figure>
+        <figure>
+          <svg viewBox="0 0 200 220" role="img" aria-label="Cradle side profile">
+            <line x1="10" y1="201" x2="190" y2="201" stroke="#2a3038" stroke-width="1"/>
+            <g transform="translate(74,192) rotate(12)">
+              <rect x="0" y="-176" width="20" height="176" rx="3" class="f-bezel"/>
+              <rect x="13" y="-176" width="7" height="176" rx="2" class="f-body"/>
+              <rect x="0" y="-176" width="20" height="176" rx="3" fill="url(#shade)"/>
+            </g>
+            <path d="M28 200 L28 176 Q28 172 32 171 L152 158 Q160 157 160 165 L160 200 Z" class="f-accent"/>
+            <path d="M28 200 L28 176 Q28 172 32 171 L152 158 Q160 157 160 165 L160 200 Z" fill="url(#shade)"/>
+            <path class="dim" d="M28 211 H160 M28 208 V214 M160 208 V214"/>
+            <text class="dimtxt" x="94" y="219" text-anchor="middle">≈130</text>
+          </svg>
+          <figcaption>Side · slab in a slotted base</figcaption>
+        </figure>
+      </div>
+      <div class="notes">
+        <div><h4>Colour zones</h4><ul><li>Base block (accent): one big, bold colour mass</li><li>Display slab back (body)</li></ul></div>
+        <div><h4>Strengths</h4><ul><li>Base can carry ballast (steel washers) for a premium, planted feel</li><li>Slab lifts out for service or wall mounting</li><li>Strongest single colour statement</li></ul></div>
+        <div><h4>Trade-offs</h4><ul><li>Base is the largest single print and needs a lot of filament</li><li>Cable has to route through the slot joint</li><li>The slot can loosen over time without a latch</li></ul></div>
+      </div>
+    </article>
+  </section>
+
+  <section style="display:grid;gap:18px">
+    <div style="display:grid;gap:8px">
+      <span class="eyebrow">Concept C · exploded</span>
+      <h2>Parts and how they stack</h2>
+      <p class="muted">Front to back. The display kit floats on its own M2.5 rear mounts and compliant pads. The bezel never clamps the glass. Cheeks locate on pegs and are held by one captive M3 screw reached from under the foot.</p>
+    </div>
+    <figure>
+      <div style="overflow-x:auto">
+        <svg viewBox="0 0 780 350" style="min-width:560px" role="img" aria-label="Exploded view of concept C parts">
+          <g transform="translate(0,150) skewY(-14)">
+            <!-- hatch -->
+            <rect x="70" y="94" width="70" height="44" rx="5" class="f-accent"/>
+            <rect x="70" y="94" width="70" height="44" rx="5" fill="url(#shade)"/>
+            <!-- rear shell -->
+            <rect x="160" y="60" width="170" height="116" rx="6" class="f-body"/>
+            <rect x="160" y="60" width="170" height="116" rx="6" fill="url(#shade)"/>
+            <rect x="223" y="100" width="70" height="44" rx="5" fill="#000" opacity="0.35"/>
+            <g fill="#000" opacity="0.38"><rect x="180" y="68" width="5" height="20" rx="2"/><rect x="191" y="68" width="5" height="20" rx="2"/><rect x="202" y="68" width="5" height="20" rx="2"/><rect x="213" y="68" width="5" height="20" rx="2"/><rect x="224" y="68" width="5" height="20" rx="2"/><rect x="235" y="68" width="5" height="20" rx="2"/><rect x="246" y="68" width="5" height="20" rx="2"/><rect x="257" y="68" width="5" height="20" rx="2"/><rect x="268" y="68" width="5" height="20" rx="2"/><rect x="279" y="68" width="5" height="20" rx="2"/><rect x="290" y="68" width="5" height="20" rx="2"/><rect x="301" y="68" width="5" height="20" rx="2"/></g>
+            <!-- cheeks -->
+            <rect x="350" y="54" width="16" height="128" rx="6" class="f-accent"/>
+            <rect x="514" y="54" width="16" height="128" rx="6" class="f-accent"/>
+            <rect x="350" y="54" width="16" height="128" rx="6" fill="url(#shade)"/>
+            <rect x="514" y="54" width="16" height="128" rx="6" fill="url(#shade)"/>
+            <!-- display module -->
+            <rect x="460" y="62" width="160" height="104" rx="2" fill="#2b3036"/>
+            <rect x="468" y="68" width="144" height="90" fill="#0a111b"/>
+            <rect x="500" y="150" width="60" height="10" fill="#3a6a4a"/>
+            <!-- bezel -->
+            <rect x="590" y="56" width="170" height="118" rx="4" class="f-bezel"/>
+            <use href="#ui" x="602" y="64" width="146" height="91"/>
+            <rect x="660" y="165" width="40" height="1.4" class="f-accent"/>
+          </g>
+          <g text-anchor="middle">
+            <text class="lbl" x="105" y="315">Service hatch</text><text class="lbl2" x="105" y="330">accent</text>
+            <text class="lbl" x="245" y="300">Rear shell</text><text class="lbl2" x="245" y="315">body colour</text>
+            <text class="lbl" x="400" y="262">Side cheeks ×2</text><text class="lbl2" x="400" y="277">accent</text>
+            <text class="lbl" x="540" y="232">Display kit</text><text class="lbl2" x="540" y="247">already owned</text>
+            <text class="lbl" x="675" y="200">Front bezel</text><text class="lbl2" x="675" y="215">matte black</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>Schematic stack · not to scale</figcaption>
+    </figure>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Part</th><th>Zone</th><th>Qty</th><th>Print</th><th>Fixing</th></tr></thead>
+        <tbody>
+          <tr><td>Front bezel</td><td><span class="sw f-bezel" style="background:var(--c-bezel)"></span>Bezel</td><td>1</td><td>Face-down on textured PEI for a matte finish; PETG</td><td>M3 heat-set inserts in the shell; screws from the rear</td></tr>
+          <tr><td>Rear shell</td><td><span class="sw" style="background:var(--c-body)"></span>Body</td><td>1</td><td>Flat on its back; top exhaust slots and bottom intake slots</td><td>Carries display mounts (M2.5, max 4 mm thread engagement per manufacturer)</td></tr>
+          <tr><td>Side cheeks</td><td><span class="sw" style="background:var(--c-accent)"></span>Accent</td><td>2</td><td>Flat, outer face down; small and fast to reprint in a new colour</td><td>2 locating pegs + 1 captive M3 from underneath</td></tr>
+          <tr><td>Service hatch</td><td><span class="sw" style="background:var(--c-accent)"></span>Accent</td><td>1</td><td>Flat; opening sized over USB-C UART, BOOT/RESET and C6 pads once measured</td><td>2 × M3 into inserts</td></tr>
+          <tr><td>Chin inlay (optional)</td><td><span class="sw" style="background:var(--c-accent)"></span>Accent</td><td>1</td><td>Filament swap at a layer, AMS, or a separate press-fit strip</td><td>Printed in place or press-fit</td></tr>
+          <tr><td>Feet, grommet, strain relief</td><td>—</td><td>4 / 1 / 1</td><td>Rubber feet in recesses; printed cable clamp</td><td>Per BOM: one external low-voltage feed only</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="two">
+    <div style="display:grid;gap:14px">
+      <span class="eyebrow">Basis</span>
+      <h2>What these drawings rest on</h2>
+      <div class="tablewrap">
+        <table style="min-width:0">
+          <tbody>
+            <tr><td><span class="ev v">Verified</span></td><td>Waveshare 10.1″ kit, landscape 1280 × 800, M2.5 rear mounts with 4 mm depth, matte-black bezel and PETG specified in repo docs</td></tr>
+            <tr><td><span class="ev d">Derived</span></td><td>Active area ≈ 218 × 136 mm from the 10.1″ 16:10 diagonal</td></tr>
+            <tr><td><span class="ev a">Assumption</span></td><td>Module outline, board thickness, connector and antenna positions. All outer dimensions here are placeholders until the kit is measured.</td></tr>
+            <tr><td><span class="ev a">Assumption</span></td><td>Printer bed ≥ 256 × 256 mm, single extruder</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div style="display:grid;gap:14px;align-content:start">
+      <span class="eyebrow">Next steps</span>
+      <h2>From mockup to printable CAD</h2>
+      <ol class="steps">
+        <li>Measure the assembled kit: glass outline, total thickness, mount-hole pattern, USB-C, power input, BOOT/RESET, C6 pads, antenna position.</li>
+        <li>Confirm printer model and bed size; decide whether any part needs a split.</li>
+        <li>Build a parametric model in the repo (OpenSCAD or build123d) driven by those measurements, so colour parts stay interchangeable.</li>
+        <li>Print a fit-check bezel frame first, then the full set; then run the 72-hour thermal and runtime test from the BOM.</li>
+      </ol>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var presets = [
+    { name: "Tempo teal", accent: "#3fd8c4", body: "#22272d", bezel: "#141619" },
+    { name: "Segment orange", accent: "#f2862e", body: "#22272d", bezel: "#141619" },
+    { name: "Chalk & coral", accent: "#e8604c", body: "#e7e3da", bezel: "#141619" },
+    { name: "Sage", accent: "#c9d3a4", body: "#3a4a42", bezel: "#141619" },
+    { name: "Stealth", accent: "#5b6470", body: "#141619", bezel: "#141619" }
+  ];
+  var root = document.documentElement;
+  var box = document.getElementById("presets");
+  var inputs = { accent: document.getElementById("pk-accent"), body: document.getElementById("pk-body"), bezel: document.getElementById("pk-bezel") };
+
+  function apply(c, idx) {
+    root.style.setProperty("--c-accent", c.accent);
+    root.style.setProperty("--c-body", c.body);
+    root.style.setProperty("--c-bezel", c.bezel);
+    inputs.accent.value = c.accent; inputs.body.value = c.body; inputs.bezel.value = c.bezel;
+    Array.prototype.forEach.call(box.children, function (b, i) { b.setAttribute("aria-pressed", String(i === idx)); });
+    try { localStorage.setItem("tempo-colourway", JSON.stringify(c)); } catch (e) {}
+  }
+
+  presets.forEach(function (p, i) {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "preset"; b.setAttribute("aria-pressed", "false");
+    b.innerHTML = '<span class="dots"><i style="background:' + p.accent + '"></i><i style="background:' + p.body + '"></i><i style="background:' + p.bezel + '"></i></span>' + p.name;
+    b.addEventListener("click", function () { apply(p, i); });
+    box.appendChild(b);
+  });
+
+  Object.keys(inputs).forEach(function (k) {
+    inputs[k].addEventListener("input", function () {
+      apply({ accent: inputs.accent.value, body: inputs.body.value, bezel: inputs.bezel.value }, -1);
+    });
+  });
+
+  var start = presets[0], idx = 0;
+  try {
+    var saved = JSON.parse(localStorage.getItem("tempo-colourway") || "null");
+    if (saved && saved.accent) { start = saved; idx = presets.findIndex(function (p) { return p.accent === saved.accent && p.body === saved.body && p.bezel === saved.bezel; }); }
+  } catch (e) {}
+  apply(start, idx);
+})();
+</script>
