@@ -37,6 +37,9 @@ jobs:
     name: CodeQL Scripts
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # Gate the full repository on PRs as on main, including unchanged findings.
+      CODEQL_ACTION_DIFF_INFORMED_QUERIES: 'false'
     permissions:
       contents: read
       security-events: write

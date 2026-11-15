@@ -60,7 +60,17 @@ try {
         const severity = rawSeverity === undefined ? 0 : Number(rawSeverity);
         if (!Number.isFinite(severity) || severity < 0 || severity > 10)
           throw new Error('Invalid security severity.');
-        if (severity >= 7 || (result.level ?? rule.defaultConfiguration?.level) === 'error') blocked++;
+        if (severity >= 7 || (result.level ?? rule.defaultConfiguration?.level) === 'error') {
+          blocked++;
+          const location = result.locations?.[0]?.physicalLocation;
+          // Report identifiers and locations, never source snippets or result messages.
+          console.log(`Blocking security finding: ${JSON.stringify({
+            rule: rule.id,
+            severity,
+            path: location?.artifactLocation?.uri,
+            line: location?.region?.startLine,
+          })}`);
+        }
       }
     }
   }
