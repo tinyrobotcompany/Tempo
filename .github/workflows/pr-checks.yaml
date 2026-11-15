@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   branch-name:
+    if: ${{ github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/') }}
     name: Branch Name
     runs-on: ubuntu-latest
     steps:
