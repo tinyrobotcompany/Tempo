@@ -13,6 +13,8 @@
 
 /.artifacts/
 
+/.worktrees/
+
 # Mechanical CAD: generated exports and the local uv environment
 /mechanical/cad/.venv/
 /mechanical/exports/**

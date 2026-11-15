@@ -19,13 +19,15 @@ class StartupContract(unittest.TestCase):
         self.assertNotRegex(startup, r'\b(?:lv_refr_now|lv_timer_handler)\s*\(')
         create = startup.index('station_ui_start(')
         unlock = startup.index('bsp_display_unlock()', create)
-        backlight = startup.index('bsp_display_brightness_set(settings.brightness)', unlock)
         self.assertLess(create, unlock)
-        self.assertLess(unlock, backlight)
-        # Backlight restoration must be unconditional, with no completion wait.
-        gap = startup[unlock:backlight]
-        self.assertNotRegex(gap, r'\b(?:if|while|for|ulTaskNotifyTake|xSemaphoreTake|vTaskDelay)\s*\(')
-        self.assertIn('UI stopped responding', startup[backlight:])
+        # app_main must never override the UI's policy/tracked brightness.
+        self.assertNotIn('bsp_display_brightness_set(', startup)
+        self.assertNotIn('bsp_display_backlight_on(', startup)
+        self.assertIn('UI stopped responding', startup[unlock:])
+        ui = (ROOT / 'firmware/components/station_ui/station_ui.c').read_text()
+        init = ui.split('void station_ui_start(', 1)[1]
+        self.assertLess(init.index('show_view(VIEW_CLOCK)'), init.index('update_power()'))
+        self.assertLess(init.index('update_power()'), init.index('lv_timer_create('))
 
 if __name__ == '__main__':
     unittest.main()

@@ -19,7 +19,9 @@ static void wifi_scan_status(station_wifi_scan_t*s){*s=scan_result;}
 static void snapshot(station_network_status_t*s){*s=status;}
 static int save_state(void){return 2;}
 static bool save(const station_settings_t*s){assert(station_settings_valid(s));saved=*s;saves++;return true;}
-static bool dim(unsigned p){return p>=5;}
+static unsigned backlight, brightness_calls;
+static bool brightness_failure;
+static bool dim(unsigned p){brightness_calls++;backlight=p;return !brightness_failure&&p<=100;}
 static const char *expected_password="12345678";
 static bool connect_wifi(const char*s,const char*p){assert(!strcmp(s,"Home"));assert(!strcmp(p,expected_password));connections++;status.connecting=true;status.connected=false;return true;}
 static bool city(unsigned i){city_request=i;return true;}
@@ -61,13 +63,25 @@ static bool contains_text(lv_obj_t *obj,const char *text){
  for(unsigned i=0;i<lv_obj_get_child_count(obj);i++)if(contains_text(lv_obj_get_child(obj,i),text))return true;
  return false;
 }
-int main(void){
+int main(int argc,char **argv){
  lv_init();lv_display_t*d=lv_display_create(1280,800);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB888);
  void*buf=malloc(1280*800*3);assert(buf);lv_display_set_buffers(d,buf,NULL,1280*800*3,LV_DISPLAY_RENDER_MODE_FULL);lv_display_set_flush_cb(d,flush);
- station_settings_t initial=station_defaults();station_ui_start(&initial,(station_ui_actions_t){.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});tick();
+ station_settings_t initial=station_defaults();
+ unsigned boot_level=0;
+ if(argc>1){
+  setenv("TZ","UTC0",1);tzset();struct tm boot={.tm_year=126,.tm_mon=10,.tm_mday=14,.tm_hour=23};
+  initial.night_mode=strcmp(argv[1],"--boot-dim")==0?1:2;
+  status.source=strcmp(argv[1],"--boot-unset")==0?TIME_UNSET:TIME_NETWORK;
+  if(strcmp(argv[1],"--boot-day")==0)boot.tm_hour=12;
+  test_now=mktime(&boot);boot_level=status.source==TIME_UNSET||boot.tm_hour==12?65:initial.night_mode==1?10:0;
+ }
+ station_ui_start(&initial,(station_ui_actions_t){.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});
+ if(argc>1){assert(brightness_calls==1&&backlight==boot_level);tick();assert(brightness_calls==1&&backlight==boot_level);printf("PASS: %s starts directly at %u%% with no normal-brightness flash\n",argv[1],boot_level);lv_deinit();free(buf);return 0;}
+ tick();
  const lv_font_t *text_fonts[]={&station_text_18,&station_text_24,&station_text_32,&station_text_48};
  const uint32_t accents[]={0xe2,0xe9,0xe8,0xea,0xeb,0xe0,0xe7,0xee,0xef,0xf4,0xf9,0xfb,0xfc,0xff,0xc9,0x153,0x152,0xdf,0x2019};
  for(unsigned f=0;f<4;f++)for(unsigned c=0;c<sizeof(accents)/sizeof(accents[0]);c++){lv_font_glyph_dsc_t g;assert(lv_font_get_glyph_dsc(text_fonts[f],&g,accents[c],0));assert(g.box_w>0);}
+ status.connected=true;
  transit.generation=status.location_generation;transit.state=TRANS_READY;transit.count=2;transit.selected=0;transit.valid=true;transit.fetched_at=time(NULL);transit.row_count=1;
  snprintf(transit.stops[0].name,sizeof(transit.stops[0].name),"Mairie – Châtenay");transit.stops[0].metres=80;
  snprintf(transit.rows[0].line,20,"C01268");snprintf(transit.rows[0].code,20,"194");snprintf(transit.rows[0].destination,128,"Châtillon – Montrouge");transit.rows[0].at[0]=time(NULL)+300;transit.rows[0].at[1]=time(NULL)+900;transit.rows[0].estimated=true;transit.rows[0].predicted[0]=transit.rows[0].predicted[1]=true;
@@ -222,6 +236,52 @@ int main(void){
   assert(time_bottom>0&&date_bottom>date_top&&above>0&&abs(above-below)<=2);
   if(t==2){char capture[48];snprintf(capture,sizeof(capture),"clock-spacing-style-%u",style);shot(capture);}
  }
+ /* Night mode is applied by the same LVGL tick as the real device. */
+ initial=station_defaults();initial.rotate=false;initial.night_mode=2;initial.night_start=1380;initial.night_end=420;
+ setenv("TZ","UTC0",1);tzset();test_now=1794697200; /* 2026-11-14 23:00 UTC, replaced below explicitly */
+ struct tm night={.tm_year=126,.tm_mon=10,.tm_mday=14,.tm_hour=23};test_now=mktime(&night);
+ status.source=TIME_NETWORK;status.connected=true;
+ phone_command=(station_phone_command_t){.change_settings=true,.settings=initial,.change_view=true,.view=VIEW_CLOCK};phone_pending=true;tick();
+ assert(backlight==65);
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ /* Model a driver that changes hardware but returns an error. */
+ assert(station_ui_touch(true));assert(station_ui_touch(false));
+ brightness_failure=true;for(unsigned i=0;i<600;i++)tick();assert(backlight==0);
+ unsigned failed_calls=brightness_calls;for(unsigned i=0;i<20;i++)tick();assert(brightness_calls==failed_calls);
+ /* Off failed after changing the hardware: confirmed/applied state is still the old 65%.
+  * Wake also fails; every gesture must be consumed throughout retry backoff. */
+ assert(station_ui_touch(true));assert(brightness_calls==failed_calls+1);assert(station_ui_touch(false));
+ assert(station_ui_touch(true));assert(station_ui_touch(false));assert(brightness_calls==failed_calls+1);
+ brightness_failure=false;for(unsigned i=0;i<55;i++)tick();assert(backlight==65);
+ assert(!station_ui_touch(true));assert(!station_ui_touch(false));
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ unsigned sleeping_beat=station_ui_heartbeat();for(unsigned i=0;i<20;i++)tick();assert(station_ui_heartbeat()>sleeping_beat);
+ assert(station_ui_touch(true));assert(backlight==65);assert(station_ui_touch(true));assert(station_ui_touch(false));assert(!station_ui_touch(false));
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ test_now+=8*3600;for(unsigned i=0;i<10;i++)tick();assert(backlight==65);
+ /* Cross into screen-off before the next power timer: first gesture must not click through. */
+ test_now-=8*3600;
+ assert(backlight==65);
+ assert(station_ui_touch(true));assert(backlight==65);
+ assert(station_ui_touch(true));assert(station_ui_touch(false));assert(!station_ui_touch(false));
+ assert(!station_ui_touch(true));assert(!station_ui_touch(false)); /* next gesture works while awake */
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ /* A dim-to-awake driver failure occurs inside the first press, not before it. */
+ initial.night_mode=1;
+ phone_command=(station_phone_command_t){.change_settings=true,.settings=initial};phone_pending=true;tick();
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==10);
+ brightness_failure=true;
+ assert(station_ui_touch(true));assert(station_ui_touch(false));
+ assert(station_ui_touch(true));assert(station_ui_touch(false));
+ brightness_failure=false;for(unsigned i=0;i<55;i++)tick();assert(backlight==65);
+ assert(!station_ui_touch(true));assert(!station_ui_touch(false));
+ initial.night_mode=2;
+ phone_command=(station_phone_command_t){.change_settings=true,.settings=initial};phone_pending=true;tick();
+ status.source=TIME_UNSET;tick();assert(backlight==65);
+ click("Settings");click("Power & night mode");shot("power-night-mode");click("Save night mode");assert(saved.night_mode==2);
+ status.connected=false;transit.generation=status.location_generation;transit.valid=true;transit.row_count=1;transit.fetched_at=test_now;transit.state=TRANS_READY;
+ click("Transport");assert(contains_text(lv_screen_active(),"Offline · saved"));assert(!contains_text(lv_screen_active(),"Arrives "));
+ puts("PASS: scheduled screen-off, first-touch consumption, timed wake, trusted-time fallback and offline departures");
  puts("PASS: equal visible date spacing for all ten styles at 00:00, 11:11, 12:34 and 23:59");
  puts("PASS: clock two-service layout, cancellation, updating animation with cached values, and 20-second automatic rotation");
  puts("PASS: phone QR online/offline/network changes, hotspot guide and queued remote settings");

@@ -9,7 +9,12 @@ fi
 BASE_REF="${GITHUB_BASE_REF:-main}"
 DIFF_BASE="origin/${BASE_REF}"
 if git remote get-url origin >/dev/null 2>&1; then
-  git fetch origin "${BASE_REF}" --depth=1
+  # A depth-one fetch severs ancestry when main advances during a PR run.
+  # Recover shallow checkouts and keep the explicitly named base ref complete.
+  if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+    git fetch --unshallow origin
+  fi
+  git fetch origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
 elif git show-ref --verify --quiet "refs/heads/${BASE_REF}"; then
   DIFF_BASE="${BASE_REF}"
 else

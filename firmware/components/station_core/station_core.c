@@ -6,13 +6,15 @@
 
 station_settings_t station_defaults(void)
 {
-    return (station_settings_t){.brightness = 65, .theme = 0, .rotate = false, .dwell_seconds = 20, .custom_color = 0xd68cff};
+    return (station_settings_t){.brightness = 65, .theme = 0, .rotate = false, .dwell_seconds = 20, .custom_color = 0xd68cff, .night_brightness=10, .night_start=23*60, .night_end=7*60};
 }
 bool station_settings_valid(const station_settings_t *s)
 {
     return s && s->brightness >= 5 && s->brightness <= 100 && s->theme < 4 && s->clock_font < 10 && s->custom_color <= 0xffffff &&
         memchr(s->user_name, 0, sizeof(s->user_name)) &&
-        s->dwell_seconds >= 10 && s->dwell_seconds <= 300;
+        s->dwell_seconds >= 10 && s->dwell_seconds <= 300 &&
+        s->night_mode <= 2 && s->night_start < 1440 && s->night_end < 1440 &&
+        (!s->night_mode || (s->night_start != s->night_end && s->night_brightness >= 1 && s->night_brightness <= 100));
 }
 station_view_t station_next_view(station_view_t current)
 {
@@ -111,21 +113,35 @@ void station_scan_add(station_wifi_scan_t *scan, const station_wifi_ap_t *ap)
     }
 }
 
+unsigned station_power_brightness(const station_settings_t *s, bool time_valid, unsigned minute,
+                                  uint64_t now_ms, uint64_t awake_until_ms)
+{
+    if (!s->night_mode || !time_valid || minute >= 1440 || now_ms < awake_until_ms) return s->brightness;
+    bool night = s->night_start < s->night_end ? minute >= s->night_start && minute < s->night_end :
+                 minute >= s->night_start || minute < s->night_end;
+    if (!night) return s->brightness;
+    if (s->night_mode == 2) return 0;
+    return s->night_brightness < s->brightness ? s->night_brightness : s->brightness;
+}
+
 /* Version 1 migrates without discarding brightness, theme or rotation. */
 bool station_settings_decode(const uint8_t *d, unsigned n, station_settings_t *out)
 {
-    if (!d || !out || !((n==6 && d[0]==1) || (n==STATION_SETTINGS_BYTES && d[0]==2)) || d[3]>1) return false;
+    if (!d || !out || !((n==6 && d[0]==1) || (n==STATION_SETTINGS_V2_BYTES && d[0]==2) || (n==STATION_SETTINGS_BYTES && d[0]==3)) || d[3]>1) return false;
     station_settings_t s=station_defaults();
     s.brightness=d[1]; s.theme=d[2]; s.rotate=d[3]; s.dwell_seconds=d[4]|(d[5]<<8);
-    if(d[0]==2) { s.custom_color=((uint32_t)d[6]<<16)|((uint32_t)d[7]<<8)|d[8]; s.clock_font=d[9]; memcpy(s.user_name,d+10,49); }
+    if(d[0]>=2) { s.custom_color=((uint32_t)d[6]<<16)|((uint32_t)d[7]<<8)|d[8]; s.clock_font=d[9]; memcpy(s.user_name,d+10,49); }
+    if(d[0]==3) { s.night_mode=d[59]; s.night_brightness=d[60]; s.night_start=d[61]|(d[62]<<8); s.night_end=d[63]|(d[64]<<8); }
     if(!station_settings_valid(&s)) return false;
     *out=s; return true;
 }
 void station_settings_encode(const station_settings_t *s, uint8_t d[STATION_SETTINGS_BYTES])
 {
-    memset(d,0,STATION_SETTINGS_BYTES); d[0]=2; d[1]=s->brightness; d[2]=s->theme; d[3]=s->rotate;
+    memset(d,0,STATION_SETTINGS_BYTES); d[0]=3; d[1]=s->brightness; d[2]=s->theme; d[3]=s->rotate;
     d[4]=s->dwell_seconds&255; d[5]=s->dwell_seconds>>8;
     d[6]=s->custom_color>>16; d[7]=s->custom_color>>8; d[8]=s->custom_color; d[9]=s->clock_font;
     memcpy(d+10,s->user_name,49);
+    d[59]=s->night_mode; d[60]=s->night_brightness;
+    d[61]=s->night_start&255; d[62]=s->night_start>>8; d[63]=s->night_end&255; d[64]=s->night_end>>8;
 }
 #include "cities.inc"

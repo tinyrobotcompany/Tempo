@@ -55,6 +55,7 @@ static esp_err_t read_landscape_touch(esp_lcd_touch_handle_t touch,
         points[valid].y = y;
         ++valid;
     }
+    if(station_ui_touch(valid>0))valid=0;
     *count = valid;
     pressed = valid > 0;
     return ESP_OK;
@@ -110,8 +111,7 @@ void app_main(void)
     /* The adapter task owns rendering and receives the VSYNC notifications.
      * Forcing refresh here can wait forever on the wrong task notification. */
     bsp_display_unlock();
-    ESP_ERROR_CHECK(bsp_display_brightness_set(settings.brightness));
-    ESP_LOGI(TAG, "UI released to renderer; backlight restored to %u%%", settings.brightness);
+    ESP_LOGI(TAG, "UI released to renderer; backlight owned by the UI power policy");
     ESP_LOGI(TAG, "UI and network/time service active; OTA download not implemented");
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t state;

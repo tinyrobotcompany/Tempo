@@ -91,7 +91,7 @@ A complete BOM must state quantities, manufacturer links, included accessories, 
 
 ## Deferred scope and unresolved decisions
 
-Physical weather sensors, native iOS application, infrared remote, battery backup, cloud control, commercial fleet management, other cities and third-party downloadable plugins are deferred. No requirement for a custom PCB in v1; bought boards and a custom harness fulfil the from-scratch assembly approach.
+Battery backup, internal batteries and UPS support are excluded by the external-only power decision. Physical weather sensors, native iOS application, infrared remote, cloud control, commercial fleet management, other cities and third-party downloadable plugins are deferred. No requirement for a custom PCB in v1; bought boards and a custom harness fulfil the from-scratch assembly approach.
 
 Resolve during engineering: exact panel/backlight behaviour, printer volume, exact board power requirements and flash partition budget, actual PRIM account quota and coverage for the chosen home, public release hosting and signing-key custody, and final local HTTPS provisioning. No private address or provider key should be committed to project documents.
 
@@ -136,3 +136,7 @@ Implementation status: local panel and shortcut callback handling implemented; t
 - Provide station locations on a map with the saved home location, mode/line identification and selection of a station to view its services. Station maps do not require moving-vehicle coordinates.
 - Uber-style moving vehicles are conditional on a verified, timestamped vehicle-position feed and its coverage/access terms. Stop-level arrival predictions alone do not establish live vehicle coordinates. Do not animate inferred positions as measured live locations.
 - Firmware 0.7.0 implements mode-prioritised paginated discovery, explicit station-area mapping, a geographic station map and the refined arrival/departure presentation, pending live rail acceptance. Street-map tiles and live vehicle coordinates are not implemented. Current five-minute polling must be reviewed against available quotas before promising continuously refreshed arrival estimates across multiple hubs.
+
+## External-only power decision — 15 November 2026
+
+[POWER_MANAGEMENT.md](POWER_MANAGEMENT.md) is authoritative for power, adapter selection, night mode, wake, offline and cold-boot behaviour. Night mode is opt-in, scheduled in the saved local timezone with DST, with dim or screen-off and 60-second touch wake. Networking and clock continue while dark; first wake gesture must not activate controls. Cold boot restores committed configuration, reconnects and refreshes automatically. No internal battery, external UPS option or RTC backup cell is specified. OTA-02–06 remain mandatory before enabling OTA delivery. Electrical, power-cut and panel acceptance remain hardware release gates.

@@ -9,6 +9,7 @@ int xQueueOverwrite(QueueHandle_t, const void *);
 #include <stdio.h>
 static uint8_t blob[STATION_SETTINGS_BYTES];
 static size_t blob_size;
+static uint8_t v2[STATION_SETTINGS_V2_BYTES];
 static int open_error, read_error, write_error, commit_error;
 static bool legacy_only, queue_fail, task_fail;
 static unsigned closes, commits, writes;
@@ -18,8 +19,8 @@ static jmp_buf done;
 struct test_queue { int unused; } queue;
 int nvs_open(const char*n,int mode,nvs_handle_t*h){assert(!strcmp(n,"station"));(void)mode;*h=1;return open_error;}
 void nvs_close(nvs_handle_t h){assert(h==1);closes++;}
-int nvs_get_blob(nvs_handle_t h,const char*k,void*out,size_t*n){(void)h;if(legacy_only&&!strcmp(k,"settings_v2"))return ESP_ERR_NVS_NOT_FOUND;if(read_error)return read_error;assert(*n>=blob_size);memcpy(out,blob,blob_size);*n=blob_size;return ESP_OK;}
-int nvs_set_blob(nvs_handle_t h,const char*k,const void*in,size_t n){(void)h;writes++;if(write_error)return write_error;if(!strcmp(k,"settings_v2")){memcpy(blob,in,n);blob_size=n;}else assert(!strcmp(k,"settings")&&n==6);return ESP_OK;}
+int nvs_get_blob(nvs_handle_t h,const char*k,void*out,size_t*n){(void)h;if(legacy_only&&(!strcmp(k,"settings_v3")||!strcmp(k,"settings_v2")))return ESP_ERR_NVS_NOT_FOUND;if(read_error)return read_error;assert(*n>=blob_size);memcpy(out,blob,blob_size);*n=blob_size;return ESP_OK;}
+int nvs_set_blob(nvs_handle_t h,const char*k,const void*in,size_t n){(void)h;writes++;if(write_error)return write_error;if(!strcmp(k,"settings_v3")){memcpy(blob,in,n);blob_size=n;}else if(!strcmp(k,"settings_v2")){assert(n==sizeof(v2));memcpy(v2,in,n);}else assert(!strcmp(k,"settings")&&n==6);return ESP_OK;}
 int nvs_commit(nvs_handle_t h){(void)h;commits++;return commit_error;}
 QueueHandle_t xQueueCreate(unsigned n,size_t size){assert(n==1&&size==sizeof(save_request_t));return queue_fail?NULL:&queue;}
 int xQueueOverwrite(QueueHandle_t q,const void*item){assert(q==&queue);queued=*(const save_request_t*)item;queued_valid=true;return pdTRUE;}
@@ -37,8 +38,9 @@ int main(void){
  open_error=0;read_error=ESP_ERR_NVS_NOT_FOUND;assert(station_settings_load(&loaded)==ESP_OK);
  read_error=ESP_FAIL;assert(station_settings_load(&loaded)==ESP_FAIL);read_error=0;
  assert(station_settings_load(&loaded)==ESP_ERR_INVALID_VERSION);
- s.brightness=42;assert(station_settings_save(&s)==ESP_OK&&writes==2&&commits==1);
- assert(station_settings_load(&loaded)==ESP_OK&&loaded.brightness==42);
+ s.brightness=42;s.night_mode=2;assert(station_settings_save(&s)==ESP_OK&&writes==3&&commits==1);
+ assert(station_settings_load(&loaded)==ESP_OK&&loaded.brightness==42&&loaded.night_mode==2);
+ assert(station_settings_decode(v2,sizeof(v2),&loaded)&&loaded.brightness==42&&loaded.night_mode==0);
  legacy_only=true;assert(station_settings_load(&loaded)==ESP_OK);legacy_only=false;
  write_error=ESP_FAIL;assert(station_settings_save(&s)==ESP_FAIL);write_error=0;
  commit_error=ESP_FAIL;assert(station_settings_save(&s)==ESP_FAIL);commit_error=0;

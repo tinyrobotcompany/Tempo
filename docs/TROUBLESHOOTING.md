@@ -39,3 +39,7 @@ The new weather reason/timing fields require building/flashing the updated firmw
 ## CI failures
 
 Open the failing job and download `host-validation-<commit>` for the test log and coverage reports. A coverage failure names the file below 80%; missing instrumentation also fails. Fix tests or behaviour rather than skipping the gate. For hardware-only failures, use private serial captures and the matching ELF; a green host CI result does not replace hardware testing.
+
+## Display dark at night
+
+Touch once to wake, release, then touch a control. Check Settings → Power & night mode and the saved timezone. Wake lasts 60 seconds from the last touch. Look for `power: Backlight` logs; UI heartbeat should continue while dark. A dark backlight is not a reboot. After total power loss with no Wi-Fi, the clock waits for synchronisation; reconnect without resetting saved settings. See [power behaviour](POWER_MANAGEMENT.md).

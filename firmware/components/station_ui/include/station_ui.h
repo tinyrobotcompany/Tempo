@@ -27,6 +27,7 @@ typedef struct {
     bool (*refresh_weather)(void);
     bool (*save)(const station_settings_t *settings);
     int (*save_state)(void);
+    /* 0 means backlight off; 1..100 means PWM brightness. False means state uncertain. */
     bool (*brightness)(unsigned percent);
     bool (*set_time)(time_t value);
     bool (*scan_wifi)(void);
@@ -39,3 +40,5 @@ typedef struct {
 } station_ui_actions_t;
 void station_ui_start(const station_settings_t *settings, station_ui_actions_t actions);
 unsigned station_ui_heartbeat(void);
+/* Called by the LVGL touch reader. Consume the complete wake gesture. */
+bool station_ui_touch(bool pressed);

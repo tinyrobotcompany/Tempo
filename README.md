@@ -17,6 +17,8 @@ Workflow badges report GitHub results once these workflows are published and run
 
 A standalone 10.1-inch ESP32-P4 touchscreen for a desk or shelf with clock, location-based weather and nearby Île-de-France public transport. Controlled locally from an iPhone browser and packaged in a 3D-printed enclosure.
 
+External mains power only: use a 5 V USB-C adapter. [Power supply purchase link, night mode and recovery behaviour](docs/POWER_MANAGEMENT.md). No internal battery or UPS.
+
 ## Project documents
 
 - [Product requirements](docs/PRD.md) — agreed scope, acceptance criteria and mandatory OTA recovery.

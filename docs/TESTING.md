@@ -38,3 +38,5 @@ The CI host job retains these reports/logs as `host-validation-<commit>` for 14 
 For every functional bug, add a test that reproduces the failure and asserts the user-visible/state result before fixing it. Prefer deterministic fake clocks and response fixtures over live Internet calls or timing sleeps. Preserve existing failure cases; do not lower the floor or exclude application code to make a patch pass. New device-specific defects also require a hardware reproduction/verification record.
 
 Before publishing firmware, complete representative on-device boot, touch, Wi-Fi reconnect, phone controls, weather/transport refresh, location changes, automatic rotation and soak tests. Record firmware version, test conditions and observed outcome. OTA power-cut and rollback acceptance remains outstanding until OTA is implemented.
+
+Power-management tests cover policy, settings migration, phone contracts and real LVGL wake/offline behaviour. Hardware qualification is listed in [POWER_MANAGEMENT.md](POWER_MANAGEMENT.md), including no-battery power cuts and real backlight/touch wake.
