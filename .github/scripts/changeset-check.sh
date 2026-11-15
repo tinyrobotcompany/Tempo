@@ -6,11 +6,6 @@ if [[ "${GITHUB_EVENT_NAME:-}" != "pull_request" ]]; then
   exit 0
 fi
 
-if [[ "${GITHUB_ACTOR:-}" == "dependabot[bot]" ]]; then
-  echo "Skipping changeset check for dependabot."
-  exit 0
-fi
-
 BASE_REF="${GITHUB_BASE_REF:-main}"
 DIFF_BASE="origin/${BASE_REF}"
 if git remote get-url origin >/dev/null 2>&1; then
@@ -26,7 +21,7 @@ else
   DIFF_BASE="$(git rev-list --max-parents=0 HEAD | tail -n1)"
 fi
 
-CHANGED_FILES="$(git diff --diff-filter=AMR --name-only "${DIFF_BASE}"...HEAD)"
+CHANGED_FILES="$(git diff --name-only "${DIFF_BASE}"...HEAD)"
 echo "Changed files:"
 echo "${CHANGED_FILES}"
 
@@ -39,8 +34,14 @@ if [[ -z "${RELEASABLE_CHANGED}" ]]; then
   exit 0
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if python3 "$SCRIPT_DIR/action-version-only.py" "$DIFF_BASE" HEAD; then
+  echo "Only pinned GitHub Action versions changed; no firmware release note required."
+  exit 0
+fi
+
 CHANGESET_FILES="$(
-  echo "${CHANGED_FILES}" | grep -E '^\.changeset/[^/]+\.md$' | grep -v '^\.changeset/README\.md$' || true
+  git diff --diff-filter=AM --name-only "${DIFF_BASE}"...HEAD | grep -E '^\.changeset/[^/]+\.md$' | grep -v '^\.changeset/README\.md$' || true
 )"
 
 if [[ -n "${CHANGESET_FILES}" ]]; then
