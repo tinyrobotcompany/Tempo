@@ -1,0 +1,27 @@
+[
+  {
+    "name": "lvgl",
+    "sha256": "14ade7dabcb7857549cfe7a0533b99079fca0820ecfec5a6189c82debdfabef6",
+    "url": "https://components-file.espressif.com/components/lvgl/lvgl/9.5.0/download/c626fb4a-df30-4428-9542-e2db06f6f97a.zip",
+    "local": ".espressif/tools/components/lvgl/lvgl/9.5.0/lvgl__lvgl-v9.5.0.zip",
+    "archive": true,
+    "local_sha256": "95bd2126bdcc8ccd3407eff7c9e76687e41a8a4312bac1538b3d644b461c07fb",
+    "archive_prefix": "lvgl/"
+  },
+  {
+    "name": "cjson",
+    "sha256": "a87ffc378cefd2346eaca749a428679ef6627ace809a88cdd702c8be04356c47",
+    "url": "https://components.espressif.com/api/downloads/?object_id=6abd1ce4-76b5-434f-b3c2-e0d51f6734f3&object_type=component",
+    "local": ".espressif/tools/components/espressif/cjson/1.7.19~2/espressif__cjson-v1.7.19_2.zip",
+    "archive": true,
+    "local_sha256": "2e13f18fa612d85eeec4001dee87b246beac64cf019bc28d4c4e2e1910adc7f1",
+    "archive_prefix": "cjson/"
+  },
+  {
+    "name": "embed.cmake",
+    "sha256": "5f4e716c04f0c5c07b6cb9faf5de14deaa0d10e43e12211f040967b152781568",
+    "url": "https://raw.githubusercontent.com/espressif/esp-idf/fff9895c82d744c7237be8847347bdd1b07c6643/tools/cmake/scripts/data_file_embed_asm.cmake",
+    "local": ".espressif/v6.1/esp-idf/tools/cmake/scripts/data_file_embed_asm.cmake",
+    "archive": false
+  }
+]

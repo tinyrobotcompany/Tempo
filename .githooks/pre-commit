@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+# Test the index, not unstaged edits that might hide a broken commit.
+mkdir -p build-host
+snapshot="$(mktemp -d "$root/build-host/commit-test.XXXXXX")"
+trap 'rm -rf "$snapshot"' EXIT
+before="$(git write-tree)"
+git checkout-index --all --prefix="$snapshot/"
+export TEMPO_TEST_CACHE="$root/build-host/dependencies"
+# Do not let repository environment inherited from Git redirect test-created repos.
+(
+while IFS= read -r name; do unset "$name"; done < <(git rev-parse --local-env-vars)
+echo 'Running every Tempo test against the staged commit...'
+bash "$snapshot/scripts/test-all.sh"
+)
+cd "$root"
+[[ "$(git write-tree)" == "$before" ]] || { echo 'Index changed while tests ran; commit again.' >&2; exit 1; }

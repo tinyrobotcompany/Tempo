@@ -22,7 +22,9 @@ time_t test_time(time_t *t){time_t now=1794499201+us/1000000;if(t)*t=now;return 
 int64_t esp_timer_get_time(void){return us;}
 void station_network_status(station_network_status_t*s){*s=home;}
 int xTaskCreate(void(*fn)(void*),const char*n,unsigned stack,void*a,unsigned p,void*h){(void)n;(void)stack;(void)a;(void)p;(void)h;worker=fn;return pdPASS;}
-void test_log(const char*t,const char*f,...){(void)t;(void)f;}
+static char last_log[512];
+void test_log(const char*t,const char*f,...){(void)t;va_list args;va_start(args,f);vsnprintf(last_log,sizeof(last_log),f,args);va_end(args);
+ assert(!strstr(last_log,"latitude")&&!strstr(last_log,"longitude")&&!strstr(last_log,"https://"));}
 const char*esp_err_to_name(int e){return e==ESP_OK?"OK":"FAIL";}
 void esp_crt_bundle_attach(void){}
 void*esp_http_client_init(esp_http_client_config_t*c){config=*c;assert(strstr(c->url,"https://api.open-meteo.com/")&&c->crt_bundle_attach&&c->disable_auto_redirect);return &config;}
@@ -53,9 +55,9 @@ void vTaskDelay(unsigned ticks){
  case 4:assert(s.state==WEATHER_READY&&s.data.valid&&fetches==1&&!s.stale);assert(!station_weather_refresh());home.connected=false;us+=1000000;break;
  case 5:assert(s.state==WEATHER_WIFI&&s.data.valid&&fetches==1);home.connected=true;us+=59000000;break;
  case 6:assert(s.state==WEATHER_READY&&fetches==2);response=HTTP_ERROR;us+=60000000;assert(station_weather_refresh());break;
- case 7:assert(s.state==WEATHER_RETRY&&s.data.valid&&fetches==3);response=BAD_JSON;us+=60000000;break;
- case 8:assert(s.state==WEATHER_RETRY&&s.data.valid&&fetches==4);response=OVERSIZE;us+=120000000;break;
- case 9:assert(s.state==WEATHER_RETRY&&s.data.valid&&fetches==5);response=GOOD;us+=240000000;move_during_fetch=true;break;
+ case 7:assert(strstr(last_log,"reason=http")&&strstr(last_log,"elapsed="));assert(s.state==WEATHER_RETRY&&s.data.valid&&fetches==3);response=BAD_JSON;us+=60000000;break;
+ case 8:assert(strstr(last_log,"reason=parse"));assert(s.state==WEATHER_RETRY&&s.data.valid&&fetches==4);response=OVERSIZE;us+=120000000;break;
+ case 9:assert(strstr(last_log,"reason=overflow"));assert(s.state==WEATHER_RETRY&&s.data.valid&&fetches==5);response=GOOD;us+=240000000;move_during_fetch=true;break;
  case 10:assert(fetches==6&&s.location_generation==1&&home.location_generation==2);break;
  case 11:assert(fetches==7&&s.location_generation==2&&s.state==WEATHER_READY&&!strcmp(s.location,"London / GB"));home.connected=false;us+=1801000000LL;break;
  case 12:assert(s.state==WEATHER_WIFI&&s.stale&&s.data.valid&&fetches==7);home.connected=true;break;

@@ -38,10 +38,16 @@ static esp_err_t fetch(const station_network_status_t *home,station_weather_data
         .event_handler=receive_body,.user_data=response,.disable_auto_redirect=true};
     esp_http_client_handle_t client=esp_http_client_init(&config);
     if(!client){free(response);return ESP_ERR_NO_MEM;}
+    int64_t started=esp_timer_get_time();
     esp_err_t err=esp_http_client_perform(client);int http=esp_http_client_get_status_code(client);
-    if(err==ESP_OK && (http!=200||response->overflow||!station_weather_parse(response->body,time(NULL),data)))err=ESP_FAIL;
+    const char *reason=err==ESP_OK?"ok":"transport";
+    if(response->overflow){reason="overflow";err=ESP_FAIL;}
+    else if(err==ESP_OK && http!=200){reason="http";err=ESP_FAIL;}
+    else if(err==ESP_OK && !station_weather_parse(response->body,time(NULL),data)){reason="parse";err=ESP_FAIL;}
     /* Do not log request URLs, coordinates, credentials or response bodies. */
-    ESP_LOGI(TAG,"Fetch complete: HTTP %d, %u bytes, %s",http,(unsigned)response->used,esp_err_to_name(err));
+    ESP_LOGI(TAG,"Fetch complete: HTTP %d, %u bytes, %s, reason=%s, elapsed=%lld ms, generation=%u",
+             http,(unsigned)response->used,esp_err_to_name(err),reason,
+             (long long)((esp_timer_get_time()-started)/1000),home->location_generation);
     esp_http_client_cleanup(client);free(response);return err;
 }
 void station_weather_status(station_weather_snapshot_t *result)

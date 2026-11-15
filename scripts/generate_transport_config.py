@@ -12,6 +12,11 @@ if source.exists():
   if not line or line.startswith('#') or '=' not in line:continue
   name,value=line.split('=',1)
   if name.strip().removeprefix('export ')=='IDFM_PRIM_API_KEY':count+=1;key=value.strip().strip('\"\'')
+if os.environ.get('TEMPO_CI_BUILD') == '1':
+ if source.exists():raise SystemExit('CI transport fixture requires a checkout without .env.')
+ # Non-secret sentinel keeps production transport branches in the linked image.
+ # Empty credentials otherwise let the compiler remove buffers the PSRAM gate checks.
+ key='tempo-ci-placeholder-not-a-credential'
 if count>1 or len(key)>512 or any(ord(c)<33 or ord(c)>126 for c in key):raise SystemExit('Invalid transport API key configuration (value withheld).')
 text='#pragma once\n#define STATION_PRIM_API_KEY '+json.dumps(key)+'\n'
 out=Path(args.output);out.parent.mkdir(parents=True,exist_ok=True)
