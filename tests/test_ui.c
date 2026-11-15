@@ -257,7 +257,14 @@ int main(int argc,char **argv){
  assert(station_ui_touch(true));assert(backlight==65);assert(station_ui_touch(true));assert(station_ui_touch(false));assert(!station_ui_touch(false));
  for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
  test_now+=8*3600;for(unsigned i=0;i<10;i++)tick();assert(backlight==65);
- status.source=TIME_UNSET;test_now-=8*3600;tick();assert(backlight==65);
+ /* Cross into screen-off before the next power timer: first gesture must not click through. */
+ test_now-=8*3600;
+ assert(backlight==65);
+ assert(station_ui_touch(true));assert(backlight==65);
+ assert(station_ui_touch(true));assert(station_ui_touch(false));assert(!station_ui_touch(false));
+ assert(!station_ui_touch(true));assert(!station_ui_touch(false)); /* next gesture works while awake */
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ status.source=TIME_UNSET;tick();assert(backlight==65);
  click("Settings");click("Power & night mode");shot("power-night-mode");click("Save night mode");assert(saved.night_mode==2);
  status.connected=false;transit.generation=status.location_generation;transit.valid=true;transit.row_count=1;transit.fetched_at=test_now;transit.state=TRANS_READY;
  click("Transport");assert(contains_text(lv_screen_active(),"Offline · saved"));assert(!contains_text(lv_screen_active(),"Arrives "));

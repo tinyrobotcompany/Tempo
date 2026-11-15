@@ -1121,11 +1121,17 @@ static void show_view(station_view_t next)
     else if(view==VIEW_WEATHER) weather_view();
     else transport_view();
 }
-static void update_power(void)
+static unsigned power_target(bool *clock_trusted)
 {
     time_t now=time(NULL);struct tm local={0};
     bool valid=network.source!=TIME_UNSET && localtime_r(&now,&local)!=NULL;
-    unsigned level=station_power_brightness(&settings,valid,(unsigned)(local.tm_hour*60+local.tm_min),elapsed_ms,awake_until_ms);
+    if(clock_trusted)*clock_trusted=valid;
+    return station_power_brightness(&settings,valid,(unsigned)(local.tm_hour*60+local.tm_min),elapsed_ms,awake_until_ms);
+}
+static void update_power(void)
+{
+    bool valid;
+    unsigned level=power_target(&valid);
     if(level!=requested_brightness){requested_brightness=level;brightness_retry_ms=0;}
     if((!brightness_failed&&level==applied_brightness)||elapsed_ms<brightness_retry_ms)return;
     if(actions.brightness && actions.brightness(level)) {
@@ -1148,7 +1154,10 @@ static void update_power(void)
 bool station_ui_touch(bool pressed)
 {
     if(pressed) {
-        if(requested_brightness==0||applied_brightness==0||brightness_failed)consume_wake_touch=true;
+        /* Check current policy before extending wake: the schedule can change between ticks.
+         * Keep the latch until release, even when the wake brightness succeeds immediately. */
+        if(power_target(NULL)==0||requested_brightness==0||applied_brightness==0||brightness_failed)
+            consume_wake_touch=true;
         awake_until_ms=elapsed_ms+60000;
         update_power();
     }
