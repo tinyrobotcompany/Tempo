@@ -26,6 +26,7 @@ External mains power only: use a 5 V USB-C adapter. [Power supply purchase link,
 - [Electronics and assembly BOM](docs/BOM.md) — quantities, manufacturer links and display procurement checks.
 - [Development and first hardware run](docs/DEVELOPMENT.md) — firmware status, build commands and verification.
 - [Sources](docs/SOURCES.md) — primary references and validation limits.
+- [Printed case CAD](mechanical/README.md) — parametric build123d case with colours set in `mechanical/colourway.toml`; [concept mock-ups](docs/design/enclosure/enclosure-mockups.html).
 
 Current platform: the already-owned Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1 kit, with 32 MB flash and PSRAM. Embedded firmware runs the display and serves the iPhone control panel; no Raspberry Pi is required. This supersedes the earlier 14-inch/Pi proposal.
 
