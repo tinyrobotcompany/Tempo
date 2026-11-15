@@ -44,6 +44,17 @@ if [[ -n "${CHANGESET_FILES}" ]]; then
   exit 0
 fi
 
+# A release-preparation PR consumes pending notes into versioned release notes.
+# Require all three release outputs and validate that no pending notes remain.
+if echo "$CHANGED_FILES" | grep -qx 'firmware/CMakeLists.txt' &&
+   echo "$CHANGED_FILES" | grep -qx 'CHANGELOG.md' &&
+   echo "$CHANGED_FILES" | grep -qE '^docs/releases/[0-9]+\.[0-9]+\.[0-9]+\.md$'; then
+  RELEASE_TAG="$(python3 -c 'import re,pathlib; print("v"+re.search(r"project\(weather_station VERSION ([0-9.]+)\)",pathlib.Path("firmware/CMakeLists.txt").read_text()).group(1))')"
+  python3 scripts/release.py check --tag "$RELEASE_TAG"
+  echo "Validated release preparation; pending notes have been consumed."
+  exit 0
+fi
+
 echo "::error::Releasable changes detected without a changeset file."
 echo "::error::Add one file under .changeset/ (excluding README.md)."
 echo "::error::See .changeset/README.md for the required format."

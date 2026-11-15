@@ -12,7 +12,7 @@ const context={URLSearchParams,TextEncoder,Date,console,setTimeout,clearTimeout,
  StationLocation:{editor:()=>({get:()=>candidate,choose:p=>{candidate=p;}})},
  StationConnection:{create:config=>{options=config;return{connected:()=>connected,start:()=>config.onState({phase:'connecting',failures:0}),wake:()=>{},request:()=>Promise.resolve()};}}
 };
-vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),context);
+vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),context,{filename:require('node:path').resolve('firmware/main/web/app.js')});
 assert(element('saveSettings').disabled);assert(element('locate').disabled);
 const settings={name:'Simon',brightness:75,theme:1,font:0,dwell:20,color:0x123456,rotate:false};
 const status={settings,location:{valid:true,latitude:48,longitude:2,name:'Home',timezone:'Europe/Paris'},shortcutAvailable:true};
@@ -36,7 +36,7 @@ console.log('PASS: actual phone page retains edits/map during reconnect and rest
   StationShortcut:{consumeVerified:()=>{parsed=true;return{point:returned};}},
   StationConnection:{create:config=>{callbackOptions=config;return{connected:()=>true,start:()=>{},wake:()=>{},request:async(path,body)=>{calls.push({path,body});assert.equal(path,'location-request');assert.equal(body.action,'validate');assert.equal(body.state,'b'.repeat(32));return{state:body.state};}};}}
  };
- vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),fresh);
+ vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),fresh,{filename:require('node:path').resolve('firmware/main/web/app.js')});
  assert(!parsed);callbackOptions.onState({phase:'connected',failures:0});callbackOptions.onStatus(status);
  for(let i=0;i<10;i++)await Promise.resolve();
  assert(parsed);assert.equal(candidate,returned);assert.equal(calls.length,1);
@@ -47,7 +47,7 @@ console.log('PASS: actual phone page retains edits/map during reconnect and rest
 setImmediate(async()=>{
  let saveOptions,rejectStatus;
  const saveContext={...context,StationConnection:{create:config=>{saveOptions=config;return{connected:()=>true,start:()=>{},wake:()=>{},request:()=>new Promise((resolve,reject)=>{rejectStatus=reject;})};}}};
- vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),saveContext);
+ vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),saveContext,{filename:require('node:path').resolve('firmware/main/web/app.js')});
  saveOptions.onState({phase:'connected',failures:0});saveOptions.onStatus(status);
  const saving=element('saveLocation').onclick();
  assert.equal(element('saveLocation').textContent,'Saving location…');assert(element('saveLocation').disabled);
@@ -60,7 +60,7 @@ setImmediate(async()=>{
 setImmediate(async()=>{
  let viewOptions,finish;buttons[0].dataset={view:'0'};buttons[0].textContent='Clock';
  const viewContext={...context,StationConnection:{create:config=>{viewOptions=config;return{connected:()=>true,start:()=>{},wake:()=>{},request:()=>new Promise(resolve=>{finish=resolve;})};}}};
- vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),viewContext);
+ vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),viewContext,{filename:require('node:path').resolve('firmware/main/web/app.js')});
  viewOptions.onState({phase:'connected',failures:0});viewOptions.onStatus(status);
  const request=buttons[0].onclick();assert.equal(buttons[0].textContent,'Opening…');assert(buttons.every(b=>b.disabled));
  assert.equal(element('message').textContent,'Changing the display view…');finish();await request;

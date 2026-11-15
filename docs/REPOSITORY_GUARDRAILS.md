@@ -17,7 +17,7 @@ Tests include core/settings/calendar, networking, weather, transport/parser/filt
 
 ## Pull requests and CI
 
-- `All Unit Tests`: full macOS host suite, exactly the same runner as the commit hook.
+- `All Unit Tests`: full macOS host suite (unit, host integration and regression), exactly the same runner as the commit hook; enforced 80% coverage gates and retained CI reports. See [testing scope](TESTING.md).
 - `ESP32-P4 Build`: clean build with the tested immutable ESP-IDF revision, no production token, and linked PSRAM placement checks. No flashing.
 - `Changeset Check`: required change note for firmware, companion, tests, scripts, hooks and workflow changes.
 - `Branch Name` / `PR Title (Conventional Commits)`: template naming conventions.
@@ -50,6 +50,6 @@ Alternatively a repository administrator can configure the listed required check
 
 ## Releases and intentionally excluded template features
 
-A pushed `vX.Y.Z` tag runs full CI and security validation, verifies the commit belongs to main and matches firmware/CMakeLists.txt, then creates a **draft source release**. No binary with embedded credentials is uploaded, no device is flashed, and this is not OTA. Version selection remains explicit; Changesets do not independently rewrite the embedded firmware version.
+A pushed `vX.Y.Z` tag runs full CI and security validation, verifies the commit belongs to main and matches firmware/CMakeLists.txt, then creates a **draft source release**. No binary with embedded credentials is uploaded, no device is flashed, and this is not OTA. Release preparation uses `python3 scripts/release.py prepare` to calculate the highest pending change-note bump and update the embedded firmware version and release history together. Tags must match that version and checked-in notes. See [Release strategy](RELEASING.md).
 
 Azure/IaC deployments, .NET, Swift app builds, TestFlight, project-board automation and quant/agent services are not applicable to this standalone firmware/browser project and are not copied. The native Shortcut test is retained. Device OTA remains a separate outstanding product requirement.

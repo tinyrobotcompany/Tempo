@@ -65,7 +65,7 @@ test_releasable_with_changeset_passes() {
   echo "code" >> "$repo/firmware/a.txt"
   cat > "$repo/.changeset/test.md" <<'EOF'
 ---
-"voxa": patch
+"tempo": patch
 ---
 firmware fix
 EOF
@@ -85,6 +85,30 @@ test_non_pr_event_skips() {
     bash "$SCRIPT"
   ) || fail "non-PR event should skip"
 }
+
+test_release_preparation_passes_and_missing_notes_fail() {
+  local repo
+  repo="$(new_repo_with_main)"
+  mkdir -p "$repo/scripts"
+  cp "$ROOT/scripts/release.py" "$repo/scripts/release.py"
+  echo 'project(weather_station VERSION 0.8.16)' > "$repo/firmware/CMakeLists.txt"
+  printf '%s\n' '---' '"tempo": patch' '---' 'Test release.' > "$repo/.changeset/release.md"
+  git -C "$repo" add .
+  git -C "$repo" commit -q -m 'release baseline'
+  git -C "$repo" branch -f main HEAD
+  python3 "$repo/scripts/release.py" prepare
+  git -C "$repo" add .
+  git -C "$repo" commit -q -m 'prepare release'
+  run_check "$repo" || fail "valid release preparation should pass"
+  rm "$repo/docs/releases/0.8.17.md"
+  git -C "$repo" add .
+  git -C "$repo" commit -q -m 'remove required notes'
+  if run_check "$repo"; then
+    fail "release without notes should fail"
+  fi
+}
+
+test_release_preparation_passes_and_missing_notes_fail
 
 test_non_releasable_change_passes
 test_releasable_without_changeset_fails

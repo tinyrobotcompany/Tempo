@@ -24,8 +24,23 @@ jobs:
           node-version: 22
       - name: Install host validation tools
         run: brew install cmake actionlint
+      - name: Validate release change notes
+        run: python3 scripts/release.py check
       - name: Run complete test suite
         run: bash scripts/test-all.sh
+      - name: Retain test logs and coverage reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: host-validation-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            build-host/test-results/latest.log
+            build-host/coverage/firmware.json
+            build-host/coverage/unit.json
+            build-host/coverage/browser.txt
+            build-host/coverage/html/
   firmware:
     name: ESP32-P4 Build
     runs-on: ubuntu-24.04
