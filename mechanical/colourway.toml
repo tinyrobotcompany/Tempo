@@ -1,0 +1,41 @@
+# Tempo case colours.
+#
+# The case has three colour zones, each printed as separate parts in one filament:
+#   band  - the trim band round the glass (two halves)
+#   shell - the rear shell (and the calibration coupon)
+#   stand - the desk stand
+#
+# Pick a preset with `use`, or add your own. A preset may also give a single
+# part its own colour, e.g. a two-tone band:
+#   [presets.my-preset.parts]
+#   band_right = { filament = "PETG White", hex = "#F2F2F0" }
+#
+# Rebuild after editing:   cd mechanical/cad && uv run python -m tempo_case.build
+# Or try a preset once:    uv run python -m tempo_case.build --preset segment-orange
+
+use = "tempo-teal"
+
+[presets.tempo-teal]
+band  = { filament = "PETG Teal", hex = "#3FD8C4" }
+shell = { filament = "PETG Charcoal", hex = "#22272D" }
+stand = { filament = "PETG Teal", hex = "#3FD8C4" }
+
+[presets.segment-orange]
+band  = { filament = "PETG Orange", hex = "#F2862E" }
+shell = { filament = "PETG Charcoal", hex = "#22272D" }
+stand = { filament = "PETG Orange", hex = "#F2862E" }
+
+[presets.chalk-coral]
+band  = { filament = "PETG Coral", hex = "#E8604C" }
+shell = { filament = "PETG Off-white", hex = "#E7E3DA" }
+stand = { filament = "PETG Coral", hex = "#E8604C" }
+
+[presets.sage]
+band  = { filament = "PETG Pale Sage", hex = "#C9D3A4" }
+shell = { filament = "PETG Forest", hex = "#3A4A42" }
+stand = { filament = "PETG Pale Sage", hex = "#C9D3A4" }
+
+[presets.stealth]
+band  = { filament = "PETG Grey", hex = "#5B6470" }
+shell = { filament = "PETG Black", hex = "#141619" }
+stand = { filament = "PETG Black", hex = "#141619" }
