@@ -42,6 +42,18 @@ The helper sends only `OPENAI_API_KEY` and, if present, `REPO_ADMIN_TOKEN` to ti
 
 The workflow must first be merged into main before pull_request_target can execute it from the trusted base. This initial infrastructure PR therefore needs normal human review; subsequent PRs get automated review. Do not claim the first PR was automatically reviewed before bootstrap.
 
+### Review author identity
+
+Every review includes a visible **Codex Code Review** heading. GitHub derives the author from the authentication token; changing the heading or workflow name cannot rename the author. The built-in workflow token posts as `github-actions[bot]`, not the person who triggered the workflow. Reviews posted separately using a personal access token appear under that person's account.
+
+To use a dedicated Codex review bot:
+
+1. Register a GitHub App with the display name **Codex Code Review** (or an available organization-specific variant). Disable webhooks; this app only authenticates outbound API calls. Grant repository **Pull requests: Read and write** permission and install it on this repository.
+2. Set the Actions repository variable `CODEX_REVIEW_APP_ID` to its app ID.
+3. Generate an app private key and store the PEM as the Actions repository secret `CODEX_REVIEW_APP_PRIVATE_KEY`. The existing secret-sync helper does not upload this key.
+
+The workflow uses [actions/create-github-app-token](https://github.com/actions/create-github-app-token) to obtain a short-lived installation token scoped to the current repository and revoke it after the job. Reviews then appear under the app's bot identity (`<app-slug>[bot]`). If the app ID is absent, reviews use `github-actions[bot]`; an invalid configured app/key fails the job instead of silently falling back. Remove the app ID variable to return to the built-in bot. Existing reviews keep their original authors. Because the workflow uses trusted base files, this change takes effect after it is merged into main.
+
 ## Required checks — activation is separate from workflow files
 
 `.github/required-checks.json` lists the stable contexts for main. `Ensure Required Checks` maintains an active, strict ruleset and prohibits deletion/force-push. It creates no bypass actors and preserves existing restrictions. It needs a repository-scoped fine-grained `REPO_ADMIN_TOKEN` with Administration: write, stored as a GitHub Actions secret. This is separate from the OpenAI API key. Without it the configuration job fails visibly; YAML files alone do not enforce merging rules.

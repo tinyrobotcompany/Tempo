@@ -29,10 +29,11 @@ function run(scenario,key='test-placeholder',overrides={}){
  };
  `);
  const result=spawnSync(process.execPath,['--import',join(temp,'mock.mjs'),'.github/scripts/codex-pr-review.mjs'],{cwd:root,encoding:'utf8',env:{...process.env,GITHUB_EVENT_PATH:join(temp,'event.json'),GITHUB_REPOSITORY:'tinyrobotcompany/Tempo',GITHUB_TOKEN:'test-placeholder',OPENAI_API_KEY:key,...overrides}});
- return {status:result.status,posted:existsSync(join(temp,'posted.json')),output:result.stdout+result.stderr};
+ return {status:result.status,posted:existsSync(join(temp,'posted.json')),review:existsSync(join(temp,'posted.json'))?JSON.parse(readFileSync(join(temp,'posted.json'),'utf8')):null,output:result.stdout+result.stderr};
  }finally{rmSync(temp,{recursive:true,force:true});}
 }
 test('complete review posts against exact head even for release-like branch names',()=>{const r=run('clean');assert.equal(r.status,0,r.output);assert.ok(r.posted);});
+for(const scenario of ['clean','blocking'])test(`${scenario} review visibly identifies Codex Code Review`,()=>{const r=run(scenario);assert.ok(r.review,r.output);assert.ok(r.review.body.startsWith(`<!-- codex-review:${'a'.repeat(40)} -->\n## Codex Code Review\n\n`));assert.equal(r.review.event,'COMMENT');});
 for(const scenario of ['api-error','incomplete','invalid','large','moved'])test(`${scenario} fails closed without a success comment`,()=>{const r=run(scenario);assert.notEqual(r.status,0);assert.equal(r.posted,false);});
 test('blocking findings are posted and fail the check',()=>{const r=run('blocking');assert.notEqual(r.status,0);assert.ok(r.posted);});
 test('missing key fails',()=>assert.notEqual(run('clean','').status,0));
