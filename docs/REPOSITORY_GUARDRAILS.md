@@ -25,6 +25,7 @@ Tests include core/settings/calendar, networking, weather, transport/parser/filt
 - `CodeQL Scripts`: JavaScript, Python and GitHub Actions, with a high-severity SARIF gate.
 - `CI Required` and `Security Audit Required`: fail unless every dependency succeeds; cancellations/skips do not count as success.
 - Dependabot maintains GitHub Actions pins; CODEOWNERS and the PR template provide review ownership and evidence prompts.
+- CodeQL action updates are grouped into one Dependabot PR: `init` and `analyze` must use the same commit because they share versioned configuration. The local suite checks this invariant. Keep both steps together when resolving or replacing dependency PRs; do not bypass security or changeset checks to accept a partial update.
 
 C firmware validation is build + host tests + sanitizers, not a claim of complete C static analysis. Hardware, timing, display DMA and provider behaviour still require device testing.
 

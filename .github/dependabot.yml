@@ -5,3 +5,8 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # CodeQL init and analyze exchange versioned configuration and must match.
+      codeql:
+        patterns:
+          - "github/codeql-action/*"
