@@ -1160,6 +1160,10 @@ bool station_ui_touch(bool pressed)
             consume_wake_touch=true;
         awake_until_ms=elapsed_ms+60000;
         update_power();
+        /* The wake attempt itself can fail. Never forward that same press until
+         * a nonzero requested level has been confirmed by the driver. */
+        if(brightness_failed||applied_brightness==0||applied_brightness!=requested_brightness)
+            consume_wake_touch=true;
     }
     bool consumed=consume_wake_touch;
     if(!pressed)consume_wake_touch=false;

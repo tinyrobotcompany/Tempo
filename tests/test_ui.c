@@ -248,8 +248,10 @@ int main(int argc,char **argv){
  assert(station_ui_touch(true));assert(station_ui_touch(false));
  brightness_failure=true;for(unsigned i=0;i<600;i++)tick();assert(backlight==0);
  unsigned failed_calls=brightness_calls;for(unsigned i=0;i<20;i++)tick();assert(brightness_calls==failed_calls);
- assert(station_ui_touch(true));assert(station_ui_touch(false));
- assert(station_ui_touch(true));assert(station_ui_touch(false)); /* unknown state: no click-through */
+ /* Off failed after changing the hardware: confirmed/applied state is still the old 65%.
+  * Wake also fails; every gesture must be consumed throughout retry backoff. */
+ assert(station_ui_touch(true));assert(brightness_calls==failed_calls+1);assert(station_ui_touch(false));
+ assert(station_ui_touch(true));assert(station_ui_touch(false));assert(brightness_calls==failed_calls+1);
  brightness_failure=false;for(unsigned i=0;i<55;i++)tick();assert(backlight==65);
  assert(!station_ui_touch(true));assert(!station_ui_touch(false));
  for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
@@ -264,6 +266,17 @@ int main(int argc,char **argv){
  assert(station_ui_touch(true));assert(station_ui_touch(false));assert(!station_ui_touch(false));
  assert(!station_ui_touch(true));assert(!station_ui_touch(false)); /* next gesture works while awake */
  for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ /* A dim-to-awake driver failure occurs inside the first press, not before it. */
+ initial.night_mode=1;
+ phone_command=(station_phone_command_t){.change_settings=true,.settings=initial};phone_pending=true;tick();
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==10);
+ brightness_failure=true;
+ assert(station_ui_touch(true));assert(station_ui_touch(false));
+ assert(station_ui_touch(true));assert(station_ui_touch(false));
+ brightness_failure=false;for(unsigned i=0;i<55;i++)tick();assert(backlight==65);
+ assert(!station_ui_touch(true));assert(!station_ui_touch(false));
+ initial.night_mode=2;
+ phone_command=(station_phone_command_t){.change_settings=true,.settings=initial};phone_pending=true;tick();
  status.source=TIME_UNSET;tick();assert(backlight==65);
  click("Settings");click("Power & night mode");shot("power-night-mode");click("Save night mode");assert(saved.night_mode==2);
  status.connected=false;transit.generation=status.location_generation;transit.valid=true;transit.row_count=1;transit.fetched_at=test_now;transit.state=TRANS_READY;
