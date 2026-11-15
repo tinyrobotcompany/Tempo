@@ -108,6 +108,26 @@ test_release_preparation_passes_and_missing_notes_fail() {
   fi
 }
 
+test_remote_main_advance_preserves_merge_base() {
+  local remote checkout shallow
+  remote="$(new_repo_with_main)"
+  echo code >> "$remote/firmware/a.txt"
+  printf '%s\n' '---' '"tempo": patch' '---' 'Remote history regression.' > "$remote/.changeset/remote.md"
+  git -C "$remote" add .
+  git -C "$remote" commit -q -m 'feature with note'
+  checkout="$(mktemp -d)"
+  git clone -q --branch feature/test "file://$remote" "$checkout"
+  git -C "$remote" checkout -q main
+  echo newer > "$remote/newer.txt"
+  git -C "$remote" add .
+  git -C "$remote" commit -q -m 'main advances after checkout'
+  run_check "$checkout" || fail 'advanced remote main must retain its merge base'
+  shallow="$(mktemp -d)"
+  git clone -q --depth=1 --branch feature/test "file://$remote" "$shallow"
+  run_check "$shallow" || fail 'shallow checkout must recover ancestry before comparison'
+}
+
+test_remote_main_advance_preserves_merge_base
 test_release_preparation_passes_and_missing_notes_fail
 
 test_non_releasable_change_passes
