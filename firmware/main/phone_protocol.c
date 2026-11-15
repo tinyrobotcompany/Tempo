@@ -37,6 +37,15 @@ bool station_phone_parse_settings(const cJSON *j,station_settings_t *s)
        !cJSON_IsBool(rotate)||!string(j,"name",s->user_name,sizeof(s->user_name)))return false;
     s->brightness=brightness;s->theme=theme;s->custom_color=color;s->clock_font=font;
     s->rotate=cJSON_IsTrue(rotate);s->dwell_seconds=dwell;
+    const char *keys[]={"nightMode","nightBrightness","nightStart","nightEnd"};
+    unsigned present=0;for(unsigned i=0;i<4;i++)present+=cJSON_GetObjectItemCaseSensitive(j,keys[i])!=NULL;
+    if(present) {
+        double mode,level,start,end;
+        if(present!=4||!number(j,keys[0],0,2,&mode)||!number(j,keys[1],1,100,&level)||
+           !number(j,keys[2],0,1439,&start)||!number(j,keys[3],0,1439,&end)||
+           floor(mode)!=mode||floor(level)!=level||floor(start)!=start||floor(end)!=end)return false;
+        s->night_mode=mode;s->night_brightness=level;s->night_start=start;s->night_end=end;
+    }
     return station_settings_valid(s);
 }
 bool station_phone_parse_home(const cJSON *j,char coordinates[64],char name[64])

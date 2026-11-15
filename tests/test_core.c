@@ -83,5 +83,28 @@ int main(void)
     assert(scan.count==STATION_MAX_NETWORKS);
     assert(strcmp(scan.networks[0].ssid,"Guest")==0);
     assert(strcmp(scan.networks[1].ssid,"Home")==0);
+    station_settings_t power=station_defaults();
+    assert(station_power_brightness(&power,true,0,1000,0)==65);
+    power.night_mode=1;
+    assert(station_power_brightness(&power,false,0,1000,0)==65);
+    assert(station_power_brightness(&power,true,1440,1000,0)==65);
+    assert(station_power_brightness(&power,true,1380,1000,0)==10);
+    assert(station_power_brightness(&power,true,419,1000,0)==10);
+    assert(station_power_brightness(&power,true,420,1000,0)==65);
+    assert(station_power_brightness(&power,true,1379,1000,0)==65);
+    assert(station_power_brightness(&power,true,0,1000,1001)==65);
+    power.night_brightness=90;assert(station_power_brightness(&power,true,0,1000,0)==65);
+    power.night_mode=2;assert(station_power_brightness(&power,true,0,1000,1000)==0);
+    power.night_start=60;power.night_end=120;
+    assert(station_power_brightness(&power,true,60,0,0)==0);
+    assert(station_power_brightness(&power,true,120,0,0)==65);
+    station_settings_t restored;
+    station_settings_encode(&power,encoded);assert(station_settings_decode(encoded,sizeof(encoded),&restored));
+    assert(restored.night_mode==2&&restored.night_start==60&&restored.night_end==120);
+    encoded[0]=2;assert(station_settings_decode(encoded,STATION_SETTINGS_V2_BYTES,&restored));assert(restored.night_mode==0);
+    power.night_end=60;assert(!station_settings_valid(&power));
+    power.night_end=1440;assert(!station_settings_valid(&power));
+    power.night_end=120;power.night_brightness=0;assert(!station_settings_valid(&power));
+    power.night_brightness=10;power.night_mode=3;assert(!station_settings_valid(&power));
     puts("PASS: settings validation, rotation, calendar/DST and digit rendering");
 }

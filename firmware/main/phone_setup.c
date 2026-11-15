@@ -104,6 +104,8 @@ static esp_err_t status_get(httpd_req_t *r)
     cJSON_AddStringToObject(settings,"name",s.user_name);cJSON_AddNumberToObject(settings,"brightness",s.brightness);
     cJSON_AddNumberToObject(settings,"theme",s.theme);cJSON_AddNumberToObject(settings,"color",s.custom_color);
     cJSON_AddNumberToObject(settings,"font",s.clock_font);cJSON_AddBoolToObject(settings,"rotate",s.rotate);cJSON_AddNumberToObject(settings,"dwell",s.dwell_seconds);
+    cJSON_AddNumberToObject(settings,"nightMode",s.night_mode);cJSON_AddNumberToObject(settings,"nightBrightness",s.night_brightness);
+    cJSON_AddNumberToObject(settings,"nightStart",s.night_start);cJSON_AddNumberToObject(settings,"nightEnd",s.night_end);
     cJSON_AddNumberToObject(j,"view",v);cJSON_AddBoolToObject(j,"connected",net.connected);
     cJSON_AddNumberToObject(j,"saveState",station_settings_save_state());
 #ifdef STATION_HAS_LOCATION_SHORTCUT
@@ -157,6 +159,7 @@ static esp_err_t post(httpd_req_t *r)
         }
     } else {
         station_phone_command_t cmd={0};
+        portENTER_CRITICAL(&mux);cmd.settings=current_settings;portEXIT_CRITICAL(&mux);
         if(!strcmp(r->uri,"/api/settings")) {cmd.change_settings=true;valid=station_phone_parse_settings(j,&cmd.settings);}
         else {const cJSON *v=cJSON_GetObjectItemCaseSensitive(j,"view");valid=cJSON_IsNumber(v)&&isfinite(v->valuedouble)&&v->valuedouble>=0&&v->valuedouble<VIEW_COUNT&&floor(v->valuedouble)==v->valuedouble;if(valid){cmd.change_view=true;cmd.view=v->valueint;}}
         if(valid)accepted=xQueueSend(queue,&cmd,0)==pdTRUE;

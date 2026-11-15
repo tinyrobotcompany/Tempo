@@ -11,7 +11,8 @@ esp_err_t station_settings_load(station_settings_t *settings)
     if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
     if (err != ESP_OK) return err;
     uint8_t data[STATION_SETTINGS_BYTES]; size_t size = sizeof(data);
-    err = nvs_get_blob(handle, "settings_v2", data, &size);
+    err = nvs_get_blob(handle, "settings_v3", data, &size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) { size=sizeof(data); err=nvs_get_blob(handle,"settings_v2",data,&size); }
     if (err == ESP_ERR_NVS_NOT_FOUND) { size=sizeof(data); err=nvs_get_blob(handle,"settings",data,&size); }
     nvs_close(handle);
     if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
@@ -29,7 +30,10 @@ esp_err_t station_settings_save(const station_settings_t *settings)
     nvs_handle_t handle;
     esp_err_t err = nvs_open("station", NVS_READWRITE, &handle);
     if (err != ESP_OK) return err;
-    err = nvs_set_blob(handle, "settings_v2", data, sizeof(data));
+    err = nvs_set_blob(handle, "settings_v3", data, sizeof(data));
+    /* Preserve the full v2 appearance record for older firmware rollback. */
+    data[0]=2;
+    if (err == ESP_OK) err = nvs_set_blob(handle, "settings_v2", data, STATION_SETTINGS_V2_BYTES);
     /* Keep the old record readable by a previous image after OTA rollback. */
     uint8_t legacy[]={1,settings->brightness,settings->theme<3?settings->theme:0,settings->rotate,
                       settings->dwell_seconds&255,settings->dwell_seconds>>8};

@@ -28,8 +28,15 @@ LV_FONT_DECLARE(station_light_clock_font);
 static station_settings_t settings;
 static station_ui_actions_t actions;
 static station_network_status_t network;
+static uint64_t awake_until_ms;
+static unsigned applied_brightness=UINT32_MAX;
+static bool consume_wake_touch;
+static lv_obj_t *night_level_text;
+static lv_obj_t *night_mode_picker, *night_level, *night_start_hour, *night_start_minute, *night_end_hour, *night_end_minute;
+static void update_power(void);
+
 static station_view_t view;
-typedef enum { PAGE_DISPLAY, PAGE_WIFI, PAGE_HOME, PAGE_PROFILE, PAGE_COLOR, PAGE_PHONE, PAGE_HOTSPOT } page_t;
+typedef enum { PAGE_DISPLAY, PAGE_WIFI, PAGE_HOME, PAGE_PROFILE, PAGE_COLOR, PAGE_PHONE, PAGE_HOTSPOT, PAGE_POWER } page_t;
 static page_t page;
 static lv_obj_t *content, *date_label, *clock_text, *wifi_icon, *welcome, *settings_status, *header_clock;
 static lv_obj_t *phone_qr, *phone_caption, *phone_wait, *tap_notice;
@@ -422,8 +429,9 @@ static void update_weather(void)
     if(view==VIEW_CLOCK) {
         set_label_if_changed(weather_title,"LOCAL WEATHER");
         if(weather.state==WEATHER_LOADING&&network.connected)lv_obj_remove_flag(clock_weather_busy,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(clock_weather_busy,LV_OBJ_FLAG_HIDDEN);
-        char detail[96];snprintf(detail,sizeof(detail),"Humidity %s · Updated %s",humidity,updated);
-        set_label_if_changed(weather_graph_caption,state[0]?state:detail);lv_obj_set_y(weather_graph_caption,258);lv_obj_set_height(weather_graph_caption,48);lv_label_set_long_mode(weather_graph_caption,LV_LABEL_LONG_WRAP);
+        char detail[160];snprintf(detail,sizeof(detail),"Humidity %s · Updated %s",humidity,updated);
+        if(state[0]&&d->valid)snprintf(detail,sizeof(detail),"%s · %ld min old",state,(long)(now>=d->fetched_at?(now-d->fetched_at)/60:0));
+        set_label_if_changed(weather_graph_caption,state[0]&&!d->valid?state:detail);lv_obj_set_y(weather_graph_caption,258);lv_obj_set_height(weather_graph_caption,48);lv_label_set_long_mode(weather_graph_caption,LV_LABEL_LONG_WRAP);
         lv_label_set_text_fmt(weather_feels,"Feels like %s",feel);
         lv_label_set_text_fmt(weather_range,"Today: low %s / high %s",low,high);
         float peak=NAN;for(unsigned i=0;i<next_graph.plot.count;i++){float rain=next_graph.plot.points[i].rain_chance;if(isfinite(rain)&&(!isfinite(peak)||rain>peak))peak=rain;}
@@ -461,7 +469,8 @@ static void update_weather(void)
         day_icon_visuals[i]=(station_icon_visual_t){.code=valid?day->code:-1,.day=true};lv_obj_invalidate(day_icons[i]);
         day_range_visuals[i]=(station_range_visual_t){.low=valid?day->low:NAN,.high=valid?day->high:NAN,.minimum=minimum,.maximum=maximum,.accent=ink()};lv_obj_invalidate(day_bars[i]);
     }
-    if(state[0])lv_label_set_text_fmt(weather_footer,"%s / Open-Meteo model data%s%s",state,d->valid?" / Updated ":"",d->valid?updated:"");
+    if(state[0]&&d->valid)lv_label_set_text_fmt(weather_footer,"%s / %ld min old / Open-Meteo model data",state,(long)(now>=d->fetched_at?(now-d->fetched_at)/60:0));
+    else if(state[0])lv_label_set_text_fmt(weather_footer,"%s / Open-Meteo model data%s%s",state,d->valid?" / Updated ":"",d->valid?updated:"");
     else lv_label_set_text_fmt(weather_footer,"Open-Meteo / Model data / Updated %s / Conditions at %s",updated,observed);
 }
 static void refresh_weather(lv_event_t *event)
@@ -509,7 +518,7 @@ static void weather_view(void)
 static void brightness_changed(lv_event_t *e)
 {
     unsigned value=lv_slider_get_value(lv_event_get_target_obj(e));
-    if(actions.brightness(value)) { settings.brightness=value; save_settings(); }
+    settings.brightness=value;awake_until_ms=elapsed_ms+60000;update_power();save_settings();
 }
 static void rotate_changed(lv_event_t *e)
 {
@@ -854,6 +863,49 @@ static void show_profile(lv_event_t *e)
     label(content,"Shown as a welcome on your home display.",60,315,&station_text_24);
     settings_status=label(content,"Your name stays on this device.",60,470,&station_text_24); keyboard(profile_input);
 }
+static lv_obj_t *time_picker(int x,int y,unsigned count,unsigned selected)
+{
+    char options[200]="";size_t used=0;
+    for(unsigned i=0;i<count;i++)used+=(size_t)snprintf(options+used,sizeof(options)-used,"%s%02u",i?"\n":"",i);
+    lv_obj_t *picker=lv_dropdown_create(content);lv_obj_set_pos(picker,x,y);lv_obj_set_size(picker,120,60);
+    lv_obj_set_style_text_font(picker,&station_text_24,0);lv_dropdown_set_options(picker,options);lv_dropdown_set_selected(picker,selected);
+    return picker;
+}
+static void apply_power(lv_event_t *e)
+{
+    (void)e;station_settings_t next=settings;
+    next.night_mode=lv_dropdown_get_selected(night_mode_picker);
+    next.night_brightness=lv_slider_get_value(night_level);
+    next.night_start=lv_dropdown_get_selected(night_start_hour)*60+lv_dropdown_get_selected(night_start_minute);
+    next.night_end=lv_dropdown_get_selected(night_end_hour)*60+lv_dropdown_get_selected(night_end_minute);
+    if(!station_settings_valid(&next)){lv_label_set_text(settings_status,"Choose different start and end times.");return;}
+    settings=next;awake_until_ms=elapsed_ms+60000;update_power();save_settings();
+}
+static void night_level_changed(lv_event_t *e)
+{
+    lv_label_set_text_fmt(night_level_text,"%d%%",(int)lv_slider_get_value(lv_event_get_target_obj(e)));
+}
+static void show_power(lv_event_t *e)
+{
+    (void)e;page_header("Power & night mode",PAGE_POWER);
+    box(content,32,94,1216,440,CARD);
+    label(content,"Night mode",60,120,&station_text_24);
+    night_mode_picker=lv_dropdown_create(content);lv_obj_set_pos(night_mode_picker,360,104);lv_obj_set_size(night_mode_picker,480,60);
+    lv_obj_set_style_text_font(night_mode_picker,&station_text_24,0);lv_dropdown_set_options(night_mode_picker,"Off\nDim\nScreen off");lv_dropdown_set_selected(night_mode_picker,settings.night_mode);
+    label(content,"From (local time)",60,215,&station_text_24);
+    night_start_hour=time_picker(360,195,24,settings.night_start/60);night_start_minute=time_picker(500,195,60,settings.night_start%60);
+    label(content,"Until",700,215,&station_text_24);
+    night_end_hour=time_picker(840,195,24,settings.night_end/60);night_end_minute=time_picker(980,195,60,settings.night_end%60);
+    label(content,"Dim level (1–100%)",60,305,&station_text_24);
+    night_level=lv_slider_create(content);lv_obj_set_pos(night_level,360,315);lv_obj_set_size(night_level,640,22);lv_slider_set_range(night_level,1,100);lv_slider_set_value(night_level,settings.night_brightness,LV_ANIM_OFF);
+    night_level_text=label(content,"",1040,300,&station_text_24);lv_label_set_text_fmt(night_level_text,"%u%%",settings.night_brightness);
+    lv_obj_add_event_cb(night_level,night_level_changed,LV_EVENT_VALUE_CHANGED,NULL);
+    label(content,"Touch wakes the screen for 60 seconds. Wi-Fi and the clock stay on.",60,390,&station_text_24);
+    label(content,"No battery. Tempo restarts automatically when external power returns.",60,450,&station_text_24);
+    settings_status=label(content,"Uses your saved time zone. Changes take effect after 60 seconds idle.",40,565,&station_text_18);
+    lv_obj_set_width(settings_status,820);
+    button(content,"Save night mode",900,545,310,apply_power,NULL);
+}
 static void settings_view(void)
 {
     page=PAGE_DISPLAY;
@@ -886,7 +938,7 @@ static void settings_view(void)
     button(content,"Home location",900,275,310,show_location,NULL);
     button(content,"Your profile",900,365,310,show_profile,NULL);
     button(content,"iPhone setup",900,455,310,show_phone,NULL);
-    label(content,"Use your phone for a\nprecise home location.",900,540,&station_text_24);
+    button(content,"Power & night mode",900,545,310,show_power,NULL);
 }
 static const char *transport_state_text(void)
 {
@@ -928,13 +980,14 @@ static void update_transport(void)
 {
     if(actions.transport_status)actions.transport_status(&transport);else memset(&transport,0,sizeof(transport));
     if(transport.generation!=network.location_generation){memset(&transport,0,sizeof(transport));transport.state=TRANS_LOADING;}
-    time_t now=time(NULL);bool stale=!transport.valid||now<transport.fetched_at||now-transport.fetched_at>360;
+    time_t now=time(NULL);bool stale=!network.connected||!transport.valid||now<transport.fetched_at||now-transport.fetched_at>360;
     char title[160],status[320],alerts[260];
     const station_transport_stop_t *stop=transport.selected<transport.count?&transport.stops[transport.selected]:NULL;
     if(stop)snprintf(title,sizeof(title),"%s%s%s · %u m",stop->mode,stop->mode[0]?" · ":"",stop->name,stop->metres);else snprintf(title,sizeof(title),"Nearby transport");
     snprintf(status,sizeof(status),"%s",transport_state_text());
-    if(transport.state==TRANS_READY){if(!transport.row_count)snprintf(status,sizeof(status),"No upcoming departures reported for this platform");else snprintf(status,sizeof(status),"%s · updated %ld min ago · Île-de-France Mobilités",stale?"Out of date":"Stop predictions",(long)((now-transport.fetched_at)/60));}
-    if(now-transport.traffic_at>2700||(!transport.traffic_valid&&!transport.alert_count))snprintf(alerts,sizeof(alerts),"Traffic status unavailable");
+    if(transport.state==TRANS_READY&&network.connected){if(!transport.row_count)snprintf(status,sizeof(status),"No upcoming departures reported for this platform");else snprintf(status,sizeof(status),"%s · updated %ld min ago · Île-de-France Mobilités",stale?"Out of date":"Stop predictions",(long)((now-transport.fetched_at)/60));}
+    if(!network.connected&&transport.valid)snprintf(status,sizeof(status),"Offline · saved %ld min ago · predictions unavailable",(long)(now>=transport.fetched_at?(now-transport.fetched_at)/60:0));
+    if(!network.connected||now-transport.traffic_at>2700||(!transport.traffic_valid&&!transport.alert_count))snprintf(alerts,sizeof(alerts),"Traffic status unavailable");
     else if(transport.alert_count){unsigned alert=(unsigned)(elapsed_ms/8000)%transport.alert_count;snprintf(alerts,sizeof(alerts),"%u/%u · %s%s",alert+1,transport.alert_count,transport.alerts[alert],!transport.traffic_valid?" · other status unavailable":transport.traffic_partial?" · partial coverage":"");}
     else snprintf(alerts,sizeof(alerts),transport.traffic_partial?"Traffic checked for some lines only":"No active alerts reported for checked lines");
     if(view==VIEW_CLOCK){
@@ -945,14 +998,14 @@ static void update_transport(void)
         if(loading&&network.connected)lv_obj_remove_flag(clock_transport_busy,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(clock_transport_busy,LV_OBJ_FLAG_HIDDEN);
         time_t oldest=transport.fetched_at;
         if(overview){oldest=transport.summary.fetched[0];for(unsigned i=1;i<rows;i++)if(transport.summary.fetched[i]<oldest)oldest=transport.summary.fetched[i];}
-        bool summary_stale=now<oldest||now-oldest>360;
-        char freshness[96];snprintf(freshness,sizeof(freshness),"Updated %ld min ago",(long)(now>=oldest?(now-oldest)/60:0));
-        set_label_if_changed(transport_status_label,loading?"Updating…":(overview||transport.valid)?(summary_stale?"Out of date":now-oldest<60?"Just updated":freshness):"Waiting for data");
+        bool summary_stale=!network.connected||now<oldest||now-oldest>360;
+        char freshness[96];snprintf(freshness,sizeof(freshness),network.connected?"Updated %ld min ago":"Offline · saved %ld min ago",(long)(now>=oldest?(now-oldest)/60:0));
+        set_label_if_changed(transport_status_label,!network.connected?freshness:loading?"Updating…":(overview||transport.valid)?(summary_stale?"Out of date":now-oldest<60?"Just updated":freshness):"Waiting for data");
         for(unsigned i=0;i<3;i++){
             if((!overview&&!transport.valid)||i>=rows){lv_obj_add_flag(clock_departure[i],LV_OBJ_FLAG_HIDDEN);continue;}
             lv_obj_remove_flag(clock_departure[i],LV_OBJ_FLAG_HIDDEN);
             const station_transport_row_t *r=overview?&transport.summary.rows[i]:&transport.rows[i];
-            time_t fetched=overview?transport.summary.fetched[i]:transport.fetched_at;bool stale=now<fetched||now-fetched>360;
+            time_t fetched=overview?transport.summary.fetched[i]:transport.fetched_at;bool stale=!network.connected||now<fetched||now-fetched>360;
             unsigned first=r->at[0]<now-30?1:0;
             bool available=r->at[first]&&r->at[first]>=now-30;char wait[40],next[64]="";
             if(stale)snprintf(wait,sizeof(wait),"Out of date");
@@ -974,7 +1027,7 @@ static void update_transport(void)
             set_label_if_changed(clock_destination[i],boarding);set_label_if_changed(clock_wait[i],wait);lv_obj_set_style_text_font(clock_wait[i],strlen(wait)>7?&station_text_18:&station_text_32,0);set_label_if_changed(clock_next[i],next);
             set_text_color_if_changed(clock_wait[i],r->cancelled[first]||r->delay_minutes[first]>0?0xffb86b:ink());
         }
-        set_label_if_changed(transport_alert_label,overview?(transport.summary.partial?"Some nearby services unavailable · retrying":"Times include reported delays · tap for service alerts"):transport.valid&&transport.row_count?alerts:status);
+        set_label_if_changed(transport_alert_label,!network.connected?"Reconnect to refresh departures and service alerts":overview?(transport.summary.partial?"Some nearby services unavailable · retrying":"Times include reported delays · tap for service alerts"):transport.valid&&transport.row_count?alerts:status);
         set_text_color_if_changed(transport_alert_label,transport.alert_count?0xffb86b:MUTED);
         set_label_if_changed(transport_footer,transport.valid&&transport.row_count?"Tap for services and disruption details":"Tap to open transport");return;
     }
@@ -1066,6 +1119,29 @@ static void show_view(station_view_t next)
     else if(view==VIEW_WEATHER) weather_view();
     else transport_view();
 }
+static void update_power(void)
+{
+    time_t now=time(NULL);struct tm local={0};
+    bool valid=network.source!=TIME_UNSET && localtime_r(&now,&local)!=NULL;
+    unsigned level=station_power_brightness(&settings,valid,(unsigned)(local.tm_hour*60+local.tm_min),elapsed_ms,awake_until_ms);
+    if(level!=applied_brightness && actions.brightness && actions.brightness(level)) {
+        applied_brightness=level;
+#ifdef ESP_PLATFORM
+        ESP_LOGI("power","Backlight %u%%; night mode=%u, clock trusted=%d",level,settings.night_mode,valid);
+#endif
+    }
+}
+bool station_ui_touch(bool pressed)
+{
+    if(pressed) {
+        if(applied_brightness==0)consume_wake_touch=true;
+        awake_until_ms=elapsed_ms+60000;
+        update_power();
+    }
+    bool consumed=consume_wake_touch;
+    if(!pressed)consume_wake_touch=false;
+    return consumed;
+}
 static void tick(lv_timer_t *timer)
 {
     (void)timer; elapsed_ms+=100; atomic_fetch_add(&heartbeat,1);
@@ -1073,13 +1149,13 @@ static void tick(lv_timer_t *timer)
     station_phone_command_t command;
     if(actions.phone_take && actions.phone_take(&command)) {
         if(command.change_settings && station_settings_valid(&command.settings)) {
-            settings=command.settings;actions.brightness(settings.brightness);actions.save(&settings);
+            settings=command.settings;awake_until_ms=elapsed_ms+60000;update_power();actions.save(&settings);
             show_view(view);
         }
-        if(command.change_view && command.view<VIEW_COUNT){if(command.view==VIEW_TRANSPORT&&actions.transport_nearby_reset)actions.transport_nearby_reset();show_view(command.view);}
+        if(command.change_view && command.view<VIEW_COUNT){awake_until_ms=elapsed_ms+60000;if(command.view==VIEW_TRANSPORT&&actions.transport_nearby_reset)actions.transport_nearby_reset();show_view(command.view);}
     }
     if(actions.phone_publish)actions.phone_publish(&settings,view);
-    refresh_network(); update_header();
+    refresh_network(); update_header(); update_power();
     if(view==VIEW_SETTINGS && page==PAGE_PHONE && elapsed_ms%1000==0)update_phone();
     if(awaiting_save && view==VIEW_SETTINGS) {
         int state=actions.save_state();
@@ -1100,7 +1176,7 @@ static void tick(lv_timer_t *timer)
 void station_ui_start(const station_settings_t *initial,station_ui_actions_t handlers)
 {
     station_text_fonts_init();
-    settings=*initial; actions=handlers;
+    settings=*initial; actions=handlers;awake_until_ms=0;applied_brightness=UINT32_MAX;consume_wake_touch=false;
     lv_obj_t *screen=lv_screen_active(); lv_obj_remove_style_all(screen);
     lv_obj_set_style_bg_color(screen,lv_color_hex(BG),0); lv_obj_set_style_bg_opa(screen,LV_OPA_COVER,0);
     lv_obj_remove_flag(screen,LV_OBJ_FLAG_SCROLLABLE);

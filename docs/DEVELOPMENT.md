@@ -1,8 +1,10 @@
 # Firmware development and first hardware run
 
-12 November 2026. Development is local without Git, as requested.
+Development history begins 12 November 2026. Use feature worktrees and the repository test/PR checks for current work.
 
-## Current milestone
+Current power implementation: external supply only, configurable local-time night dimming/screen-off and consumed first-touch wake; see [POWER_MANAGEMENT.md](POWER_MANAGEMENT.md). Historical milestones below are dated records, not the current feature inventory.
+
+## Initial milestone (historical, superseded)
 
 The first application targets the Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1 using its managed board support package 2.0.3 and LVGL 9.5.0. The user confirmed ESP32-P4 revision v3.2 and 32 MB flash using esptool on 12 November 2026. ESP-IDF 6.1 is installed on this Mac; vendor examples also exercise 5.5.5 and 6.0.2. The manifest's version range is not a claim that all toolchain versions have passed our builds.
 
@@ -13,7 +15,7 @@ Implemented source:
 - Brightness slider through the BSP, three clock colours and optional 20-second view rotation. Settings persist in versioned NVS; settings view pauses rotation.
 - Two 8 MiB application slots, OTA metadata and rollback enabled. Initial boot-health logic checks UI progress before accepting a trial image.
 
-Not implemented: Wi-Fi provisioning, automatic time sync, live weather/transport, phone pairing/web server, scheduled dimming, signed OTA download/release verification and C6 update coordination. The application is a hardware milestone, not the completed PRD. No secure-boot eFuses are changed. Do not deploy this as the production OTA release.
+Not implemented: Wi-Fi provisioning, automatic time sync, live weather/transport, phone pairing/web server, signed OTA download/release verification and C6 update coordination. The application is a hardware milestone, not the completed PRD. No secure-boot eFuses are changed. Do not deploy this as the production OTA release.
 
 ## Board identification
 

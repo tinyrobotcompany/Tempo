@@ -19,11 +19,13 @@ class StartupContract(unittest.TestCase):
         self.assertNotRegex(startup, r'\b(?:lv_refr_now|lv_timer_handler)\s*\(')
         create = startup.index('station_ui_start(')
         unlock = startup.index('bsp_display_unlock()', create)
-        backlight = startup.index('bsp_display_brightness_set(settings.brightness)', unlock)
+        backlight = startup.index('bsp_display_brightness_set(settings.brightness)', create)
         self.assertLess(create, unlock)
-        self.assertLess(unlock, backlight)
+        self.assertLess(create, backlight)
+        self.assertLess(backlight, unlock)
+        # Restore before releasing LVGL: main must not override a scheduled level.
         # Backlight restoration must be unconditional, with no completion wait.
-        gap = startup[unlock:backlight]
+        gap = startup[backlight:unlock]
         self.assertNotRegex(gap, r'\b(?:if|while|for|ulTaskNotifyTake|xSemaphoreTake|vTaskDelay)\s*\(')
         self.assertIn('UI stopped responding', startup[backlight:])
 

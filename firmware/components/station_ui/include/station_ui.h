@@ -39,3 +39,5 @@ typedef struct {
 } station_ui_actions_t;
 void station_ui_start(const station_settings_t *settings, station_ui_actions_t actions);
 unsigned station_ui_heartbeat(void);
+/* Called by the LVGL touch reader. Consume the complete wake gesture. */
+bool station_ui_touch(bool pressed);

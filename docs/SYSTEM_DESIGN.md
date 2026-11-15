@@ -28,7 +28,7 @@ The manufacturer's [example repository](https://github.com/waveshareteam/ESP32-P
 
 A nominal 10.1-inch 16:10 active image is approximately 218 × 136 mm, calculated from diagonal/aspect ratio, not a measured panel outline. Do not reuse the old 14-inch enclosure envelope. Final bezel and housing dimensions depend on the manufacturer's drawing, actual board, connectors, cable bends and stand.
 
-Use a matte black bezel, removable rear cover, stable tilted stand and ventilation. Keep touch glass free of clamp stress and the Wi-Fi antenna clear. Preserve access to power, BOOT/RESET and programming connectors, including coprocessor recovery access. Use threaded inserts and screws for serviceability. Split printed parts if the printer volume requires it. PETG is the initial material choice; qualify enclosure temperature and stability. No battery or additional fan is planned unless thermal testing establishes a need.
+Use a matte black bezel, removable rear cover, stable tilted stand and ventilation. Keep touch glass free of clamp stress and the Wi-Fi antenna clear. Preserve access to power, BOOT/RESET and programming connectors, including coprocessor recovery access. Use threaded inserts and screws for serviceability. Split printed parts if the printer volume requires it. PETG is the initial material choice; qualify enclosure temperature and stability. No battery or UPS is part of Tempo. An additional fan is considered only if thermal testing establishes a need.
 
 ## Firmware and phone interface
 
@@ -101,3 +101,7 @@ Bootloader, partition-table and shared data updates do not inherit application-s
 6. Measure the assembled kit, finalise printed enclosure and run 72-hour thermal/runtime qualification.
 
 The first firmware source milestone was added on 12 November 2026; see [development status](DEVELOPMENT.md). Host tests pass, but the full target build, authenticated provider calls, physical board operation and OTA recovery remain unverified. The user's existing Pi 4 can be a development aid but is not required in the finished device.
+
+## External-only power architecture
+
+See [POWER_MANAGEMENT.md](POWER_MANAGEMENT.md): external regulated 5 V supply → USB TO UART power input → integrated board/display. No mains circuitry or battery in the enclosure. The UI applies a pure local-time night policy to backlight brightness; touch and all workers remain active. Settings v3 migrates v1/v2 and preserves compatibility records for rollback. Phone and touchscreen share one saved schedule. OTA activation must be safe without any stored-energy shutdown window; delivery and power-cut qualification remain outstanding.

@@ -19,7 +19,8 @@ static void wifi_scan_status(station_wifi_scan_t*s){*s=scan_result;}
 static void snapshot(station_network_status_t*s){*s=status;}
 static int save_state(void){return 2;}
 static bool save(const station_settings_t*s){assert(station_settings_valid(s));saved=*s;saves++;return true;}
-static bool dim(unsigned p){return p>=5;}
+static unsigned backlight;
+static bool dim(unsigned p){backlight=p;return p<=100;}
 static const char *expected_password="12345678";
 static bool connect_wifi(const char*s,const char*p){assert(!strcmp(s,"Home"));assert(!strcmp(p,expected_password));connections++;status.connecting=true;status.connected=false;return true;}
 static bool city(unsigned i){city_request=i;return true;}
@@ -68,6 +69,7 @@ int main(void){
  const lv_font_t *text_fonts[]={&station_text_18,&station_text_24,&station_text_32,&station_text_48};
  const uint32_t accents[]={0xe2,0xe9,0xe8,0xea,0xeb,0xe0,0xe7,0xee,0xef,0xf4,0xf9,0xfb,0xfc,0xff,0xc9,0x153,0x152,0xdf,0x2019};
  for(unsigned f=0;f<4;f++)for(unsigned c=0;c<sizeof(accents)/sizeof(accents[0]);c++){lv_font_glyph_dsc_t g;assert(lv_font_get_glyph_dsc(text_fonts[f],&g,accents[c],0));assert(g.box_w>0);}
+ status.connected=true;
  transit.generation=status.location_generation;transit.state=TRANS_READY;transit.count=2;transit.selected=0;transit.valid=true;transit.fetched_at=time(NULL);transit.row_count=1;
  snprintf(transit.stops[0].name,sizeof(transit.stops[0].name),"Mairie – Châtenay");transit.stops[0].metres=80;
  snprintf(transit.rows[0].line,20,"C01268");snprintf(transit.rows[0].code,20,"194");snprintf(transit.rows[0].destination,128,"Châtillon – Montrouge");transit.rows[0].at[0]=time(NULL)+300;transit.rows[0].at[1]=time(NULL)+900;transit.rows[0].estimated=true;transit.rows[0].predicted[0]=transit.rows[0].predicted[1]=true;
@@ -222,6 +224,23 @@ int main(void){
   assert(time_bottom>0&&date_bottom>date_top&&above>0&&abs(above-below)<=2);
   if(t==2){char capture[48];snprintf(capture,sizeof(capture),"clock-spacing-style-%u",style);shot(capture);}
  }
+ /* Night mode is applied by the same LVGL tick as the real device. */
+ initial=station_defaults();initial.rotate=false;initial.night_mode=2;initial.night_start=1380;initial.night_end=420;
+ setenv("TZ","UTC0",1);tzset();test_now=1794697200; /* 2026-11-14 23:00 UTC, replaced below explicitly */
+ struct tm night={.tm_year=126,.tm_mon=10,.tm_mday=14,.tm_hour=23};test_now=mktime(&night);
+ status.source=TIME_NETWORK;status.connected=true;
+ phone_command=(station_phone_command_t){.change_settings=true,.settings=initial,.change_view=true,.view=VIEW_CLOCK};phone_pending=true;tick();
+ assert(backlight==65);
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ unsigned sleeping_beat=station_ui_heartbeat();for(unsigned i=0;i<20;i++)tick();assert(station_ui_heartbeat()>sleeping_beat);
+ assert(station_ui_touch(true));assert(backlight==65);assert(station_ui_touch(true));assert(station_ui_touch(false));assert(!station_ui_touch(false));
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ test_now+=8*3600;for(unsigned i=0;i<10;i++)tick();assert(backlight==65);
+ status.source=TIME_UNSET;test_now-=8*3600;tick();assert(backlight==65);
+ click("Settings");click("Power & night mode");shot("power-night-mode");click("Save night mode");assert(saved.night_mode==2);
+ status.connected=false;transit.generation=status.location_generation;transit.valid=true;transit.row_count=1;transit.fetched_at=test_now;transit.state=TRANS_READY;
+ click("Transport");assert(contains_text(lv_screen_active(),"Offline · saved"));assert(!contains_text(lv_screen_active(),"Arrives "));
+ puts("PASS: scheduled screen-off, first-touch consumption, timed wake, trusted-time fallback and offline departures");
  puts("PASS: equal visible date spacing for all ten styles at 00:00, 11:11, 12:34 and 23:59");
  puts("PASS: clock two-service layout, cancellation, updating animation with cached values, and 20-second automatic rotation");
  puts("PASS: phone QR online/offline/network changes, hotspot guide and queued remote settings");
