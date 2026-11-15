@@ -1,0 +1,158 @@
+{
+  "places_nearby": [
+    {
+      "embedded_type": "stop_point",
+      "distance": "1500",
+      "stop_point": {
+        "id": "stop_point:IDFM:501",
+        "name": "RER proche",
+        "commercial_modes": [
+          {
+            "name": "RER"
+          }
+        ],
+        "coord": {
+          "lat": "48.77",
+          "lon": "2.28"
+        },
+        "codes": [
+          {
+            "type": "netex_monomodal_stopplace",
+            "value": "monomodalStopPlace:45001"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "1501",
+      "stop_point": {
+        "id": "stop_point:IDFM:502",
+        "name": "RER proche",
+        "commercial_modes": [
+          {
+            "name": "RER"
+          }
+        ],
+        "coord": {
+          "lat": "48.77",
+          "lon": "2.28"
+        },
+        "codes": [
+          {
+            "type": "netex_monomodal_stopplace",
+            "value": "monomodalStopPlace:45001"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "1800",
+      "stop_point": {
+        "id": "stop_point:IDFM:503",
+        "name": "RER plus loin",
+        "commercial_modes": [
+          {
+            "name": "RER"
+          }
+        ],
+        "coord": {
+          "lat": "48.77",
+          "lon": "2.28"
+        },
+        "codes": [
+          {
+            "type": "netex_monomodal_stopplace",
+            "value": "monomodalStopPlace:45002"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "1200",
+      "stop_point": {
+        "id": "stop_point:IDFM:504",
+        "name": "Métro",
+        "commercial_modes": [
+          {
+            "name": "Métro"
+          }
+        ],
+        "coord": {
+          "lat": "48.77",
+          "lon": "2.28"
+        },
+        "codes": [
+          {
+            "type": "netex_monomodal_stopplace",
+            "value": "monomodalStopPlace:45003"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "200",
+      "stop_point": {
+        "id": "stop_point:IDFM:505",
+        "name": "Tram",
+        "commercial_modes": [
+          {
+            "name": "Tramway"
+          }
+        ],
+        "coord": {
+          "lat": "48.77",
+          "lon": "2.28"
+        }
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "2001",
+      "stop_point": {
+        "id": "stop_point:IDFM:506",
+        "name": "Outside",
+        "commercial_modes": [
+          {
+            "name": "RER"
+          }
+        ],
+        "coord": {
+          "lat": "48.77",
+          "lon": "2.28"
+        },
+        "codes": [
+          {
+            "type": "netex_monomodal_stopplace",
+            "value": "monomodalStopPlace:45004"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "1100",
+      "stop_point": {
+        "id": "stop_point:IDFM:507",
+        "name": "Ambiguous rail",
+        "commercial_modes": [
+          {
+            "name": "RER"
+          }
+        ],
+        "coord": {
+          "lat": "48.77",
+          "lon": "2.28"
+        }
+      }
+    }
+  ],
+  "pagination": {
+    "start_page": 1,
+    "items_per_page": 16,
+    "total_result": 23
+  }
+}

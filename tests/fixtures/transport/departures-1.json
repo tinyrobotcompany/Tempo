@@ -1,0 +1,148 @@
+{
+  "Siri": {
+    "ServiceDelivery": {
+      "ResponseTimestamp": "2026-11-13T06:54:02.128Z",
+      "ProducerRef": "IVTR_HET",
+      "ResponseMessageIdentifier": "IVTR_HET:ResponseMessage:e89a02cd-cdc3-4350-a0eb-b27e3e8146a4:LOC:",
+      "StopMonitoringDelivery": [
+        {
+          "ResponseTimestamp": "2026-11-13T06:54:02.130Z",
+          "Version": "2.0",
+          "Status": "true",
+          "MonitoredStopVisit": [
+            {
+              "RecordedAtTime": "2026-11-13T06:51:06.612Z",
+              "ItemIdentifier": "MeC_Bus_PC:Item::20261113.7.PALS.IDFM.C01268.R.EXP.50225986.103:LOC",
+              "MonitoringRef": {
+                "value": "STIF:StopPoint:Q:12269:"
+              },
+              "MonitoredVehicleJourney": {
+                "LineRef": {
+                  "value": "STIF:Line::C01268:"
+                },
+                "OperatorRef": {
+                  "value": "MeC_Bus_PC:Operator::1052:"
+                },
+                "FramedVehicleJourneyRef": {
+                  "DataFrameRef": {
+                    "value": "any"
+                  },
+                  "DatedVehicleJourneyRef": "MeC_Bus_PC:VehicleJourney::20261113.7.R.C01268:LOC"
+                },
+                "DirectionName": [
+                  {
+                    "value": "Pierre Sémard / Châtillon - Montrouge"
+                  }
+                ],
+                "DestinationRef": {
+                  "value": "STIF:StopPoint:Q:421729:"
+                },
+                "DestinationName": [
+                  {
+                    "value": "Pierre Sémard - Châtillon-Montrouge"
+                  }
+                ],
+                "VehicleJourneyName": [],
+                "JourneyNote": [],
+                "MonitoredCall": {
+                  "StopPointName": [
+                    {
+                      "value": "Mairie"
+                    }
+                  ],
+                  "VehicleAtStop": false,
+                  "DestinationDisplay": [
+                    {
+                      "value": "P.semard-C.mont"
+                    }
+                  ],
+                  "ExpectedDepartureTime": "2026-11-13T07:00:27.000Z",
+                  "DepartureStatus": "onTime",
+                  "ArrivalStatus": ""
+                },
+                "TrainNumbers": {
+                  "TrainNumberRef": []
+                },
+                "VehicleFeatureRef": [],
+                "DirectionRef": {
+                  "value": "Retour"
+                },
+                "DestinationShortName": [
+                  {
+                    "value": "P.semard-C.mont"
+                  }
+                ]
+              }
+            },
+            {
+              "RecordedAtTime": "2026-11-13T06:50:36.255Z",
+              "ItemIdentifier": "MeC_Bus_PC:Item::20261113.8.PALS.IDFM.C01268.R.EXP.50225986.103:LOC",
+              "MonitoringRef": {
+                "value": "STIF:StopPoint:Q:12269:"
+              },
+              "MonitoredVehicleJourney": {
+                "LineRef": {
+                  "value": "STIF:Line::C01268:"
+                },
+                "OperatorRef": {
+                  "value": "MeC_Bus_PC:Operator::1052:"
+                },
+                "FramedVehicleJourneyRef": {
+                  "DataFrameRef": {
+                    "value": "any"
+                  },
+                  "DatedVehicleJourneyRef": "MeC_Bus_PC:VehicleJourney::20261113.8.R.C01268:LOC"
+                },
+                "DirectionName": [
+                  {
+                    "value": "Pierre Sémard / Châtillon - Montrouge"
+                  }
+                ],
+                "DestinationRef": {
+                  "value": "STIF:StopPoint:Q:421729:"
+                },
+                "DestinationName": [
+                  {
+                    "value": "Pierre Sémard - Châtillon-Montrouge"
+                  }
+                ],
+                "VehicleJourneyName": [],
+                "JourneyNote": [],
+                "MonitoredCall": {
+                  "StopPointName": [
+                    {
+                      "value": "Mairie"
+                    }
+                  ],
+                  "VehicleAtStop": false,
+                  "DestinationDisplay": [
+                    {
+                      "value": "P.semard-C.mont"
+                    }
+                  ],
+                  "ExpectedDepartureTime": "2026-11-13T07:13:49.000Z",
+                  "DepartureStatus": "onTime",
+                  "ArrivalStatus": ""
+                },
+                "TrainNumbers": {
+                  "TrainNumberRef": []
+                },
+                "VehicleFeatureRef": [],
+                "DirectionRef": {
+                  "value": "Retour"
+                },
+                "DestinationShortName": [
+                  {
+                    "value": "P.semard-C.mont"
+                  }
+                ]
+              }
+            }
+          ],
+          "StopLineNotice": [],
+          "ServiceException": []
+        }
+      ]
+    }
+  }
+}

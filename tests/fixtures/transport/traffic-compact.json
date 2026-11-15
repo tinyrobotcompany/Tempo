@@ -1,0 +1,74 @@
+{
+  "line_reports": [
+    {
+      "line": {
+        "id": "line:IDFM:C01727",
+        "code": "C"
+      },
+      "links": [
+        {
+          "type": "disruption",
+          "id": "af1bf837-69fb-4730-9a24-2f2887357616"
+        }
+      ]
+    }
+  ],
+  "disruptions": [
+    {
+      "id": "af1bf837-69fb-4730-9a24-2f2887357616",
+      "status": "active",
+      "messages": [
+        {
+          "text": "Panne d'un ascenseur",
+          "channel": {
+            "content_type": "text/plain",
+            "id": "d9dbc5a6-7a06-11e8-8b8c-005056a44da2",
+            "name": "titre",
+            "types": [
+              "title"
+            ]
+          }
+        },
+        {
+          "text": "GARE DE VIROFLAY RIVE GAUCHE Panne de l'ascenseur situé Quai B Voies 2IN/2, direction Paris",
+          "channel": {
+            "content_type": "text/html",
+            "id": "0c0c032e-7a07-11e8-ab20-005056a47b86",
+            "name": "email ascenseur",
+            "types": [
+              "email"
+            ]
+          }
+        },
+        {
+          "text": "GARE DE VIROFLAY RIVE GAUCHE Panne ascenseur situé Quai B Voies 2IN/2, dir. Paris",
+          "channel": {
+            "content_type": "text/plain",
+            "id": "ea77b9e2-7a06-11e8-ab20-005056a47b86",
+            "name": "sms ascenseurs",
+            "types": [
+              "sms"
+            ]
+          }
+        },
+        {
+          "text": "GARE DE VIROFLAY RIVE GAUCHE Panne de l'ascenseur situé Quai B Voies 2IN/2, direction Paris",
+          "channel": {
+            "content_type": "text/html",
+            "id": "3ae8df3e-7488-11e8-ac3b-005056a47b86",
+            "name": "moteur",
+            "types": [
+              "web"
+            ]
+          }
+        }
+      ],
+      "severity": {
+        "name": "perturbée",
+        "effect": "SIGNIFICANT_DELAYS",
+        "color": "#EF662F",
+        "priority": 30
+      }
+    }
+  ]
+}

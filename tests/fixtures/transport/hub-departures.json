@@ -1,0 +1,105 @@
+{
+  "Siri": {
+    "ServiceDelivery": {
+      "StopMonitoringDelivery": [
+        {
+          "Status": "true",
+          "MonitoredStopVisit": [
+            {
+              "MonitoringRef": {
+                "value": "STIF:StopArea:SP:45001:"
+              },
+              "MonitoredVehicleJourney": {
+                "LineRef": {
+                  "value": "STIF:Line::C01727:"
+                },
+                "DestinationName": [
+                  {
+                    "value": "Vers Paris"
+                  }
+                ],
+                "MonitoredCall": {
+                  "StopPointRef": {
+                    "value": "STIF:StopPoint:Q:501:"
+                  },
+                  "StopPointName": [
+                    {
+                      "value": "RER proche"
+                    }
+                  ],
+                  "ArrivalPlatformName": {
+                    "value": "2"
+                  },
+                  "ExpectedArrivalTime": "2026-11-13T07:03:00Z",
+                  "ExpectedDepartureTime": "2026-11-13T07:04:00Z",
+                  "AimedArrivalTime": "2026-11-13T07:00:00Z",
+                  "ArrivalStatus": "delayed"
+                }
+              }
+            },
+            {
+              "MonitoringRef": {
+                "value": "STIF:StopPoint:Q:502:"
+              },
+              "MonitoredVehicleJourney": {
+                "LineRef": {
+                  "value": "STIF:Line::C01727:"
+                },
+                "DestinationName": [
+                  {
+                    "value": "Vers Paris"
+                  }
+                ],
+                "MonitoredCall": {
+                  "StopPointRef": {
+                    "value": "STIF:StopPoint:Q:501:"
+                  },
+                  "StopPointName": [
+                    {
+                      "value": "RER proche"
+                    }
+                  ],
+                  "ArrivalPlatformName": {
+                    "value": "2"
+                  },
+                  "ExpectedArrivalTime": "2026-11-13T07:10:00Z",
+                  "AimedArrivalTime": "2026-11-13T07:10:00Z",
+                  "ArrivalStatus": "cancelled"
+                }
+              }
+            },
+            {
+              "MonitoringRef": {
+                "value": "STIF:StopPoint:Q:999:"
+              },
+              "MonitoredVehicleJourney": {
+                "LineRef": {
+                  "value": "STIF:Line::C01727:"
+                },
+                "DestinationName": [
+                  {
+                    "value": "Vers Paris"
+                  }
+                ],
+                "MonitoredCall": {
+                  "StopPointRef": {
+                    "value": "STIF:StopPoint:Q:501:"
+                  },
+                  "StopPointName": [
+                    {
+                      "value": "RER proche"
+                    }
+                  ],
+                  "ArrivalPlatformName": {
+                    "value": "2"
+                  },
+                  "ExpectedArrivalTime": "2026-11-13T07:01:00Z"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "places_nearby": [
+    {
+      "embedded_type": "stop_point",
+      "distance": "80",
+      "stop_point": {
+        "id": "stop_point:IDFM:12269",
+        "name": "Mairie",
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "87",
+      "stop_point": {
+        "id": "stop_point:IDFM:12268",
+        "name": "Mairie",
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "139",
+      "stop_point": {
+        "id": "stop_point:IDFM:40382",
+        "name": "Rue des Vignes",
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "147",
+      "stop_point": {
+        "id": "stop_point:IDFM:35813",
+        "name": "Rue des Vignes",
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "154",
+      "stop_point": {
+        "id": "stop_point:IDFM:493690",
+        "name": "Mairie de Châtenay-Malabry",
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "155",
+      "stop_point": {
+        "id": "stop_point:IDFM:493689",
+        "name": "Mairie de Châtenay-Malabry",
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "346",
+      "stop_point": {
+        "id": "stop_point:IDFM:486594",
+        "name": "Coulée Verte",
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_point",
+      "distance": "347",
+      "stop_point": {
+        "id": "stop_point:IDFM:486598",
+        "name": "Coulée Verte",
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          }
+        ]
+      }
+    }
+  ]
+}

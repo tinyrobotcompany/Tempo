@@ -1,0 +1,1 @@
+idf_component_register(SRCS "station_ui.c" "weather_visuals.c" "fonts/clock_font.c" "fonts/light_clock_font.c" "fonts/bold_clock_font.c" "fonts/hairline_clock_font.c" "fonts/condensed_clock_font.c" "fonts/wide_clock_font.c" "fonts/text_fonts.c" INCLUDE_DIRS "include" REQUIRES station_transport station_core station_weather lvgl__lvgl)

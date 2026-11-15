@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+/build-host/
+/build-offline/
+/firmware/build/
+/firmware/managed_components/
+/firmware/sdkconfig.old
+**/__pycache__/
+*.py[cod]
+.DS_Store
+*.log

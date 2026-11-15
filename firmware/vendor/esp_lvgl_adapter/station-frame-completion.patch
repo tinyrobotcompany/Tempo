@@ -1,0 +1,23 @@
+--- a/src/display/bridge/v9/lvgl_bridge_v9.c
++++ b/src/display/bridge/v9/lvgl_bridge_v9.c
+@@ -603,6 +603,20 @@
+ {
+     if (!bridge_mode_needs_submit_gated_frame_complete(impl)) {
+         return true;
++    }
++
++    /* The rendering task publishes submit_pending before enqueueing disp_fb.
++     * A frame ISR in that window must NOT consume the submission: otherwise
++     * release_buf_isr sees an empty list and the renderer waits forever.
++     * MIPI frame callbacks recur each frame; defer until the retired buffer
++     * is visible. Do not nest the pipeline and submission spinlocks. */
++    if (bridge_mode_uses_rotated_nonpartial_pipeline_release(impl)) {
++        portENTER_CRITICAL_ISR(&impl->pipeline.lock);
++        bool has_retired_buffer = !STAILQ_EMPTY(&impl->pipeline.busy_list);
++        portEXIT_CRITICAL_ISR(&impl->pipeline.lock);
++        if (!has_retired_buffer) {
++            return false;
++        }
+     }
+ 
+     bool submit_pending = false;
