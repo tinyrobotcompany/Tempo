@@ -21,13 +21,15 @@ jobs:
         env:
           BRANCH: ${{ github.head_ref }}
         run: |
-          PATTERN='^(feature|fix|hardening|chore|docs|refactor|test|ci)/[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)?$'
+          PATTERN='^(feature|fix|hardening|chore|docs|refactor|test|ci)/[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)?$|^dependabot/[a-z0-9_-]+/[a-z0-9][a-z0-9._/-]*$'
           if echo "$BRANCH" | grep -qE "$PATTERN"; then
             echo "Branch name '$BRANCH' matches required pattern."
           else
             echo "Branch name '$BRANCH' does not match required pattern."
             echo "Required format: <type>/<description>"
+            echo "Also allowed: dependabot/<ecosystem>/<dependency-and-version>"
             echo "Example: feature/setup-ci-hooks-actions"
+            echo "Example: dependabot/github_actions/actions/upload-artifact-7.0.2"
             exit 1
           fi
 
