@@ -53,3 +53,9 @@ Alternatively a repository administrator can configure the listed required check
 A pushed `vX.Y.Z` tag runs full CI and security validation, verifies the commit belongs to main and matches firmware/CMakeLists.txt, then creates a **draft source release**. No binary with embedded credentials is uploaded, no device is flashed, and this is not OTA. Release preparation uses `python3 scripts/release.py prepare` to calculate the highest pending change-note bump and update the embedded firmware version and release history together. Tags must match that version and checked-in notes. See [Release strategy](RELEASING.md).
 
 Azure/IaC deployments, .NET, Swift app builds, TestFlight, project-board automation and quant/agent services are not applicable to this standalone firmware/browser project and are not copied. The native Shortcut test is retained. Device OTA remains a separate outstanding product requirement.
+
+### Verified check contexts
+
+GitHub check-run names (queried from the commits/check-runs API on PR #1) are `CI Required`, `Security Audit Required`, `Branch Name`, and `PR Title (Conventional Commits)`. The workflow prefix shown in the PR interface is not part of these API names. Required contexts must match the API names, not the combined UI labels. `Codex Review` is the configured review job name and the initial bootstrap status context.
+
+The release checkout explicitly fetches main with full history and tags. Validation peels both the event SHA and tag ref to commits, requires equality, and detaches at that commit before checking ancestry and release metadata.

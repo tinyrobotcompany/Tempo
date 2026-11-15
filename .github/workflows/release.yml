@@ -29,7 +29,10 @@ jobs:
           persist-credentials: false
       - name: Require a main-branch commit and matching firmware version
         run: |
-          git checkout --detach "$GITHUB_SHA"
+          release_commit=$(git rev-parse --verify "${GITHUB_REF}^{commit}")
+          event_commit=$(git rev-parse --verify "${GITHUB_SHA}^{commit}")
+          test "$release_commit" = "$event_commit"
+          git checkout --detach "$release_commit"
           git merge-base --is-ancestor HEAD refs/remotes/origin/main
           python3 scripts/release.py check --tag "$GITHUB_REF_NAME"
       - name: Create source-only draft release
