@@ -22,7 +22,7 @@ Firmware configuration and partition layout are in `firmware/sdkconfig.defaults`
 | Item | Qty | Selection and source | Purpose and procurement check |
 | --- | --- | --- | --- |
 | Integrated display and processor kit | 1 | [Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1](https://www.waveshare.com/esp32-p4-wifi6-touch-lcd-7-8-10.1.htm), select 10.1-inch variant | Already owned and operational. P4 runs firmware/UI; C6 supplies Wi-Fi. Retain supplied antenna and display/touch interconnects. Manufacturer lists 33672 for the 10.1-inch kit and 33150 for the EN variant; confirm the received bundle before ordering replacements. |
-| External power adapter | 1 | [Waveshare 5 V / 3 A USB-C EU supply — RobotShop](https://eu.robotshop.com/products/waveshare-raspberry-pi-4-usb-c-power-supply-5v-3a-eu) | Recommended prototype adapter, 15 W nominal capacity. Power the USB TO UART port; qualify full-load and enclosed operation before sale. See [power management](POWER_MANAGEMENT.md). |
+| External power adapter | 1 | [Official Raspberry Pi 5.1 V / 3 A USB-C EU supply — Letmeknow](https://letmeknow.fr/fr/alimentations/3790-alimentation-officielle-raspberry-pi4-type-c-153w-noir-0644824914886.html) | Recommended prototype adapter, 15W product family (5.1 V × 3 A output). Power the USB TO UART port; qualify full-load and enclosed operation before sale. See [power management](POWER_MANAGEMENT.md). |
 | Power/programming cable | 1 | Host-compatible USB data cable to board's USB-to-UART Type-C port | Already used successfully for flashing/debugging. Retain the working USB data cable; it is currently required for firmware updates and recovery. A power-only lead cannot flash firmware. |
 | Controller/display mounting parts | 1 set | Kit-supplied standoffs and screws where included | Complete only missing parts after checking board and panel drawings. |
 | C6 service adapter | Conditional, 1 | Compatible USB-to-UART adapter and service leads | Only if onboard access cannot recover C6; verify schematic, voltage levels and header before purchase. Keep as bench equipment, not installed appliance hardware. |
@@ -58,7 +58,7 @@ Bench qualification: cold boot, touch, brightness, Wi-Fi, peak memory, flash slo
 
 - Enclosure, bezel and stand: not yet dimensioned or printed; use the actual assembly to finalise CAD.
 - PETG, inserts, correctly sized M2.5 display fasteners, housing screws, feet, padding and strain relief: buy only quantities required by the final CAD; avoid duplicating kit-supplied mounting parts.
-- Dedicated mains adapter: buy the linked Waveshare 5 V / 3 A EU USB-C supply. Record the board and adapter labels and complete the qualification checks in POWER_MANAGEMENT.md. Leave battery headers unconnected.
+- Dedicated mains adapter: buy the linked official Raspberry Pi 5.1 V / 3 A EU USB-C supply. Record the board and adapter labels and complete the qualification checks in POWER_MANAGEMENT.md. Leave battery headers unconnected.
 - No Pi, HDMI hardware, external GPS, weather sensors, microSD, remote handset is required for the current configuration.
 - Internet access and API credentials are service prerequisites, not electronics. The PRIM token serves transport; `OPENAI_API_KEY` is development/CI tooling only and does not belong in the appliance firmware BOM.
 
