@@ -15,7 +15,7 @@ static station_network_status_t net={.connected=true,.source=TIME_NETWORK};
 static esp_app_desc_t desc={.version="0.9.0",.project_name="weather_station"};
 static esp_partition_t part={.size=0x800000};
 static int open_error,read_error=ESP_ERR_NVS_NOT_FOUND,write_error,commit_error,crypto_error,ota_error,begin_error,boot_error,http_code=200;
-static bool queue_fail,task_fail,active_pending,trial_aborted,no_partition,truncated,read_failed,init_failed,connect_failed,has_redirect;
+static bool namespace_missing,queue_fail,task_fail,active_pending,trial_aborted,no_partition,truncated,read_failed,init_failed,connect_failed,has_redirect;
 static unsigned begins,activated,aborted,restarted,cleanup_count,loops,stop_loop;
 static saved_t persisted,staged;
 static jmp_buf done;
@@ -29,7 +29,7 @@ bool station_credential_configured(void){return true;}
 bool station_credential_get(char *out,size_t n){snprintf(out,n,"host-test-only");return true;}
 const esp_app_desc_t *esp_app_get_description(void){return &desc;}
 uint32_t esp_random(void){return 0;}
-int nvs_open(const char *name,int mode,nvs_handle_t *h){assert(!strcmp(name,"tempo_ota"));(void)mode;*h=1;return open_error;}
+int nvs_open(const char *name,int mode,nvs_handle_t *h){assert(!strcmp(name,"tempo_ota"));if(namespace_missing&&mode==NVS_READONLY)return ESP_ERR_NVS_NOT_FOUND;if(mode==NVS_READWRITE)namespace_missing=false;*h=1;return open_error;}
 void nvs_close(nvs_handle_t h){(void)h;}
 int nvs_get_blob(nvs_handle_t h,const char *key,void *out,size_t *n){(void)h;(void)key;if(read_error)return read_error;assert(*n==sizeof(persisted));memcpy(out,&persisted,*n);return 0;}
 int nvs_set_blob(nvs_handle_t h,const char *key,const void *v,size_t n){(void)h;(void)key;assert(n==sizeof(persisted));if(write_error)return write_error;memcpy(&staged,v,n);return 0;}
@@ -77,6 +77,7 @@ int main(void){
  snprintf(manifest_text,sizeof(manifest_text),"{\"schema\":1,\"version\":\"0.9.1\",\"target\":\"%s\",\"layout\":\"%s\",\"size\":1024,\"sha256\":\"%064d\",\"url\":\"%sv0.9.1/tempo.bin\"}",TEMPO_UPDATE_TARGET,TEMPO_UPDATE_LAYOUT,0,TEMPO_UPDATE_BASE);
  assert(!station_update_request("check"));assert(!station_update_configure(720,true,180,240));
  open_error=-1;assert(station_update_start()!=0);open_error=0;read_error=-1;assert(station_update_start()!=0);read_error=ESP_ERR_NVS_NOT_FOUND;
+ namespace_missing=true;active_pending=true;assert(station_update_start()==ESP_OK&&!namespace_missing&&persisted.schema==1);commands=NULL;active_pending=false;
  queue_fail=true;assert(station_update_start()!=0);queue_fail=false;task_fail=true;assert(station_update_start()!=0);task_fail=false;assert(station_update_start()==0);assert(station_update_start()==0);
  station_update_status_t s;station_update_status(&s);assert(s.interval_hours==720&&s.automatic&&s.credential_configured);
  assert(!station_update_request(NULL));assert(!station_update_request("bad"));assert(!station_update_configure(2,true,180,240));assert(!station_update_configure(1,true,180,180));

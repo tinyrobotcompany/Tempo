@@ -245,6 +245,7 @@ esp_err_t station_update_start(void)
   if(err==ESP_OK){if(n!=sizeof(value)||value.schema!=1||(value.hours!=1&&value.hours!=720)||value.automatic>1||value.start>=1440||value.end>=1440||value.start==value.end||!memchr(value.pending,0,32)||!memchr(value.blocked,0,32))return ESP_ERR_INVALID_ARG;saved=value;}
   else if(err!=ESP_ERR_NVS_NOT_FOUND)return err;
  }else if(err!=ESP_ERR_NVS_NOT_FOUND)return err;
+ if(err==ESP_ERR_NVS_NOT_FOUND&&!persist())return ESP_FAIL; /* Create durable defaults on first use. */
  snprintf(status.installed,sizeof(status.installed),"%s",esp_app_get_description()->version);
  /* Installed identifies the running image, not acceptance: retain matching pending until VALID. */
  if(saved.pending[0]&&strcmp(saved.pending,status.installed)){
