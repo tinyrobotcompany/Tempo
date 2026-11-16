@@ -11,8 +11,9 @@ static char test_key[513];
 esp_err_t station_credential_set(const char *key){if(strlen(key)>512)return ESP_ERR_INVALID_ARG;snprintf(test_key,sizeof(test_key),"%s",key);return ESP_OK;}
 bool station_transport_refresh(void){return true;}
 void station_update_status(station_update_status_t *out){memset(out,0,sizeof(*out));strcpy(out->installed,"0.9.0");out->interval_hours=720;out->credential_configured=test_key[0]!=0;}
-bool station_update_request(const char *a){return !strcmp(a,"check")||!strcmp(a,"install")||!strcmp(a,"postpone");}
-bool station_update_configure(unsigned h,bool a,unsigned s,unsigned e){(void)a;return (h==1||h==720)&&s!=e;}
+static unsigned update_calls;
+bool station_update_request(const char *a){update_calls++;return !strcmp(a,"check")||!strcmp(a,"install")||!strcmp(a,"postpone");}
+bool station_update_configure(unsigned h,bool a,unsigned s,unsigned e){(void)a;update_calls++;return (h==1||h==720)&&s!=e;}
 static httpd_uri_t routes[14];static unsigned route_count,location_calls;
 static station_network_status_t network;
 static int64_t now_us=1000000;
@@ -51,6 +52,15 @@ int main(void){station_settings_t initial=station_defaults();assert(station_phon
  httpd_req_t secret=request("/api/credential","{\"key\":\"fixture-only\"}",NULL);assert(secret.code==401&&!test_key[0]);
  secret=request("/api/credential","{\"key\":\"fixture-only\"}",auth);assert(secret.code==200&&!strcmp(test_key,"fixture-only")&&!strstr(secret.response,"fixture-only"));
  secret=request("/api/credential","{\"key\":false}",auth);assert(secret.code==400);
+ secret=request("/api/credential","",NULL);assert(secret.code==401&&!strcmp(test_key,"fixture-only"));
+ secret=request("/api/credential","{\"key\":\"\"}","Bearer wrong");assert(secret.code==401&&!strcmp(test_key,"fixture-only"));
+ static const char *const unauth_updates[]={"{\"action\":\"check\"}","{\"action\":\"install\"}","{\"action\":\"postpone\"}",
+   "{\"action\":\"configure\",\"hours\":1,\"automatic\":false,\"start\":0,\"end\":60}"};
+ for(unsigned i=0;i<sizeof(unauth_updates)/sizeof(unauth_updates[0]);i++){
+   secret=request("/api/update",unauth_updates[i],NULL);assert(secret.code==401);
+   secret=request("/api/update",unauth_updates[i],"Bearer wrong");assert(secret.code==401);
+ }
+ assert(update_calls==0);
  secret=request("/api/update","{\"action\":\"check\"}",auth);assert(secret.code==202);
  secret=request("/api/update","{\"action\":\"invalid\"}",auth);assert(secret.code==400);
  secret=request("/api/update","{\"action\":\"configure\",\"hours\":720,\"automatic\":true,\"start\":180,\"end\":240}",auth);assert(secret.code==202);

@@ -132,7 +132,12 @@ static esp_err_t status_get(httpd_req_t *r)
 }
 static esp_err_t post(httpd_req_t *r)
 {
-    headers(r);if(!authorised(r))return httpd_resp_send_err(r,HTTPD_401_UNAUTHORIZED,"Scan the QR code again.");
+    /* Single authentication gate for every POST route: /api/credential, /api/update,
+       /api/location-request, /api/location, /api/settings and /api/view all require the
+       pairing bearer token before the body is read or any route is dispatched.
+       There are no unauthenticated POST endpoints; tests/test_phone_server.c pins this. */
+    headers(r);
+    if(!authorised(r))return httpd_resp_send_err(r,HTTPD_401_UNAUTHORIZED,"Scan the QR code again.");
     char type[64];if(httpd_req_get_hdr_value_str(r,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/json"))return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"JSON required");
     if(r->content_len==0||r->content_len>1024)return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid request size");
     char body[1025];size_t used=0;
@@ -159,6 +164,7 @@ static esp_err_t post(httpd_req_t *r)
         if(!result)return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"Out of memory");
         cJSON_AddStringToObject(result,"state",location_request);return json_reply(r,result);
     }
+    /* Authorised: only reachable after the authorised() gate at the top of post(). */
     if(!strcmp(r->uri,"/api/credential")) {
         cJSON *key=cJSON_GetObjectItemCaseSensitive(j,"key");
         bool ok=cJSON_IsString(key)&&strlen(key->valuestring)<=STATION_PRIM_KEY_MAX;
@@ -168,6 +174,7 @@ static esp_err_t post(httpd_req_t *r)
         if(result!=ESP_OK)return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Credential could not be saved. Check the value and retry.");
         station_transport_refresh();return httpd_resp_sendstr(r,"{\"saved\":true}");
     }
+    /* Authorised: only reachable after the authorised() gate at the top of post(). */
     if(!strcmp(r->uri,"/api/update")) {
         const cJSON *action=cJSON_GetObjectItemCaseSensitive(j,"action");bool accepted=false;
         if(cJSON_IsString(action)&&!strcmp(action->valuestring,"configure")) {
