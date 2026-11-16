@@ -27,7 +27,7 @@
 static portMUX_TYPE lock=portMUX_INITIALIZER_UNLOCKED;
 static station_update_status_t status;
 static QueueHandle_t commands;
-static bool trial_validated;
+static bool trial_validated,trial_accepted;
 static station_update_manifest_t candidate;
 static int64_t rate_limited_until;
 typedef struct {char location[2048];} response_t;
@@ -50,7 +50,8 @@ static bool persist(void)
 static void accept_trial(void)
 {
  esp_ota_img_states_t state;
- if(esp_ota_get_state_partition(esp_ota_get_running_partition(),&state)!=ESP_OK||state!=ESP_OTA_IMG_PENDING_VERIFY)return;
+ if(esp_ota_get_state_partition(esp_ota_get_running_partition(),&state)!=ESP_OK)return;
+ if(state==ESP_OTA_IMG_PENDING_VERIFY){
  snprintf(saved.pending,sizeof(saved.pending),"%s",status.installed);
  if(!persist()){message(UPDATE_ERROR,"Trial state save failed; acceptance deferred.");return;}
  nvs_handle_t h;saved_t readback;size_t size=sizeof(readback);
@@ -58,6 +59,10 @@ static void accept_trial(void)
  esp_err_t err=nvs_get_blob(h,"v1",&readback,&size);nvs_close(h);
  if(err!=ESP_OK||size!=sizeof(readback)||memcmp(&saved,&readback,size))return;
  if(esp_ota_mark_app_valid_cancel_rollback()!=ESP_OK){message(UPDATE_ERROR,"Trial acceptance failed; will retry.");return;}
+ trial_accepted=true;
+ }else if(state!=ESP_OTA_IMG_VALID||!trial_accepted)return;
+ char pending[32];memcpy(pending,saved.pending,32);saved.pending[0]=0;
+ if(!persist()){memcpy(saved.pending,pending,32);return;}
  portENTER_CRITICAL(&lock);trial_validated=true;portEXIT_CRITICAL(&lock);
 }
 bool station_update_validate_trial(void)
@@ -270,7 +275,7 @@ static void worker(void *unused)
 esp_err_t station_update_start(void)
 {
  if(commands)return ESP_OK;
- trial_validated=false;
+ trial_validated=trial_accepted=false;
  saved=(saved_t){.schema=1,.hours=720,.automatic=1,.start=180,.end=240};
  nvs_handle_t h;esp_err_t err=nvs_open("tempo_ota",NVS_READONLY,&h);
  if(err==ESP_OK){saved_t value;size_t n=sizeof(value);err=nvs_get_blob(h,"v1",&value,&n);nvs_close(h);
