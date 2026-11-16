@@ -95,14 +95,14 @@ int main(void){
  int http;assert(!open_url("http://github.com/evil",&http,NULL));has_redirect=true;assert(!open_url(LATEST,&http,NULL));has_redirect=true;void *h=open_url(TEMPO_UPDATE_BASE "v0.9.1/tempo-manifest.json",&http,NULL);assert(h);esp_http_client_cleanup(h);
  char ver[32];strcpy(ver,candidate.version);candidate.version[0]=0;assert(!install());strcpy(candidate.version,ver);
  active_pending=true;assert(!install());active_pending=false;no_partition=true;assert(!install());no_partition=false;
- /* Header mismatch/unknown size must reject before erasing or writing flash. */
+ /* Reject bad lengths before flash writes. */
  unsigned begin_count=begins,write_count=writes;
  const int64_t bad_lengths[]={1023,1025,0,-1};
  for(unsigned i=0;i<sizeof(bad_lengths)/sizeof(bad_lengths[0]);i++){
   declared_size=bad_lengths[i];assert(!install()&&begins==begin_count&&writes==write_count&&activated==0);
  }
  declared_size=-2;body_delta=1;assert(!install()&&begins==begin_count&&writes==write_count);body_delta=0;
- /* A dishonest length or interrupted body is caught during reading, never activated. */
+ /* Reject dishonest/truncated bodies without activation. */
  declared_size=1024;
  for(int delta=-1;delta<=1;delta+=2){body_delta=delta;unsigned abort_count=aborted;assert(!install()&&aborted==abort_count+1&&activated==0);}
  body_delta=0;declared_size=-2;

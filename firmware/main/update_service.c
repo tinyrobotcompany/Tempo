@@ -172,7 +172,7 @@ static bool install(void)
  message(UPDATE_DOWNLOADING,"Downloading update… Keep Tempo powered on.");int http=0;
  int64_t body_length=-1;
  esp_http_client_handle_t h=open_url(candidate.url,&http,&body_length);if(!h||http!=200){if(h)esp_http_client_cleanup(h);message(UPDATE_ERROR,"Download unavailable. Current firmware is unchanged.");return false;}
- /* Firmware delivery requires a known, exact length; chunked/unknown bodies are unsupported. */
+ /* Require the signed size before erasing flash. */
  if(body_length<=0||(uint64_t)body_length!=candidate.size){esp_http_client_cleanup(h);message(UPDATE_ERROR,"Download size mismatch or unknown. Current firmware is unchanged.");return false;}
  esp_ota_handle_t ota=0;bool begun=esp_ota_begin(partition,candidate.size,&ota)==ESP_OK;
  mbedtls_md_context_t hash;mbedtls_md_init(&hash);
@@ -185,7 +185,7 @@ static bool install(void)
  }
  bool extra_bytes=false;
  if(ok){char extra;int n=esp_http_client_read(h,&extra,1);extra_bytes=n>0;
-  /* Completion is checked only after EOF; errors, extra bytes and incomplete framing fail closed. */
+  /* Require EOF and complete framing. */
   ok=n==0&&esp_http_client_is_complete_data_received(h);
  }
  esp_http_client_cleanup(h);message(UPDATE_VERIFYING,"Verifying downloaded firmware…");
