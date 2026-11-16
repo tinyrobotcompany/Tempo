@@ -12,7 +12,7 @@ The firmware verifies a signed ECDSA P-256 manifest, target/layout/version, imag
 
 Use one flashing owner and stop USB watchers. Install over USB with the rollback-enabled bootloader and existing A/B partition layout. Record the installed version and ensure a later published version is strictly newer for OTA acceptance.
 
-The build no longer reads `.env`. Provision the PRIM key in paired phone setup under Transport API access, or run `python3 scripts/provision-transport-key.py --env /absolute/path/to/private/.env` and enter the current QR URL at its hidden prompt. Transport uses the separate NVS namespace `tempo_secret`; updates do not erase it. Pairing authenticates requests but local HTTP is not encrypted. Use a trusted LAN. NVS encryption and protection against physical extraction are not claimed.
+The build no longer reads `.env`. Provision the PRIM key in paired phone setup under Transport API access, or run `python3 scripts/provision-transport-key.py --env /absolute/path/to/private/.env` and enter the current numeric-private-IP HTTP QR URL at its hidden prompt (the firmware emits this format; hostname/mDNS URLs are not accepted). Transport uses the separate NVS namespace `tempo_secret`; updates do not erase it. Pairing authenticates requests but local HTTP is not encrypted. Use a trusted LAN. NVS encryption and protection against physical extraction are not claimed.
 
 ## Acceptance
 

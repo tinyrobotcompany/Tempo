@@ -15,7 +15,7 @@ static station_network_status_t net={.connected=true,.source=TIME_NETWORK};
 static esp_app_desc_t desc={.version="0.9.0",.project_name="weather_station"};
 static esp_partition_t part={.size=0x800000};
 static int open_error,read_error=ESP_ERR_NVS_NOT_FOUND,write_error,commit_error,crypto_error,ota_error,begin_error,boot_error,http_code=200;
-static bool queue_fail,task_fail,active_pending,no_partition,truncated,read_failed,init_failed,connect_failed,has_redirect;
+static bool queue_fail,task_fail,active_pending,trial_aborted,no_partition,truncated,read_failed,init_failed,connect_failed,has_redirect;
 static unsigned begins,activated,aborted,restarted,cleanup_count,loops,stop_loop;
 static saved_t persisted,staged;
 static jmp_buf done;
@@ -42,7 +42,7 @@ int xTaskCreate(void (*fn)(void *),const char *name,unsigned stack,void *arg,uns
 void vTaskDelay(unsigned ticks){mono+=(int64_t)ticks*1000;test_clock+=ticks/1000;if(stop_loop&&++loops>=stop_loop)longjmp(done,1);}
 const esp_partition_t *esp_ota_get_running_partition(void){return &part;}
 const esp_partition_t *esp_ota_get_next_update_partition(const void *p){(void)p;return no_partition?NULL:&part;}
-int esp_ota_get_state_partition(const esp_partition_t *p,esp_ota_img_states_t *s){(void)p;*s=active_pending?ESP_OTA_IMG_PENDING_VERIFY:ESP_OTA_IMG_VALID;return 0;}
+int esp_ota_get_state_partition(const esp_partition_t *p,esp_ota_img_states_t *s){(void)p;*s=trial_aborted?ESP_OTA_IMG_ABORTED:active_pending?ESP_OTA_IMG_PENDING_VERIFY:ESP_OTA_IMG_VALID;return 0;}
 int esp_ota_begin(const esp_partition_t *p,unsigned size,esp_ota_handle_t *h){(void)p;begins++;assert(size==1024);*h=1;return begin_error;}
 int esp_ota_write(esp_ota_handle_t h,const void *data,size_t n){assert(h==1&&data&&n>0);return ota_error;}
 int esp_ota_end(esp_ota_handle_t h){assert(h==1);return ota_error;}
@@ -95,14 +95,15 @@ int main(void){
  active_pending=true;assert(!install());active_pending=false;no_partition=true;assert(!install());no_partition=false;
  unsigned before=begins;http_code=500;assert(!install()&&begins==before);http_code=200;begin_error=-1;assert(!install());begin_error=0;
  ota_error=-1;assert(!install()&&aborted);ota_error=0;truncated=true;assert(!install());truncated=false;
- candidate.sha256[0]='1';assert(!install());candidate.sha256[0]='0';commit_error=-1;assert(!install());commit_error=0;boot_error=-1;assert(!install());boot_error=0;
+ candidate.sha256[0]='1';assert(!install());candidate.sha256[0]='0';commit_error=-1;assert(!install());commit_error=0;boot_error=-1;assert(!install()&&!persisted.pending[0]);boot_error=0;
  assert(activated==0);assert(install()&&activated==1&&restarted==1);
  assert(station_update_request("install"));run(63);assert(restarted==2);
  /* Reboot into trial, fail health, then reboot old image: durable marker must survive. */
  commands=NULL;read_error=0;strcpy(desc.version,"0.9.1");active_pending=true;assert(station_update_start()==0);run(2);assert(!strcmp(persisted.pending,"0.9.1"));
- commands=NULL;strcpy(desc.version,"0.9.0");active_pending=false;assert(station_update_start()==0);assert(!strcmp(persisted.blocked,"0.9.1")&&!persisted.pending[0]);assert(check_release()&&!candidate.version[0]);
+ commands=NULL;strcpy(desc.version,"0.9.0");active_pending=false;trial_aborted=true;assert(station_update_start()==0);trial_aborted=false;assert(!strcmp(persisted.blocked,"0.9.1")&&!persisted.pending[0]);assert(check_release()&&!candidate.version[0]);
  /* Successful validation clears the marker; failed commits retain it for retry. */
  commands=NULL;strcpy(persisted.pending,"0.9.1");strcpy(desc.version,"0.9.1");active_pending=true;assert(station_update_start()==0);run(1);active_pending=false;commit_error=-1;run(1);assert(persisted.pending[0]);commit_error=0;run(1);assert(!persisted.pending[0]);strcpy(desc.version,"0.9.0");
+ commands=NULL;strcpy(persisted.pending,"0.9.1");persisted.blocked[0]=0;assert(station_update_start()==0);assert(!persisted.blocked[0]&&!persisted.pending[0]);
  commands=NULL;persisted.schema=2;assert(station_update_start()!=0);persisted.schema=1;write_error=-1;strcpy(persisted.pending,"0.9.1");assert(station_update_start()!=0);write_error=0;
  puts("PASS: actual OTA worker HTTP limits, signature rejection, scheduling, persistent rollback block and inactive-slot activation only after validation");
 }

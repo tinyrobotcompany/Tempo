@@ -30,7 +30,7 @@ External mains power only: use a 5 V USB-C adapter. [Power supply purchase link,
 
 Current platform: the already-owned Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1 kit, with 32 MB flash and PSRAM. Embedded firmware runs the display and serves the iPhone control panel; no Raspberry Pi is required. This supersedes the earlier 14-inch/Pi proposal.
 
-Current firmware: **0.8.16**. Signed OTA and persistent transport credentials are implemented; see [OTA setup and acceptance](docs/OTA_RUNTIME.md). Features include ten clock styles, equal weather/transport summary cards, location-based weather, nearby departures, service alerts, route diagrams, street maps and local iPhone controls. Wi-Fi profiles, screen brightness, colours and automatic view rotation are configurable. OTA delivery remains outstanding; the USB watcher is not OTA. See [development status](docs/DEVELOPMENT.md).
+Current firmware: **0.8.16**. Signed OTA and persistent transport credentials are implemented; see [OTA setup and acceptance](docs/OTA_RUNTIME.md). Features include ten clock styles, equal weather/transport summary cards, location-based weather, nearby departures, service alerts, route diagrams, street maps and local iPhone controls. Wi-Fi profiles, screen brightness, colours and automatic view rotation are configurable. Initial OTA bootstrap and hardware qualification remain outstanding; the USB watcher is not OTA. See [development status](docs/DEVELOPMENT.md).
 
 ## Configure and build
 

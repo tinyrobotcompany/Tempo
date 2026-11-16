@@ -7,6 +7,9 @@ typedef unsigned esp_ota_handle_t;
 typedef int esp_ota_img_states_t;
 #define ESP_OTA_IMG_PENDING_VERIFY 1
 #define ESP_OTA_IMG_VALID 2
+#define ESP_OTA_IMG_INVALID 3
+#define ESP_OTA_IMG_ABORTED 4
+#define ESP_ERR_NOT_FOUND -20
 const esp_partition_t *esp_ota_get_running_partition(void);
 const esp_partition_t *esp_ota_get_next_update_partition(const void *);
 esp_err_t esp_ota_get_state_partition(const esp_partition_t *,esp_ota_img_states_t *);

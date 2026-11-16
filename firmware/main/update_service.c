@@ -187,7 +187,8 @@ static bool install(void)
  ok=ok&&esp_ota_get_partition_description(partition,&description)==ESP_OK&&!strcmp(description.version,candidate.version)&&!strcmp(description.project_name,"weather_station");
  if(!ok){message(UPDATE_ERROR,"Firmware verification failed. Current firmware is unchanged.");return false;}
  snprintf(saved.pending,sizeof(saved.pending),"%s",candidate.version);
- if(!persist()||esp_ota_set_boot_partition(partition)!=ESP_OK){message(UPDATE_ERROR,"Could not activate update. Current firmware is unchanged.");return false;}
+ if(!persist()){saved.pending[0]=0;message(UPDATE_ERROR,"Could not save activation intent. Current firmware is unchanged.");return false;}
+ if(esp_ota_set_boot_partition(partition)!=ESP_OK){saved.pending[0]=0;persist();message(UPDATE_ERROR,"Could not activate update. Current firmware is unchanged.");return false;}
  message(UPDATE_RESTARTING,"Update verified. Restarting Tempo…");vTaskDelay(pdMS_TO_TICKS(1500));esp_restart();return true;
 }
 static void worker(void *unused)
@@ -246,7 +247,16 @@ esp_err_t station_update_start(void)
  }else if(err!=ESP_ERR_NVS_NOT_FOUND)return err;
  snprintf(status.installed,sizeof(status.installed),"%s",esp_app_get_description()->version);
  /* Installed identifies the running image, not acceptance: retain matching pending until VALID. */
- if(saved.pending[0]){if(strcmp(saved.pending,status.installed)){snprintf(saved.blocked,sizeof(saved.blocked),"%s",saved.pending);message(UPDATE_ERROR,"Previous update did not complete. Previous firmware restored.");saved.pending[0]=0;if(!persist())return ESP_FAIL;}}
+ if(saved.pending[0]&&strcmp(saved.pending,status.installed)){
+  const esp_partition_t *previous=esp_ota_get_next_update_partition(NULL);esp_app_desc_t image;esp_ota_img_states_t state;
+  if(!previous||esp_ota_get_partition_description(previous,&image)!=ESP_OK)return ESP_FAIL;
+  esp_err_t state_err=esp_ota_get_state_partition(previous,&state);
+  if(state_err!=ESP_OK&&state_err!=ESP_ERR_NOT_FOUND)return state_err;
+  bool failed=state_err==ESP_OK&&(state==ESP_OTA_IMG_INVALID||state==ESP_OTA_IMG_ABORTED)&&!strcmp(image.version,saved.pending);
+  if(failed)snprintf(saved.blocked,sizeof(saved.blocked),"%s",saved.pending);
+  message(failed?UPDATE_ERROR:UPDATE_IDLE,failed?"Trial firmware failed; version blocked.":"Activation was interrupted; update may be retried.");
+  saved.pending[0]=0;if(!persist())return ESP_FAIL;
+ }
  else message(UPDATE_IDLE,"Automatic update checks are ready.");
  publish();commands=xQueueCreate(4,sizeof(command_t));if(!commands)return ESP_ERR_NO_MEM;
  if(xTaskCreate(worker,"ota",16384,NULL,1,NULL)!=pdPASS){vQueueDelete(commands);commands=NULL;return ESP_ERR_NO_MEM;}return ESP_OK;
