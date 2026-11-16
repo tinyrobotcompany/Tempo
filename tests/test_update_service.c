@@ -22,6 +22,7 @@ static saved_t persisted,staged;
 static jmp_buf done;
 struct test_queue {command_t item[8];unsigned n;} q;
 static int64_t declared_size=-2;static int body_delta;
+static const char *client_url;
 static const char *response;static size_t offset,response_size;static char image[1025],manifest_text[1024];
 static const char latest[]="{\"tag_name\":\"v0.9.1\",\"draft\":false,\"prerelease\":false}";
 void test_log(const char *tag,const char *fmt,...){(void)tag;(void)fmt;}
@@ -54,7 +55,7 @@ int esp_ota_set_boot_partition(const esp_partition_t *p){(void)p;if(!boot_error)
 int esp_ota_mark_app_valid_cancel_rollback(void){if(accept_error)return accept_error;accepted++;active_pending=false;if(cleanup_fails)commit_error=-1;return 0;}
 void esp_restart(void){restarted++;}
 void esp_crt_bundle_attach(void){}
-void *esp_http_client_init(esp_http_client_config_t *c){assert(c->crt_bundle_attach&&c->disable_auto_redirect);offset=0;
+void *esp_http_client_init(esp_http_client_config_t *c){assert(c->crt_bundle_attach&&c->disable_auto_redirect);offset=0;client_url=c->url;
  if(has_redirect&&strstr(c->url,"github.com")){esp_http_client_event_t e={.event_id=HTTP_EVENT_ON_HEADER,.header_key="Location",.header_value="https://release-assets.githubusercontent.com/test",.user_data=c->user_data};c->event_handler(&e);}
  if(!strstr(c->url,"release-assets.githubusercontent.com"))response=strstr(c->url,"/latest")?latest:strstr(c->url,"manifest.json")?manifest_text:strstr(c->url,"manifest.sig")?"signature":image;
  response_size=response==image?(size_t)(1024+body_delta):strlen(response);return init_failed?NULL:(void *)1;}
@@ -63,7 +64,7 @@ int esp_http_client_set_header(void *h,const char *key,const char *value){(void)
 int64_t esp_http_client_fetch_headers(void *h){(void)h;return declared_size==-2?(int64_t)response_size:declared_size;}
 int esp_http_client_get_status_code(void *h){(void)h;if(has_redirect){has_redirect=false;return 302;}return http_code;}
 void esp_http_client_cleanup(void *h){(void)h;cleanup_count++;}
-int esp_http_client_read(void *h,char *out,int n){(void)h;if(read_failed)return -1;size_t take=response_size-offset;if(take>(size_t)n)take=(size_t)n;memcpy(out,response+offset,take);offset+=take;return (int)take;}
+int esp_http_client_read(void *h,char *out,int n){(void)h;assert(allowed_url(client_url,!strcmp(client_url,LATEST)));if(read_failed)return -1;size_t take=response_size-offset;if(take>(size_t)n)take=(size_t)n;memcpy(out,response+offset,take);offset+=take;return (int)take;}
 bool esp_http_client_is_complete_data_received(void *h){(void)h;return !truncated&&offset==response_size;}
 void mbedtls_md_init(mbedtls_md_context_t *c){(void)c;}void mbedtls_md_free(mbedtls_md_context_t *c){(void)c;}
 void *mbedtls_md_info_from_type(int t){assert(t==MBEDTLS_MD_SHA256);return (void *)1;}
@@ -113,17 +114,17 @@ int main(void){
  candidate.sha256[0]='1';assert(!install());candidate.sha256[0]='0';commit_error=-1;assert(!install());commit_error=0;boot_error=-1;assert(!install()&&!persisted.pending[0]);boot_error=0;
  assert(activated==0);assert(install()&&activated==1&&restarted==1);
  assert(station_update_request("install"));run(63);assert(restarted==2);
- /* Reboot into trial, fail health, then reboot old image: durable marker must survive. */
+ /* Failed trial survives reboot. */
  commands=NULL;read_error=0;strcpy(desc.version,"0.9.1");active_pending=true;assert(station_update_start()==0);run(2);assert(!strcmp(persisted.pending,"0.9.1"));
  commands=NULL;strcpy(desc.version,"0.9.0");active_pending=false;trial_aborted=true;assert(station_update_start()==0);trial_aborted=false;assert(!strcmp(persisted.blocked,"0.9.1")&&!persisted.pending[0]);assert(check_release()&&!candidate.version[0]);
- /* Failed persistence cannot accept a trial; retry must preserve its rollback marker. */
+ /* Acceptance requires durable state. */
  active_pending=true;strcpy(status.installed,"0.9.1");read_error=0;
  commit_error=-1;assert(!station_update_validate_trial());run(1);assert(!accepted&&active_pending);commit_error=0;
  read_error=-1;assert(!station_update_validate_trial());run(1);assert(!accepted&&active_pending);read_error=0;
  accept_error=-1;assert(!station_update_validate_trial());run(1);assert(!accepted&&active_pending);accept_error=0;
  cleanup_fails=true;assert(!station_update_validate_trial());run(1);assert(!trial_validated&&accepted==1&&!active_pending&&persisted.pending[0]);
  cleanup_fails=false;commit_error=0;assert(!station_update_validate_trial());run(1);assert(station_update_validate_trial()&&accepted==1&&!persisted.pending[0]);
- /* Successful validation clears the marker; failed commits retain it for retry. */
+ /* Retry marker cleanup. */
  commands=NULL;strcpy(persisted.pending,"0.9.1");strcpy(desc.version,"0.9.1");active_pending=true;assert(station_update_start()==0);run(1);active_pending=false;commit_error=-1;run(1);assert(persisted.pending[0]);commit_error=0;run(1);assert(!persisted.pending[0]);strcpy(desc.version,"0.9.0");
  commands=NULL;strcpy(persisted.pending,"0.9.1");persisted.blocked[0]=0;assert(station_update_start()==0);assert(!persisted.blocked[0]&&!persisted.pending[0]);
  commands=NULL;persisted.schema=2;assert(station_update_start()!=0);persisted.schema=1;write_error=-1;strcpy(persisted.pending,"0.9.1");assert(station_update_start()!=0);write_error=0;

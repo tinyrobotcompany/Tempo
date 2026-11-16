@@ -123,10 +123,12 @@ static esp_http_client_handle_t open_url(const char *url,int *http,int64_t *body
  *http=0;if(body_length)*body_length=-1;
  bool metadata=!strcmp(url,LATEST);
  if(!metadata&&strncmp(url,TEMPO_UPDATE_BASE,strlen(TEMPO_UPDATE_BASE)))return NULL;
- char current[2048];snprintf(current,sizeof(current),"%s",url);
+ /* Only the OTA worker opens clients; storage survives reads and cleanup callbacks. */
+ static char current[2048];static response_t response;
+ snprintf(current,sizeof(current),"%s",url);
  for(unsigned redirects=0;redirects<4;redirects++){
   if(!allowed_url(current,metadata))return NULL;
-  response_t response={0};
+  memset(&response,0,sizeof(response));
   esp_http_client_config_t config={.event_handler=response_header,.user_data=&response,.url=current,.timeout_ms=15000,.buffer_size=4096,.buffer_size_tx=2048,
    .crt_bundle_attach=esp_crt_bundle_attach,.disable_auto_redirect=true};
   esp_http_client_handle_t h=esp_http_client_init(&config);if(!h)return NULL;
