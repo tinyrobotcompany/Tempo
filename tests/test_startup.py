@@ -52,13 +52,14 @@ int main(void){assert(check(true,-1,5000000)==1);assert(check(true,0,5000000)==0
 static long now;
 static int accepted,rolled;
 static long esp_timer_get_time(void){return now;}
-static int esp_ota_mark_app_valid_cancel_rollback(void){accepted++;return 0;}
+static bool healthy;
+static bool station_update_validate_trial(void){if(healthy)accepted++;return healthy;}
 static int esp_ota_mark_app_invalid_rollback_and_reboot(void){rolled++;return 0;}
-int main(void){bool pending=true;int phone_err=0,update_err=0;long started=0;
+int main(void){for(int scenario=0;scenario<2;scenario++){healthy=scenario;accepted=rolled=0;bool pending=true;int phone_err=0,update_err=0;long started=0;
 for(now=5000000;now<=180000000;now+=5000000){unsigned beat=now/100000;
 '''+valid+invalid+'''
-if(now<120000000)assert(accepted==0);else assert(accepted==1);assert(rolled==0);}
-assert(!pending);}
+if(!healthy||now<120000000)assert(accepted==0);else assert(accepted==1);}
+assert(healthy?(!pending&&rolled==0):(pending&&rolled==1));}}
 '''
         with tempfile.TemporaryDirectory() as d:
             p=Path(d);(p/'health.c').write_text(code)

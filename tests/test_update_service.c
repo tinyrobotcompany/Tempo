@@ -16,6 +16,7 @@ static esp_app_desc_t desc={.version="0.9.0",.project_name="weather_station"};
 static esp_partition_t part={.size=0x800000};
 static int open_error,read_error=ESP_ERR_NVS_NOT_FOUND,write_error,commit_error,crypto_error,ota_error,begin_error,boot_error,http_code=200;
 static bool namespace_missing,queue_fail,task_fail,active_pending,trial_aborted,no_partition,truncated,read_failed,init_failed,connect_failed,has_redirect;
+static unsigned accepted;static int accept_error;
 static unsigned writes,begins,activated,aborted,restarted,cleanup_count,loops,stop_loop;
 static saved_t persisted,staged;
 static jmp_buf done;
@@ -50,6 +51,7 @@ int esp_ota_end(esp_ota_handle_t h){assert(h==1);return ota_error;}
 int esp_ota_abort(esp_ota_handle_t h){assert(h==1);aborted++;return 0;}
 int esp_ota_get_partition_description(const esp_partition_t *p,esp_app_desc_t *d){(void)p;*d=desc;strcpy(d->version,"0.9.1");return 0;}
 int esp_ota_set_boot_partition(const esp_partition_t *p){(void)p;if(!boot_error)activated++;return boot_error;}
+int esp_ota_mark_app_valid_cancel_rollback(void){if(accept_error)return accept_error;accepted++;active_pending=false;return 0;}
 void esp_restart(void){restarted++;}
 void esp_crt_bundle_attach(void){}
 void *esp_http_client_init(esp_http_client_config_t *c){assert(c->crt_bundle_attach&&c->disable_auto_redirect);offset=0;
@@ -114,6 +116,13 @@ int main(void){
  /* Reboot into trial, fail health, then reboot old image: durable marker must survive. */
  commands=NULL;read_error=0;strcpy(desc.version,"0.9.1");active_pending=true;assert(station_update_start()==0);run(2);assert(!strcmp(persisted.pending,"0.9.1"));
  commands=NULL;strcpy(desc.version,"0.9.0");active_pending=false;trial_aborted=true;assert(station_update_start()==0);trial_aborted=false;assert(!strcmp(persisted.blocked,"0.9.1")&&!persisted.pending[0]);assert(check_release()&&!candidate.version[0]);
+ /* Failed persistence cannot accept a trial; retry must preserve its rollback marker. */
+ active_pending=true;strcpy(status.installed,"0.9.1");read_error=0;
+ commit_error=-1;assert(!station_update_validate_trial());run(1);assert(!accepted&&active_pending);commit_error=0;
+ read_error=-1;assert(!station_update_validate_trial());run(1);assert(!accepted&&active_pending);read_error=0;
+ accept_error=-1;assert(!station_update_validate_trial());run(1);assert(!accepted&&active_pending);accept_error=0;
+ assert(!station_update_validate_trial());run(1);assert(station_update_validate_trial()&&accepted==1&&!active_pending);
+ assert(!strcmp(persisted.pending,"0.9.1"));commit_error=-1;run(1);assert(persisted.pending[0]);commit_error=0;run(1);assert(!persisted.pending[0]);
  /* Successful validation clears the marker; failed commits retain it for retry. */
  commands=NULL;strcpy(persisted.pending,"0.9.1");strcpy(desc.version,"0.9.1");active_pending=true;assert(station_update_start()==0);run(1);active_pending=false;commit_error=-1;run(1);assert(persisted.pending[0]);commit_error=0;run(1);assert(!persisted.pending[0]);strcpy(desc.version,"0.9.0");
  commands=NULL;strcpy(persisted.pending,"0.9.1");persisted.blocked[0]=0;assert(station_update_start()==0);assert(!persisted.blocked[0]&&!persisted.pending[0]);

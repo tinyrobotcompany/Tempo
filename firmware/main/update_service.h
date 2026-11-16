@@ -5,3 +5,4 @@ esp_err_t station_update_start(void);
 void station_update_status(station_update_status_t *out);
 bool station_update_request(const char *action);
 bool station_update_configure(unsigned hours,bool automatic,unsigned start,unsigned end);
+bool station_update_validate_trial(void);

@@ -37,3 +37,4 @@ void mbedtls_pk_init(mbedtls_pk_context *);
 void mbedtls_pk_free(mbedtls_pk_context *);
 int mbedtls_pk_parse_public_key(mbedtls_pk_context *,const unsigned char *,size_t);
 int mbedtls_pk_verify(mbedtls_pk_context *,int,const unsigned char *,size_t,const unsigned char *,size_t);
+esp_err_t esp_ota_mark_app_valid_cancel_rollback(void);

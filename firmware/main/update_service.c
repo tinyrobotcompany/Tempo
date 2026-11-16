@@ -27,6 +27,7 @@
 static portMUX_TYPE lock=portMUX_INITIALIZER_UNLOCKED;
 static station_update_status_t status;
 static QueueHandle_t commands;
+static bool trial_validated;
 static station_update_manifest_t candidate;
 static int64_t rate_limited_until;
 typedef struct {char location[2048];} response_t;
@@ -45,6 +46,25 @@ static bool persist(void)
 {
  nvs_handle_t h;esp_err_t err=nvs_open("tempo_ota",NVS_READWRITE,&h);if(err!=ESP_OK)return false;
  err=nvs_set_blob(h,"v1",&saved,sizeof(saved));if(err==ESP_OK)err=nvs_commit(h);nvs_close(h);return err==ESP_OK;
+}
+static void accept_trial(void)
+{
+ esp_ota_img_states_t state;
+ if(esp_ota_get_state_partition(esp_ota_get_running_partition(),&state)!=ESP_OK||state!=ESP_OTA_IMG_PENDING_VERIFY)return;
+ snprintf(saved.pending,sizeof(saved.pending),"%s",status.installed);
+ if(!persist()){message(UPDATE_ERROR,"Trial state save failed; acceptance deferred.");return;}
+ nvs_handle_t h;saved_t readback;size_t size=sizeof(readback);
+ if(nvs_open("tempo_ota",NVS_READONLY,&h)!=ESP_OK)return;
+ esp_err_t err=nvs_get_blob(h,"v1",&readback,&size);nvs_close(h);
+ if(err!=ESP_OK||size!=sizeof(readback)||memcmp(&saved,&readback,size))return;
+ if(esp_ota_mark_app_valid_cancel_rollback()!=ESP_OK){message(UPDATE_ERROR,"Trial acceptance failed; will retry.");return;}
+ portENTER_CRITICAL(&lock);trial_validated=true;portEXIT_CRITICAL(&lock);
+}
+bool station_update_validate_trial(void)
+{
+ portENTER_CRITICAL(&lock);bool valid=trial_validated;portEXIT_CRITICAL(&lock);
+ if(!valid&&commands){command_t cmd={.action=5};xQueueSend(commands,&cmd,0);}
+ return valid;
 }
 static void publish(void)
 {
@@ -218,6 +238,7 @@ static void worker(void *unused)
   }
   command_t cmd;
   while(xQueueReceive(commands,&cmd,0)==pdTRUE){
+   if(cmd.action==5)accept_trial();
    if(cmd.action==1){if(ready){saved.next=0;force_check=true;}else message(UPDATE_ERROR,"Connect to Wi-Fi and synchronise time to check updates.");}
    if(cmd.action==2){if(ready&&candidate.version[0]){manual_install=true;countdown=mono+60000000;message(UPDATE_AVAILABLE,"Installing in 60 seconds. Choose Postpone to cancel.");}else message(UPDATE_ERROR,"Check for an available update while connected first.");}
    if(cmd.action==3){countdown=0;manual_install=false;postponed_until=now+86400;saved.postponed=postponed_until;if(!persist())message(UPDATE_ERROR,"Postponed, but saving failed. This may not survive a restart.");else message(candidate.version[0]?UPDATE_AVAILABLE:UPDATE_IDLE,"Installation postponed for 24 hours.");}
@@ -249,6 +270,7 @@ static void worker(void *unused)
 esp_err_t station_update_start(void)
 {
  if(commands)return ESP_OK;
+ trial_validated=false;
  saved=(saved_t){.schema=1,.hours=720,.automatic=1,.start=180,.end=240};
  nvs_handle_t h;esp_err_t err=nvs_open("tempo_ota",NVS_READONLY,&h);
  if(err==ESP_OK){saved_t value;size_t n=sizeof(value);err=nvs_get_blob(h,"v1",&value,&n);nvs_close(h);

@@ -30,11 +30,11 @@ External mains power only: use a 5 V USB-C adapter. [Power supply purchase link,
 
 Current platform: the already-owned Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1 kit, with 32 MB flash and PSRAM. Embedded firmware runs the display and serves the iPhone control panel; no Raspberry Pi is required. This supersedes the earlier 14-inch/Pi proposal.
 
-Current firmware: **0.8.16**. Signed OTA and persistent transport credentials are implemented; see [OTA setup and acceptance](docs/OTA_RUNTIME.md). Features include ten clock styles, equal weather/transport summary cards, location-based weather, nearby departures, service alerts, route diagrams, street maps and local iPhone controls. Wi-Fi profiles, screen brightness, colours and automatic view rotation are configurable. Initial OTA bootstrap and hardware qualification remain outstanding; the USB watcher is not OTA. See [development status](docs/DEVELOPMENT.md).
+Current firmware: **0.8.16**. Signed OTA and persistent transport credentials are implemented. Features include ten clock styles, equal weather/transport summary cards, location-based weather, nearby departures, service alerts, route diagrams, street maps and local iPhone controls. Wi-Fi profiles, screen brightness, colours and automatic view rotation are configurable. Initial OTA bootstrap and hardware qualification remain outstanding; the USB watcher is not OTA. See [development status](docs/DEVELOPMENT.md).
 
 ## Configure and build
 
-Install ESP-IDF 6.1 for the tested ESP32-P4 revision, then copy `.env.example` to `.env` and set your own `IDFM_PRIM_API_KEY`. The build generates a private credential header; never publish build artifacts containing the key. Provision the PRIM key through paired phone setup after installation; firmware builds no longer read `.env`. Dependencies are restored from the component manifest and lock file. The patched LVGL adapter under `firmware/vendor` is required.
+Install ESP-IDF 6.1 for the tested ESP32-P4 revision, then provision the PRIM key through paired phone setup after installation; firmware builds no longer read `.env`. Dependencies are restored from the component manifest and lock file. The patched LVGL adapter under `firmware/vendor` is required.
 
 ```sh
 cp .env.example .env

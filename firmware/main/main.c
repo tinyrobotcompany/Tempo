@@ -144,10 +144,8 @@ void app_main(void)
             ESP_LOGE(TAG, "UI stopped responding; restart");
             esp_restart();
         }
-        if (pending && phone_err == ESP_OK && update_err == ESP_OK && beat >= 100 && esp_timer_get_time()-started >= 120000000) {
-            /* NVS and network-task startup succeeded above; local servers and UI are healthy.
-             * Provider reachability and Wi-Fi connectivity must not gate rollback. */
-            ESP_ERROR_CHECK(esp_ota_mark_app_valid_cancel_rollback());
+        if (pending && phone_err == ESP_OK && update_err == ESP_OK && beat >= 100 && esp_timer_get_time()-started >= 120000000 && station_update_validate_trial()) {
+            /* Worker confirmed durable trial state before accepting the image. */
             pending = false;
             ESP_LOGI(TAG, "Trial firmware healthy");
         }
