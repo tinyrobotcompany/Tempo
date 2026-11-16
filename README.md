@@ -57,3 +57,10 @@ See the [release strategy](docs/RELEASING.md) and [changelog](CHANGELOG.md). Pre
 ## Testing and troubleshooting
 
 The full suite includes unit, host integration and regression tests, with an enforced 80% executable-line coverage floor for core units, host-tested firmware and browser modules. See [testing scope and exclusions](docs/TESTING.md) and [troubleshooting/log capture](docs/TROUBLESHOOTING.md). Run `bash scripts/test-all.sh`; reports are written under `build-host/coverage/` and `build-host/test-results/`.
+
+## Automated firmware releases
+
+After the OTA runtime prerequisite is merged, firmware changes on main publish signed release assets and release notes after CI/security validation. See [release procedure](docs/RELEASING.md) and [OTA operations](docs/OTA.md).
+
+[![OTA releases](https://github.com/tinyrobotcompany/Tempo/actions/workflows/ota-release.yml/badge.svg)](https://github.com/tinyrobotcompany/Tempo/actions/workflows/ota-release.yml)
+[![Latest release](https://img.shields.io/github/v/release/tinyrobotcompany/Tempo)](https://github.com/tinyrobotcompany/Tempo/releases/latest)

@@ -1,0 +1,88 @@
+name: Publish OTA Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firmware/**'
+      - 'companion/shortcut/**'
+      - 'scripts/ota-release.py'
+      - '.github/workflows/ota-release.yml'
+# Serial publication prevents two merges allocating the same version.
+concurrency:
+  group: tempo-production-release
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  validation:
+    uses: ./.github/workflows/ci.yaml
+  security:
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/security-audit.yaml
+  publish:
+    needs: [validation, security]
+    runs-on: ubuntu-24.04
+    environment: production-ota
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Allocate release version and notes
+        id: plan
+        run: |
+          git fetch origin '+refs/tags/*:refs/tags/*'
+          version=$(python3 scripts/ota-release.py plan)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Checkout pinned ESP-IDF
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: espressif/esp-idf
+          ref: fff9895c82d744c7237be8847347bdd1b07c6643
+          path: .artifacts/esp-idf
+          submodules: recursive
+          persist-credentials: false
+      - name: Build credential-free release firmware
+        env:
+          TEMPO_RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          test ! -f .env
+          test -f firmware/main/credentials.c
+          test -f firmware/main/update_service.c
+          test ! -f scripts/generate_transport_config.py
+          .artifacts/esp-idf/install.sh esp32p4
+          source .artifacts/esp-idf/export.sh
+          idf.py -C firmware build
+          python3 scripts/check-transport-memory.py
+          cp firmware/dependencies.lock build-host/release/dependencies.lock
+      - name: Sign and verify release manifest
+        env:
+          OTA_SIGNING_PRIVATE_KEY: ${{ secrets.OTA_SIGNING_PRIVATE_KEY }}
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          set +x
+          test -n "$OTA_SIGNING_PRIVATE_KEY"
+          umask 077
+          signing_key=$(mktemp)
+          trap 'rm -f "$signing_key"' EXIT
+          printf '%s\n' "$OTA_SIGNING_PRIVATE_KEY" > "$signing_key"
+          python3 scripts/ota-release.py package --image firmware/build/weather_station.bin --version "$RELEASE_VERSION" --key "$signing_key"
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          if gh release view "$tag" --json isDraft --jq '.isDraft' | grep -qx false; then
+            echo 'Release already published; immutable artifacts are not replaced.'
+            exit 0
+          fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --target "$GITHUB_SHA" --title "Tempo $VERSION" --draft --notes-file build-host/release/notes.md
+          fi
+          gh release upload "$tag" build-host/release/tempo.bin build-host/release/tempo-manifest.json build-host/release/tempo-manifest.sig build-host/release/SHA256SUMS build-host/release/dependencies.lock build-host/release/release.json --clobber
+          gh release edit "$tag" --draft=false --latest --notes-file build-host/release/notes.md

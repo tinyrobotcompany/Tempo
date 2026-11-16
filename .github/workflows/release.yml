@@ -1,4 +1,4 @@
-name: Draft Release
+name: Legacy Source Draft
 on:
   push:
     tags: ['v*']
@@ -40,4 +40,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then exit 0; fi
-          gh release create "$GITHUB_REF_NAME" --target "$GITHUB_SHA" --title "Tempo $GITHUB_REF_NAME" --verify-tag --draft --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md"
+          gh release create "$GITHUB_REF_NAME" --target "$GITHUB_SHA" --title "Tempo $GITHUB_REF_NAME" --verify-tag --draft --prerelease --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md"
