@@ -32,4 +32,4 @@ No release, merge or device flash is implied by local source changes. Do not dis
 
 ## Legacy source-only tooling
 
-`scripts/release.py prepare` and `release.yml` remain available for deliberately prepared source-only tags. They are not the automatic OTA publication path. They require matching checked-in versioned notes and create a draft that a maintainer must explicitly publish. Do not mark a source-only release as the latest production OTA release: it has no signed package for devices. New firmware releases should use the automatic workflow above.
+`scripts/release.py prepare` and `release.yml` remain available for deliberately prepared `source-vX.Y.Z` source-only tags (for example `source-v0.8.16`). Automatic OTA uses `vX.Y.Z`; those tags never trigger the legacy source workflow. They are not the automatic OTA publication path. They require matching checked-in versioned notes and create a draft that a maintainer must explicitly publish. Do not mark a source-only release as the latest production OTA release: it has no signed package for devices. New firmware releases should use the automatic workflow above.
