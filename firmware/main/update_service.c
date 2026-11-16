@@ -93,8 +93,9 @@ static esp_err_t response_header(esp_http_client_event_t *event)
  return ESP_OK;
 }
 /* Follow only bounded, certificate-verified GitHub redirects. Never send credentials. */
-static esp_http_client_handle_t open_url(const char *url,int *http)
+static esp_http_client_handle_t open_url(const char *url,int *http,int64_t *body_length)
 {
+ *http=0;if(body_length)*body_length=-1;
  bool metadata=!strcmp(url,LATEST);
  if(!metadata&&strncmp(url,TEMPO_UPDATE_BASE,strlen(TEMPO_UPDATE_BASE)))return NULL;
  char current[2048];snprintf(current,sizeof(current),"%s",url);
@@ -105,9 +106,11 @@ static esp_http_client_handle_t open_url(const char *url,int *http)
    .crt_bundle_attach=esp_crt_bundle_attach,.disable_auto_redirect=true};
   esp_http_client_handle_t h=esp_http_client_init(&config);if(!h)return NULL;
   esp_http_client_set_header(h,"User-Agent","Tempo-OTA/1");esp_http_client_set_header(h,"Accept-Encoding","identity");
-  if(esp_http_client_open(h,0)!=ESP_OK||esp_http_client_fetch_headers(h)<0){esp_http_client_cleanup(h);return NULL;}
+  if(esp_http_client_open(h,0)!=ESP_OK){esp_http_client_cleanup(h);return NULL;}
+  int64_t length=esp_http_client_fetch_headers(h);
+  if(length<0){esp_http_client_cleanup(h);return NULL;}
   *http=esp_http_client_get_status_code(h);
-  if(*http==200){rate_limited_until=0;return h;}
+  if(*http==200){if(body_length)*body_length=length;rate_limited_until=0;return h;}
   bool redirect=(*http==301||*http==302||*http==303||*http==307||*http==308)&&
     response.location[0]&&strlen(response.location)<sizeof(current);
   if(redirect)snprintf(current,sizeof(current),"%s",response.location);
@@ -117,7 +120,7 @@ static esp_http_client_handle_t open_url(const char *url,int *http)
 }
 static unsigned char *download(const char *url,size_t limit,size_t *length,int *http)
 {
- *length=0;*http=0;esp_http_client_handle_t h=open_url(url,http);if(!h)return NULL;
+ *length=0;*http=0;esp_http_client_handle_t h=open_url(url,http,NULL);if(!h)return NULL;
  unsigned char *data=malloc(limit+1);bool ok=data!=NULL;int64_t deadline=esp_timer_get_time()+60000000;
  while(ok&&*length<limit){int n=esp_http_client_read(h,(char *)data+*length,(int)(limit-*length));if(n<0){ok=false;break;}if(!n)break;*length+=(size_t)n;if(esp_timer_get_time()>deadline)ok=false;}
  ok=ok&&*length>0&&esp_http_client_is_complete_data_received(h);
@@ -167,7 +170,10 @@ static bool install(void)
  const esp_partition_t *partition=esp_ota_get_next_update_partition(NULL);
  if(!partition||candidate.size>partition->size){message(UPDATE_ERROR,"Update does not fit this device.");return false;}
  message(UPDATE_DOWNLOADING,"Downloading update… Keep Tempo powered on.");int http=0;
- esp_http_client_handle_t h=open_url(candidate.url,&http);if(!h||http!=200){if(h)esp_http_client_cleanup(h);message(UPDATE_ERROR,"Download unavailable. Current firmware is unchanged.");return false;}
+ int64_t body_length=-1;
+ esp_http_client_handle_t h=open_url(candidate.url,&http,&body_length);if(!h||http!=200){if(h)esp_http_client_cleanup(h);message(UPDATE_ERROR,"Download unavailable. Current firmware is unchanged.");return false;}
+ /* Firmware delivery requires a known, exact length; chunked/unknown bodies are unsupported. */
+ if(body_length<=0||(uint64_t)body_length!=candidate.size){esp_http_client_cleanup(h);message(UPDATE_ERROR,"Download size mismatch or unknown. Current firmware is unchanged.");return false;}
  esp_ota_handle_t ota=0;bool begun=esp_ota_begin(partition,candidate.size,&ota)==ESP_OK;
  mbedtls_md_context_t hash;mbedtls_md_init(&hash);
  bool ok=begun&&mbedtls_md_setup(&hash,mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),0)==0&&mbedtls_md_starts(&hash)==0;
@@ -177,7 +183,11 @@ static bool install(void)
   ok=mbedtls_md_update(&hash,buffer,(size_t)n)==0&&esp_ota_write(ota,buffer,(size_t)n)==ESP_OK;total+=(size_t)n;
   portENTER_CRITICAL(&lock);status.progress=(unsigned)(total*100/candidate.size);portEXIT_CRITICAL(&lock);
  }
- if(ok){char extra;ok=esp_http_client_read(h,&extra,1)==0&&esp_http_client_is_complete_data_received(h);}
+ bool extra_bytes=false;
+ if(ok){char extra;int n=esp_http_client_read(h,&extra,1);extra_bytes=n>0;
+  /* Completion is checked only after EOF; errors, extra bytes and incomplete framing fail closed. */
+  ok=n==0&&esp_http_client_is_complete_data_received(h);
+ }
  esp_http_client_cleanup(h);message(UPDATE_VERIFYING,"Verifying downloaded firmware…");
  ok=ok&&total==candidate.size&&mbedtls_md_finish(&hash,digest)==0;mbedtls_md_free(&hash);
  char hex[65];for(unsigned i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",digest[i]);ok=ok&&!strcmp(hex,candidate.sha256);
@@ -185,7 +195,7 @@ static bool install(void)
  if(begun)esp_ota_abort(ota);
  esp_app_desc_t description;
  ok=ok&&esp_ota_get_partition_description(partition,&description)==ESP_OK&&!strcmp(description.version,candidate.version)&&!strcmp(description.project_name,"weather_station");
- if(!ok){message(UPDATE_ERROR,"Firmware verification failed. Current firmware is unchanged.");return false;}
+ if(!ok){message(UPDATE_ERROR,extra_bytes?"Download contains extra bytes. Current firmware is unchanged.":"Firmware verification failed. Current firmware is unchanged.");return false;}
  snprintf(saved.pending,sizeof(saved.pending),"%s",candidate.version);
  if(!persist()){saved.pending[0]=0;message(UPDATE_ERROR,"Could not save activation intent. Current firmware is unchanged.");return false;}
  if(esp_ota_set_boot_partition(partition)!=ESP_OK){saved.pending[0]=0;persist();message(UPDATE_ERROR,"Could not activate update. Current firmware is unchanged.");return false;}

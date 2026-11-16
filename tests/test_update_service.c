@@ -16,11 +16,12 @@ static esp_app_desc_t desc={.version="0.9.0",.project_name="weather_station"};
 static esp_partition_t part={.size=0x800000};
 static int open_error,read_error=ESP_ERR_NVS_NOT_FOUND,write_error,commit_error,crypto_error,ota_error,begin_error,boot_error,http_code=200;
 static bool namespace_missing,queue_fail,task_fail,active_pending,trial_aborted,no_partition,truncated,read_failed,init_failed,connect_failed,has_redirect;
-static unsigned begins,activated,aborted,restarted,cleanup_count,loops,stop_loop;
+static unsigned writes,begins,activated,aborted,restarted,cleanup_count,loops,stop_loop;
 static saved_t persisted,staged;
 static jmp_buf done;
 struct test_queue {command_t item[8];unsigned n;} q;
-static const char *response;static size_t offset,response_size;static char image[1024],manifest_text[1024];
+static int64_t declared_size=-2;static int body_delta;
+static const char *response;static size_t offset,response_size;static char image[1025],manifest_text[1024];
 static const char latest[]="{\"tag_name\":\"v0.9.1\",\"draft\":false,\"prerelease\":false}";
 void test_log(const char *tag,const char *fmt,...){(void)tag;(void)fmt;}
 int64_t esp_timer_get_time(void){return mono;}
@@ -44,7 +45,7 @@ const esp_partition_t *esp_ota_get_running_partition(void){return &part;}
 const esp_partition_t *esp_ota_get_next_update_partition(const void *p){(void)p;return no_partition?NULL:&part;}
 int esp_ota_get_state_partition(const esp_partition_t *p,esp_ota_img_states_t *s){(void)p;*s=trial_aborted?ESP_OTA_IMG_ABORTED:active_pending?ESP_OTA_IMG_PENDING_VERIFY:ESP_OTA_IMG_VALID;return 0;}
 int esp_ota_begin(const esp_partition_t *p,unsigned size,esp_ota_handle_t *h){(void)p;begins++;assert(size==1024);*h=1;return begin_error;}
-int esp_ota_write(esp_ota_handle_t h,const void *data,size_t n){assert(h==1&&data&&n>0);return ota_error;}
+int esp_ota_write(esp_ota_handle_t h,const void *data,size_t n){assert(h==1&&data&&n>0);writes++;return ota_error;}
 int esp_ota_end(esp_ota_handle_t h){assert(h==1);return ota_error;}
 int esp_ota_abort(esp_ota_handle_t h){assert(h==1);aborted++;return 0;}
 int esp_ota_get_partition_description(const esp_partition_t *p,esp_app_desc_t *d){(void)p;*d=desc;strcpy(d->version,"0.9.1");return 0;}
@@ -54,10 +55,10 @@ void esp_crt_bundle_attach(void){}
 void *esp_http_client_init(esp_http_client_config_t *c){assert(c->crt_bundle_attach&&c->disable_auto_redirect);offset=0;
  if(has_redirect&&strstr(c->url,"github.com")){esp_http_client_event_t e={.event_id=HTTP_EVENT_ON_HEADER,.header_key="Location",.header_value="https://release-assets.githubusercontent.com/test",.user_data=c->user_data};c->event_handler(&e);}
  if(!strstr(c->url,"release-assets.githubusercontent.com"))response=strstr(c->url,"/latest")?latest:strstr(c->url,"manifest.json")?manifest_text:strstr(c->url,"manifest.sig")?"signature":image;
- response_size=response==image?sizeof(image):strlen(response);return init_failed?NULL:(void *)1;}
+ response_size=response==image?(size_t)(1024+body_delta):strlen(response);return init_failed?NULL:(void *)1;}
 int esp_http_client_open(void *h,int n){(void)h;(void)n;return connect_failed?-1:0;}
 int esp_http_client_set_header(void *h,const char *key,const char *value){(void)h;(void)value;assert(strcmp(key,"apikey"));return 0;}
-int64_t esp_http_client_fetch_headers(void *h){(void)h;return response_size;}
+int64_t esp_http_client_fetch_headers(void *h){(void)h;return declared_size==-2?(int64_t)response_size:declared_size;}
 int esp_http_client_get_status_code(void *h){(void)h;if(has_redirect){has_redirect=false;return 302;}return http_code;}
 void esp_http_client_cleanup(void *h){(void)h;cleanup_count++;}
 int esp_http_client_read(void *h,char *out,int n){(void)h;if(read_failed)return -1;size_t take=response_size-offset;if(take>(size_t)n)take=(size_t)n;memcpy(out,response+offset,take);offset+=take;return (int)take;}
@@ -91,9 +92,20 @@ int main(void){
  truncated=true;assert(!check_release());truncated=false;read_failed=true;assert(!check_release());read_failed=false;
  init_failed=true;assert(!check_release());init_failed=false;connect_failed=true;assert(!check_release());connect_failed=false;assert(check_release());
  assert(!allowed_url("https://api.github.com.evil/test",true));assert(!allowed_url("https://github.com/other/repo",false));assert(allowed_url("https://objects.githubusercontent.com/asset",false));
- int http;assert(!open_url("http://github.com/evil",&http));has_redirect=true;assert(!open_url(LATEST,&http));has_redirect=true;void *h=open_url(TEMPO_UPDATE_BASE "v0.9.1/tempo-manifest.json",&http);assert(h);esp_http_client_cleanup(h);
+ int http;assert(!open_url("http://github.com/evil",&http,NULL));has_redirect=true;assert(!open_url(LATEST,&http,NULL));has_redirect=true;void *h=open_url(TEMPO_UPDATE_BASE "v0.9.1/tempo-manifest.json",&http,NULL);assert(h);esp_http_client_cleanup(h);
  char ver[32];strcpy(ver,candidate.version);candidate.version[0]=0;assert(!install());strcpy(candidate.version,ver);
  active_pending=true;assert(!install());active_pending=false;no_partition=true;assert(!install());no_partition=false;
+ /* Header mismatch/unknown size must reject before erasing or writing flash. */
+ unsigned begin_count=begins,write_count=writes;
+ const int64_t bad_lengths[]={1023,1025,0,-1};
+ for(unsigned i=0;i<sizeof(bad_lengths)/sizeof(bad_lengths[0]);i++){
+  declared_size=bad_lengths[i];assert(!install()&&begins==begin_count&&writes==write_count&&activated==0);
+ }
+ declared_size=-2;body_delta=1;assert(!install()&&begins==begin_count&&writes==write_count);body_delta=0;
+ /* A dishonest length or interrupted body is caught during reading, never activated. */
+ declared_size=1024;
+ for(int delta=-1;delta<=1;delta+=2){body_delta=delta;unsigned abort_count=aborted;assert(!install()&&aborted==abort_count+1&&activated==0);}
+ body_delta=0;declared_size=-2;
  unsigned before=begins;http_code=500;assert(!install()&&begins==before);http_code=200;begin_error=-1;assert(!install());begin_error=0;
  ota_error=-1;assert(!install()&&aborted);ota_error=0;truncated=true;assert(!install());truncated=false;
  candidate.sha256[0]='1';assert(!install());candidate.sha256[0]='0';commit_error=-1;assert(!install());commit_error=0;boot_error=-1;assert(!install()&&!persisted.pending[0]);boot_error=0;
