@@ -78,12 +78,21 @@ jobs:
           VERSION: ${{ steps.plan.outputs.version }}
         run: |
           tag="v$VERSION"
+          if ! git show-ref --verify --quiet "refs/tags/$tag"; then
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo 'Release exists without its expected git tag; refusing to reuse version.' >&2
+              exit 1
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA"
+          fi
+          git fetch origin "refs/tags/$tag"
+          test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$GITHUB_SHA"
           if gh release view "$tag" --json isDraft --jq '.isDraft' | grep -qx false; then
             echo 'Release already published; immutable artifacts are not replaced.'
             exit 0
           fi
           if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --target "$GITHUB_SHA" --title "Tempo $VERSION" --draft --notes-file build-host/release/notes.md
+            gh release create "$tag" --target "$GITHUB_SHA" --title "Tempo $VERSION" --verify-tag --draft --notes-file build-host/release/notes.md
           fi
           test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
           verification=$(mktemp -d)

@@ -1,4 +1,4 @@
-import importlib.util, json, subprocess, tempfile, unittest
+import importlib.util, json, os, subprocess, tempfile, unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('ota_release',ROOT/'scripts/ota-release.py');ota=importlib.util.module_from_spec(spec);spec.loader.exec_module(ota)
@@ -40,6 +40,30 @@ class ReleaseTests(unittest.TestCase):
   self.assertNotIn('--clobber',workflow)
   self.assertIn("--pattern '*'",workflow)
   self.assertNotIn('--archive',workflow)
+ def test_publication_requires_remote_tag_at_exact_commit(self):
+  workflow=(ROOT/'.github/workflows/ota-release.yml').read_text()
+  commands=workflow.split('          tag="v$VERSION"',1)[1].split('          if gh release view "$tag" --json isDraft',1)[0]
+  commands='tag="v$VERSION"\n'+commands
+  self.assertIn('--verify-tag --draft',workflow)
+  self.assertIn("Release exists without its expected git tag",workflow)
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);remote=root/'remote';work=root/'work'
+   def run(*args,cwd=None):return subprocess.check_output(args,cwd=cwd,text=True,stderr=subprocess.DEVNULL).strip()
+   run('git','init','--bare',str(remote));run('git','clone',str(remote),str(work))
+   run('git','config','user.name','Test',cwd=work);run('git','config','user.email','test@example.com',cwd=work)
+   (work/'file').write_text('first');run('git','add','.',cwd=work);run('git','commit','-qm','first',cwd=work);run('git','push','origin','HEAD',cwd=work)
+   sha=run('git','rev-parse','HEAD',cwd=work)
+   # Stub only GitHub's ref creation API; execute real fetch and commit checks.
+   shell='gh(){ if [ "$1" = release ]; then return 1; fi; test "$1" = api; git -C "$TEST_REMOTE" update-ref "refs/tags/v1.0.0" "$GITHUB_SHA"; };\n'+commands
+   env={**os.environ,'TEST_REMOTE':str(remote),'GITHUB_REPOSITORY':'test/repo','GITHUB_SHA':sha,'VERSION':'1.0.0'}
+   orphan='gh(){ return 0; };\n'+commands
+   self.assertNotEqual(subprocess.run(['bash','-ec',orphan],cwd=work,env=env,capture_output=True).returncode,0)
+   subprocess.run(['bash','-ec',shell],cwd=work,env=env,check=True,capture_output=True)
+   self.assertEqual(run('git','rev-parse','refs/tags/v1.0.0',cwd=remote),sha)
+   subprocess.run(['bash','-ec',shell],cwd=work,env=env,check=True,capture_output=True)
+   (work/'file').write_text('different');run('git','commit','-qam','second',cwd=work)
+   env['GITHUB_SHA']=run('git','rev-parse','HEAD',cwd=work)
+   self.assertNotEqual(subprocess.run(['bash','-ec',shell],cwd=work,env=env,capture_output=True).returncode,0)
  def test_signed_package_descriptor_hash_and_tampering(self):
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder);key=root/'private.pem';public=root/'public.pem';image=root/'app.bin';out=root/'release'
