@@ -16,7 +16,10 @@ def plan(destination):
     latest_tag = max(tags, key=lambda t: release.version_tuple(t[1:])) if tags else None
     for tag in tags:
         subprocess.run(['git','merge-base','--is-ancestor',tag,'HEAD'],cwd=ROOT,check=True)
-    retry_tag = latest_tag if latest_tag and git('rev-parse',latest_tag+'^{commit}') == head else None
+    head_tags = [tag for tag in tags if git('rev-parse',tag+'^{commit}') == head]
+    retry_tag = max(head_tags,key=lambda tag:release.version_tuple(tag[1:])) if head_tags else None
+    if retry_tag is not None and retry_tag != latest_tag:
+        raise ValueError('Tagged source has an older version than an existing production release')
     predecessor_tags = [tag for tag in tags if tag != retry_tag]
     notes_base_tag = max(predecessor_tags,key=lambda tag:release.version_tuple(tag[1:])) if predecessor_tags else None
     # A retry uses the same predecessor range as the original allocation.

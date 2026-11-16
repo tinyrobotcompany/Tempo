@@ -121,6 +121,9 @@ class ReleaseTests(unittest.TestCase):
     metadata=json.loads((root/'fresh-retry/release.json').read_text())
     self.assertEqual(metadata['tag'],'v0.9.1');self.assertEqual(metadata['previous'],'v0.9.0')
     self.assertNotIn('First release.',(root/'fresh-retry/notes.md').read_text())
+    git('checkout','--detach','v0.9.0')
+    with self.assertRaises(subprocess.CalledProcessError):ota.plan(root/'stale-tag-retry')
+    self.assertFalse((root/'stale-tag-retry').exists())
    finally:ota.ROOT=old_root
  def test_version_plan_notes_idempotence_and_old_commit_rejection(self):
   with tempfile.TemporaryDirectory() as folder:
@@ -140,6 +143,7 @@ class ReleaseTests(unittest.TestCase):
     self.assertEqual((root/'out/release.json').read_bytes(),before);self.assertEqual((root/'out/notes.md').read_bytes(),notes)
     metadata=json.loads(before);self.assertEqual(metadata['tag'],'v0.9.1');self.assertEqual(metadata['previous'],'v0.9.0')
     git('tag','v9.0.0',first) # Highest semantic tag is older than another production tag.
+    with self.assertRaises(ValueError):ota.plan(root/'out')
     git('checkout','--detach',first)
     with self.assertRaises(subprocess.CalledProcessError):ota.plan(root/'out')
    finally:ota.ROOT=old_root
