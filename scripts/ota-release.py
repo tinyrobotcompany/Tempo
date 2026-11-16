@@ -63,9 +63,21 @@ def package(destination, image, version, key, public_key):
     subprocess.run(['openssl','dgst','-sha256','-verify',str(public_key),'-signature',str(signature),str(path)],check=True,stdout=subprocess.DEVNULL)
     (destination/'SHA256SUMS').write_text(''.join(f'{hashlib.sha256((destination/n).read_bytes()).hexdigest()}  {n}\n' for n in ['tempo.bin','tempo-manifest.json','tempo-manifest.sig']))
 
+ASSETS = ('tempo.bin','tempo-manifest.json','tempo-manifest.sig','SHA256SUMS','dependencies.lock','release.json','notes.md')
+def verify_assets(expected, downloaded):
+    if set(p.name for p in downloaded.iterdir()) != set(ASSETS):
+        raise ValueError('Draft asset set does not match release')
+    for name in ASSETS:
+        actual=downloaded/name
+        if actual.is_symlink() or not actual.is_file() or hashlib.sha256(actual.read_bytes()).digest()!=hashlib.sha256((expected/name).read_bytes()).digest():
+            raise ValueError('Draft asset differs from validated local artifact: '+name)
+
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['plan','package']);p.add_argument('--output',type=Path,default=ROOT/'build-host/release');p.add_argument('--image',type=Path);p.add_argument('--version');p.add_argument('--key',type=Path);a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['plan','package','verify-assets']);p.add_argument('--output',type=Path,default=ROOT/'build-host/release');p.add_argument('--downloaded',type=Path);p.add_argument('--image',type=Path);p.add_argument('--version');p.add_argument('--key',type=Path);a=p.parse_args()
     if a.action=='plan':print(plan(a.output))
+    elif a.action=='verify-assets':
+        if not a.downloaded:p.error('verify-assets requires --downloaded')
+        verify_assets(a.output,a.downloaded)
     else:
         if not all([a.image,a.version,a.key]):p.error('package requires --image, --version and --key')
         package(a.output,a.image,a.version,a.key,ROOT/'firmware/main/ota_public.pem')

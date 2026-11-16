@@ -19,9 +19,25 @@ class ReleaseTests(unittest.TestCase):
    self.assertEqual((root/'build-host/release/dependencies.lock').read_text(),'fixture-lock')
   upload=next(line for line in workflow.splitlines() if 'gh release upload' in line)
   for asset in ['tempo.bin','tempo-manifest.json','tempo-manifest.sig','SHA256SUMS','dependencies.lock','release.json','notes.md']:
-   self.assertIn('build-host/release/'+asset+' ',upload)
+   self.assertIn('build-host/release/'+asset,upload)
 
 
+ def test_draft_assets_reject_missing_extra_and_stale_content(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);expected=root/'expected';actual=root/'actual';expected.mkdir();actual.mkdir()
+   for name in ota.ASSETS:
+    (expected/name).write_bytes(name.encode());(actual/name).write_bytes(name.encode())
+   ota.verify_assets(expected,actual)
+   (actual/'stale.bin').write_bytes(b'old')
+   with self.assertRaises(ValueError):ota.verify_assets(expected,actual)
+   (actual/'stale.bin').unlink();(actual/'notes.md').write_bytes(b'wrong notes')
+   with self.assertRaises(ValueError):ota.verify_assets(expected,actual)
+   (actual/'notes.md').unlink()
+   with self.assertRaises(ValueError):ota.verify_assets(expected,actual)
+  workflow=(ROOT/'.github/workflows/ota-release.yml').read_text()
+  self.assertLess(workflow.index('gh release delete-asset'),workflow.index('gh release upload'))
+  self.assertLess(workflow.index('verify-assets --downloaded'),workflow.index('gh release edit'))
+  self.assertNotIn('--clobber',workflow)
  def test_signed_package_descriptor_hash_and_tampering(self):
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder);key=root/'private.pem';public=root/'public.pem';image=root/'app.bin';out=root/'release'

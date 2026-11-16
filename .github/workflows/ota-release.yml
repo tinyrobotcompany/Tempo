@@ -85,5 +85,15 @@ jobs:
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --target "$GITHUB_SHA" --title "Tempo $VERSION" --draft --notes-file build-host/release/notes.md
           fi
-          gh release upload "$tag" build-host/release/tempo.bin build-host/release/tempo-manifest.json build-host/release/tempo-manifest.sig build-host/release/SHA256SUMS build-host/release/dependencies.lock build-host/release/release.json build-host/release/notes.md --clobber
+          test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
+          verification=$(mktemp -d)
+          trap 'rm -rf "$verification"' EXIT
+          gh release view "$tag" --json assets --jq '.assets[].name' > "$verification/existing"
+          while IFS= read -r asset; do
+            gh release delete-asset "$tag" "$asset" --yes
+          done < "$verification/existing"
+          gh release upload "$tag" build-host/release/tempo.bin build-host/release/tempo-manifest.json build-host/release/tempo-manifest.sig build-host/release/SHA256SUMS build-host/release/dependencies.lock build-host/release/release.json build-host/release/notes.md
+          mkdir "$verification/downloaded"
+          gh release download "$tag" --dir "$verification/downloaded"
+          python3 scripts/ota-release.py verify-assets --downloaded "$verification/downloaded"
           gh release edit "$tag" --draft=false --latest --notes-file build-host/release/notes.md
