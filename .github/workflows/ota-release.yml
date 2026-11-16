@@ -21,8 +21,26 @@ jobs:
       contents: read
       security-events: write
     uses: ./.github/workflows/security-audit.yaml
+  prerequisites:
+    runs-on: ubuntu-24.04
+    outputs:
+      runtime_ready: ${{ steps.runtime.outputs.ready }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Detect credential-free OTA runtime
+        id: runtime
+        run: |
+          if [[ -f firmware/main/credentials.c && -f firmware/main/update_service.c && ! -f scripts/generate_transport_config.py ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'OTA publication inactive: waiting for credential-free runtime. A firmware merge will check readiness again.' >> "$GITHUB_STEP_SUMMARY"
+          fi
   publish:
-    needs: [validation, security]
+    needs: [validation, security, prerequisites]
+    if: needs.prerequisites.outputs.runtime_ready == 'true'
     runs-on: ubuntu-24.04
     environment: production-ota
     permissions:

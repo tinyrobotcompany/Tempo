@@ -11,7 +11,7 @@ class ReleaseTests(unittest.TestCase):
   self.assertIn('test ! -f scripts/generate_transport_config.py',build)
   self.assertLess(build.index('test ! -f scripts/generate_transport_config.py'),build.index('idf.py -C firmware build'))
   self.assertNotIn('OTA_SIGNING_PRIVATE_KEY',build)
-  self.assertIn('needs: [validation, security]',workflow)
+  self.assertIn('needs: [validation, security, prerequisites]',workflow)
   copy_commands='\n'.join(line.strip() for line in build.splitlines() if line.strip().startswith(('mkdir -p build-host/release','cp firmware/dependencies.lock')))
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder);(root/'firmware').mkdir();(root/'firmware/dependencies.lock').write_text('fixture-lock')
@@ -67,6 +67,23 @@ class ReleaseTests(unittest.TestCase):
    (work/'file').write_text('different');run('git','commit','-qam','second',cwd=work)
    env['GITHUB_SHA']=run('git','rev-parse','HEAD',cwd=work)
    self.assertNotEqual(subprocess.run(['bash','-ec',shell],cwd=work,env=env,capture_output=True).returncode,0)
+ def test_runtime_activation_waits_for_all_prerequisites(self):
+  workflow=(ROOT/'.github/workflows/ota-release.yml').read_text()
+  self.assertIn("if: needs.prerequisites.outputs.runtime_ready == 'true'",workflow)
+  self.assertIn("'firmware/**'",workflow)
+  script=workflow.split('        id: runtime',1)[1].split('        run: |',1)[1].split('  publish:',1)[0]
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);out=root/'output';summary=root/'summary'
+   env={**os.environ,'GITHUB_OUTPUT':str(out),'GITHUB_STEP_SUMMARY':str(summary)}
+   def ready():
+    out.write_text('');subprocess.run(['bash','-ec',script],cwd=root,env=env,check=True)
+    return out.read_text().strip()
+   self.assertEqual(ready(),'ready=false')
+   (root/'firmware/main').mkdir(parents=True);(root/'firmware/main/credentials.c').touch()
+   self.assertEqual(ready(),'ready=false')
+   (root/'firmware/main/update_service.c').touch();self.assertEqual(ready(),'ready=true')
+   (root/'scripts').mkdir();(root/'scripts/generate_transport_config.py').touch()
+   self.assertEqual(ready(),'ready=false');self.assertIn('publication inactive',summary.read_text())
  def test_signed_package_descriptor_hash_and_tampering(self):
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder);key=root/'private.pem';public=root/'public.pem';image=root/'app.bin';out=root/'release'
