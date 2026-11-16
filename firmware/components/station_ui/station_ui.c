@@ -38,7 +38,7 @@ static lv_obj_t *night_mode_picker, *night_level, *night_start_hour, *night_star
 static void update_power(void);
 
 static station_view_t view;
-typedef enum { PAGE_DISPLAY, PAGE_WIFI, PAGE_HOME, PAGE_PROFILE, PAGE_COLOR, PAGE_PHONE, PAGE_HOTSPOT, PAGE_POWER } page_t;
+typedef enum { PAGE_DISPLAY, PAGE_WIFI, PAGE_HOME, PAGE_PROFILE, PAGE_COLOR, PAGE_PHONE, PAGE_HOTSPOT, PAGE_POWER, PAGE_UPDATES } page_t;
 static page_t page;
 static lv_obj_t *content, *date_label, *clock_text, *wifi_icon, *welcome, *settings_status, *header_clock;
 static lv_obj_t *phone_qr, *phone_caption, *phone_wait, *tap_notice;
@@ -96,6 +96,7 @@ static atomic_uint heartbeat;
 static char applied_zone[96];
 static const uint32_t colors[]={0xff951f,0x3cdac6,0x91b6ff};
 static uint32_t ink(void) { return settings.theme<3 ? colors[settings.theme] : settings.custom_color; }
+static station_update_status_t update_snapshot;
 static void show_view(station_view_t next);
 static void update_weather(void);
 static void update_transport(void);
@@ -234,6 +235,9 @@ static void update_header(void)
         if(header_changed){lv_obj_update_layout(wifi_icon);lv_obj_align_to(header_clock,wifi_icon,LV_ALIGN_OUT_LEFT_MID,-24,0);}
     }
     char greeting[64]; snprintf(greeting,sizeof(greeting),settings.user_name[0]?"Welcome %s":"Welcome",settings.user_name);
+    if(update_snapshot.countdown_seconds)snprintf(greeting,sizeof(greeting),"Update in %u s · Settings to postpone",update_snapshot.countdown_seconds);
+    else if(update_snapshot.state==UPDATE_DOWNLOADING||update_snapshot.state==UPDATE_VERIFYING||update_snapshot.state==UPDATE_RESTARTING)
+        snprintf(greeting,sizeof(greeting),"Update: %u%% · %s",update_snapshot.progress,update_snapshot.state==UPDATE_DOWNLOADING?"Downloading":update_snapshot.state==UPDATE_VERIFYING?"Verifying":"Restarting");
     if(strcmp(lv_label_get_text(welcome),greeting)) lv_label_set_text(welcome,greeting);
 }
 /* Match LVGL's glyph placement, excluding font ascent/descent whitespace. */
@@ -908,6 +912,35 @@ static void show_power(lv_event_t *e)
     lv_obj_set_width(settings_status,820);
     button(content,"Save night mode",900,545,310,apply_power,NULL);
 }
+static lv_obj_t *update_label,*update_version,*update_progress,*update_spinner;
+static void render_updates(void)
+{
+ if(!actions.update_status)return;
+ station_update_status_t u;actions.update_status(&u);update_snapshot=u;
+ if(view==VIEW_SETTINGS&&page==PAGE_UPDATES){
+  lv_label_set_text_fmt(update_version,"Installed: %s   Available: %s",u.installed,u.available[0]?u.available:"—");
+  lv_label_set_text_fmt(update_label,"%s\nChecks: %s · Automatic installation: %s\nTransport credential: %s",u.message,u.interval_hours==1?"hourly (testing)":"every 30 days",u.automatic?"on":"off",u.credential_configured?"configured":"set up on your phone");
+  lv_bar_set_value(update_progress,(int)u.progress,LV_ANIM_OFF);
+  if(u.state==UPDATE_CHECKING||u.state==UPDATE_DOWNLOADING||u.state==UPDATE_VERIFYING)lv_obj_remove_flag(update_spinner,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(update_spinner,LV_OBJ_FLAG_HIDDEN);
+ }
+}
+static void update_action(lv_event_t *e)
+{
+ const char *action=lv_event_get_user_data(e);
+ bool ok=actions.update_request&&actions.update_request(action);
+ lv_label_set_text(update_label,ok?"Request queued…":"Update service busy. Please retry.");
+}
+static void show_updates(lv_event_t *e)
+{
+ (void)e;page_header("Software updates",PAGE_UPDATES);
+ update_version=label(content,"",60,120,&station_text_24);
+ update_label=label(content,"Loading update status…",60,190,&station_text_24);lv_obj_set_size(update_label,1080,180);
+ update_progress=lv_bar_create(content);lv_obj_set_pos(update_progress,60,390);lv_obj_set_size(update_progress,1000,22);
+ update_spinner=lv_spinner_create(content);lv_obj_set_pos(update_spinner,1100,380);lv_obj_set_size(update_spinner,50,50);lv_spinner_set_anim_params(update_spinner,1000,200);
+ button(content,"Check for updates",60,470,330,update_action,"check");button(content,"Install update",420,470,300,update_action,"install");button(content,"Postpone",750,470,280,update_action,"postpone");
+ label(content,"Release notes, schedule and transport key: open iPhone setup.",60,565,&station_text_18);
+ render_updates();
+}
 static void settings_view(void)
 {
     page=PAGE_DISPLAY;
@@ -936,11 +969,12 @@ static void settings_view(void)
     lv_obj_add_event_cb(toggle,rotate_changed,LV_EVENT_VALUE_CHANGED,NULL);
     settings_status=label(content,"Changes save automatically",60,570,&station_text_24);
     label(content,"SETUP",900,125,&station_text_24);
-    button(content,"Wi-Fi",900,185,310,show_network,NULL);
-    button(content,"Home location",900,275,310,show_location,NULL);
-    button(content,"Your profile",900,365,310,show_profile,NULL);
-    button(content,"iPhone setup",900,455,310,show_phone,NULL);
-    button(content,"Power & night mode",900,545,310,show_power,NULL);
+    button(content,"Wi-Fi",900,165,310,show_network,NULL);
+    button(content,"Home location",900,240,310,show_location,NULL);
+    button(content,"Your profile",900,315,310,show_profile,NULL);
+    button(content,"iPhone setup",900,390,310,show_phone,NULL);
+    button(content,"Power & night mode",900,465,310,show_power,NULL);
+    button(content,"Software updates",900,540,310,show_updates,NULL);
 }
 static const char *transport_state_text(void)
 {
@@ -1182,7 +1216,9 @@ static void tick(lv_timer_t *timer)
         if(command.change_view && command.view<VIEW_COUNT){awake_until_ms=elapsed_ms+60000;if(command.view==VIEW_TRANSPORT&&actions.transport_nearby_reset)actions.transport_nearby_reset();show_view(command.view);}
     }
     if(actions.phone_publish)actions.phone_publish(&settings,view);
-    refresh_network(); update_header(); update_power();
+    refresh_network();
+    if(elapsed_ms%1000==0)render_updates();
+    update_header(); update_power();
     if(view==VIEW_SETTINGS && page==PAGE_PHONE && elapsed_ms%1000==0)update_phone();
     if(awaiting_save && view==VIEW_SETTINGS) {
         int state=actions.save_state();

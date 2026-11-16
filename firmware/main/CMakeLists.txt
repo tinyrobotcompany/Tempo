@@ -1,5 +1,5 @@
-idf_component_register(SRCS "main.c" "settings.c" "network_time.c" "weather_service.c" "transport_service.c" "map_tiles.c" "phone_setup.c" "phone_protocol.c" INCLUDE_DIRS "."
-    EMBED_TXTFILES "web/index.html" "web/app.js" "web/style.css" "web/location.js" "web/shortcut.js" "web/connection.js"
+idf_component_register(SRCS "main.c" "settings.c" "network_time.c" "weather_service.c" "transport_service.c" "map_tiles.c" "phone_setup.c" "phone_protocol.c" "credentials.c" "update_policy.c" "update_service.c" INCLUDE_DIRS "."
+    EMBED_TXTFILES "ota_public.pem" "web/index.html" "web/app.js" "web/style.css" "web/location.js" "web/shortcut.js" "web/connection.js"
     REQUIRES esp_http_server station_transport station_weather station_core station_ui nvs_flash app_update esp_timer esp_netif esp_wifi esp_event espressif__esp_wifi_remote espressif__esp_hosted esp_http_client mbedtls espressif__cjson)
 
 # Only package an Apple-signed generic shortcut, never the editable source.
@@ -14,12 +14,3 @@ if(EXISTS "${location_shortcut}")
     target_add_binary_data(${COMPONENT_LIB} "${location_shortcut}" BINARY)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE STATION_HAS_LOCATION_SHORTCUT=1)
 endif()
-
-# Generated privately in the build directory; no key on the compiler command line.
-execute_process(COMMAND "${PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/generate_transport_config.py"
-    --output "${CMAKE_CURRENT_BINARY_DIR}/transport_config.h" RESULT_VARIABLE transport_config_result)
-if(NOT transport_config_result EQUAL 0)
-    message(FATAL_ERROR "Unable to generate transport configuration (credential value withheld)")
-endif()
-target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../../.env")

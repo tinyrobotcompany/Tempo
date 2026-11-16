@@ -1,5 +1,6 @@
 #pragma once
 #include "station_core.h"
+#include "station_update.h"
 #include "station_phone_types.h"
 #include "lvgl.h"
 #include "station_weather.h"
@@ -7,6 +8,8 @@
 #include "transport_lookup.h"
 #include "station_map.h"
 typedef struct {
+    void (*update_status)(station_update_status_t *status);
+    bool (*update_request)(const char *action);
     void (*transport_status)(station_transport_snapshot_t *status);
     bool (*transport_select)(unsigned index);
     bool (*transport_refresh)(void);

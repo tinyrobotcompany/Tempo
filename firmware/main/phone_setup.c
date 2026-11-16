@@ -2,6 +2,9 @@
 #include "phone_protocol.h"
 #include "network_time.h"
 #include "settings.h"
+#include "credentials.h"
+#include "transport_service.h"
+#include "update_service.h"
 #include "esp_http_server.h"
 #include "esp_netif.h"
 #include "esp_random.h"
@@ -117,6 +120,14 @@ static esp_err_t status_get(httpd_req_t *r)
     cJSON_AddStringToObject(loc,"name",net.location_name);cJSON_AddStringToObject(loc,"timezone",net.timezone);
     cJSON_AddStringToObject(loc,"message",net.location_message);cJSON_AddNumberToObject(loc,"completion",net.location_completion);
     cJSON_AddBoolToObject(loc,"success",net.location_success);cJSON_AddBoolToObject(loc,"pending",location_busy);
+    station_update_status_t u;station_update_status(&u);cJSON *update=cJSON_AddObjectToObject(j,"update");
+    cJSON_AddStringToObject(update,"installed",u.installed);cJSON_AddStringToObject(update,"available",u.available);
+    cJSON_AddStringToObject(update,"message",u.message);cJSON_AddStringToObject(update,"notes",u.notes_url);
+    cJSON_AddNumberToObject(update,"countdown",u.countdown_seconds);cJSON_AddNumberToObject(update,"state",u.state);cJSON_AddNumberToObject(update,"progress",u.progress);
+    cJSON_AddNumberToObject(update,"hours",u.interval_hours);cJSON_AddBoolToObject(update,"automatic",u.automatic);
+    cJSON_AddNumberToObject(update,"start",u.window_start);cJSON_AddNumberToObject(update,"end",u.window_end);
+    cJSON_AddNumberToObject(update,"lastCheck",(double)u.last_check);cJSON_AddNumberToObject(update,"nextCheck",(double)u.next_check);
+    cJSON_AddBoolToObject(j,"transportConfigured",u.credential_configured);
     return json_reply(r,j);
 }
 static esp_err_t post(httpd_req_t *r)
@@ -147,6 +158,26 @@ static esp_err_t post(httpd_req_t *r)
         cJSON_Delete(j);cJSON *result=cJSON_CreateObject();
         if(!result)return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"Out of memory");
         cJSON_AddStringToObject(result,"state",location_request);return json_reply(r,result);
+    }
+    if(!strcmp(r->uri,"/api/credential")) {
+        cJSON *key=cJSON_GetObjectItemCaseSensitive(j,"key");
+        bool ok=cJSON_IsString(key)&&strlen(key->valuestring)<=STATION_PRIM_KEY_MAX;
+        esp_err_t result=ok?station_credential_set(key->valuestring):ESP_ERR_INVALID_ARG;
+        if(cJSON_IsString(key))memset(key->valuestring,0,strlen(key->valuestring));
+        memset(body,0,sizeof(body));cJSON_Delete(j);
+        if(result!=ESP_OK)return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Credential could not be saved. Check the value and retry.");
+        station_transport_refresh();return httpd_resp_sendstr(r,"{\"saved\":true}");
+    }
+    if(!strcmp(r->uri,"/api/update")) {
+        const cJSON *action=cJSON_GetObjectItemCaseSensitive(j,"action");bool accepted=false;
+        if(cJSON_IsString(action)&&!strcmp(action->valuestring,"configure")) {
+            const cJSON *hours=cJSON_GetObjectItemCaseSensitive(j,"hours"),*automatic=cJSON_GetObjectItemCaseSensitive(j,"automatic"),*start=cJSON_GetObjectItemCaseSensitive(j,"start"),*end=cJSON_GetObjectItemCaseSensitive(j,"end");
+            if(cJSON_IsNumber(hours)&&cJSON_IsBool(automatic)&&cJSON_IsNumber(start)&&cJSON_IsNumber(end)&&
+               (hours->valuedouble==1||hours->valuedouble==720)&&start->valuedouble>=0&&start->valuedouble<1440&&end->valuedouble>=0&&end->valuedouble<1440&&floor(start->valuedouble)==start->valuedouble&&floor(end->valuedouble)==end->valuedouble)
+                accepted=station_update_configure((unsigned)hours->valueint,cJSON_IsTrue(automatic),(unsigned)start->valueint,(unsigned)end->valueint);
+        }else if(cJSON_IsString(action))accepted=station_update_request(action->valuestring);
+        cJSON_Delete(j);if(!accepted)return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid update request or update service busy.");
+        httpd_resp_set_status(r,"202 Accepted");return httpd_resp_sendstr(r,"{\"accepted\":true}");
     }
     bool accepted=false,valid=false;
     if(!strcmp(r->uri,"/api/location")) {
@@ -191,9 +222,10 @@ esp_err_t station_phone_start(const station_settings_t *settings)
         queue=xQueueCreate(2,sizeof(station_phone_command_t));if(!queue)return ESP_ERR_NO_MEM;
     }
     httpd_config_t config=HTTPD_DEFAULT_CONFIG();config.stack_size=8192;config.max_open_sockets=3;
-    config.lru_purge_enable=true;config.recv_wait_timeout=3;config.send_wait_timeout=3;config.max_uri_handlers=12;
+    config.lru_purge_enable=true;config.recv_wait_timeout=3;config.send_wait_timeout=3;config.max_uri_handlers=14;
     esp_err_t err=httpd_start(&server,&config);if(err!=ESP_OK){server=NULL;return err;}
     const httpd_uri_t routes[]={
+        {.uri="/api/credential",.method=HTTP_POST,.handler=post},{.uri="/api/update",.method=HTTP_POST,.handler=post},
         {.uri="/api/location-request",.method=HTTP_POST,.handler=post},
         {.uri="/connection.js",.method=HTTP_GET,.handler=asset},
         {.uri="/shortcut.js",.method=HTTP_GET,.handler=asset},{.uri="/Weather-Station-Location.shortcut",.method=HTTP_GET,.handler=shortcut_download},
