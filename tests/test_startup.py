@@ -7,11 +7,35 @@ cannot reproduce this FreeRTOS/ISR mismatch.
 """
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 
 class StartupContract(unittest.TestCase):
+    def test_trial_rolls_back_on_service_failure_or_deadline(self):
+        source=(ROOT/'firmware/main/main.c').read_text()
+        block=re.search(r'if \(pending && \(update_err.*?\n        }',source,re.S).group()
+        code='''#include <stdbool.h>
+#include <assert.h>
+#define ESP_OK 0
+#define ESP_LOGE(...) ((void)0)
+#define ESP_ERROR_CHECK(x) (x)
+static int calls;
+static long now;
+static long esp_timer_get_time(void){return now;}
+static int esp_ota_mark_app_invalid_rollback_and_reboot(void){calls++;return 0;}
+static int check(bool pending,int update_err,long elapsed){calls=0;now=elapsed;long started=0;
+'''+block+'''
+return calls;}
+int main(void){assert(check(true,-1,5000000)==1);assert(check(true,0,5000000)==0);assert(check(true,0,180000000)==1);assert(check(false,-1,180000000)==0);}
+'''
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);(p/'trial.c').write_text(code)
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',str(p/'trial.c'),'-o',str(p/'trial')],check=True)
+            subprocess.run([str(p/'trial')],check=True)
+
     def test_main_defers_rendering_and_restores_backlight(self):
         source = (ROOT / 'firmware/main/main.c').read_text()
         source = re.sub(r'/\*.*?\*/|//[^\n]*', '', source, flags=re.S)

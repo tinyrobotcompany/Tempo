@@ -150,7 +150,7 @@ void app_main(void)
             pending = false;
             ESP_LOGI(TAG, "Trial firmware healthy");
         }
-        if (pending && esp_timer_get_time()-started >= 180000000) {
+        if (pending && (update_err != ESP_OK || esp_timer_get_time()-started >= 180000000)) {
             ESP_LOGE(TAG, "Trial firmware failed local health checks; rolling back");
             ESP_ERROR_CHECK(esp_ota_mark_app_invalid_rollback_and_reboot());
         }
