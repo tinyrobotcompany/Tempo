@@ -14,8 +14,8 @@ def key_from_env(path):
 
 def destination(qr):
     url=urllib.parse.urlsplit(qr)
-    if url.scheme not in ('http','https') or url.username or url.password or url.query:
-        raise ValueError('Use the current local setup QR URL.')
+    if url.scheme != 'http' or url.username or url.password or url.query:
+        raise ValueError('Use the current HTTP setup QR URL on your trusted LAN.')
     address=ipaddress.ip_address(url.hostname or '')
     if not address.is_private or address.is_multicast or address.is_unspecified:
         raise ValueError('Provision only on the trusted local network.')

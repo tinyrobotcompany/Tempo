@@ -11,8 +11,9 @@ int main(void){char key[513];assert(!station_credential_configured());assert(!st
  assert(station_credential_set(NULL)!=0);assert(station_credential_set("has space")!=0);assert(station_credential_set("bad\n")!=0);
  char long_key[515];memset(long_key,'a',514);long_key[514]=0;assert(station_credential_set(long_key)!=0);
  assert(station_credential_set("fixture-123")==0);assert(station_credential_configured());assert(station_credential_get(key,sizeof(key))&&!strcmp(key,"fixture-123"));
- open_error=-1;assert(!station_credential_get(key,sizeof(key))&&key[0]==0);assert(station_credential_set("new")!=0);open_error=0;
- read_error=-1;assert(!station_credential_get(key,sizeof(key))&&key[0]==0);read_error=0;
+ open_error=-1;assert(!station_credential_get(key,sizeof(key))&&key[0]==0);assert(station_credential_set("new")!=0);open_error=0;assert(!station_credential_configured());assert(station_credential_get(key,sizeof(key)));
+ read_error=-1;assert(!station_credential_get(key,sizeof(key))&&key[0]==0);read_error=0;assert(!station_credential_configured());assert(station_credential_get(key,sizeof(key)));
  write_error=-1;assert(station_credential_set("new")!=0);write_error=0;commit_error=-1;assert(station_credential_set("new")!=0);commit_error=0;
  assert(station_credential_get(key,sizeof(key))&&!strcmp(key,"fixture-123"));assert(station_credential_set("")==0);assert(!station_credential_get(key,sizeof(key)));
+ assert(!station_credential_configured());
  puts("PASS: credential validation, secret-only namespace, persistence, erase and failed-write preservation");}

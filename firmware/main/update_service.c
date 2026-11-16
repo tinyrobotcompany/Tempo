@@ -35,6 +35,7 @@ typedef struct { uint32_t schema,hours,automatic,start,end; int64_t last,next,po
 static saved_t saved;
 typedef struct { unsigned action,hours,start,end; bool automatic; } command_t;
 extern const char public_key[] __asm__("_binary_ota_public_pem_start");
+extern const char public_key_end[] __asm__("_binary_ota_public_pem_end");
 static void message(station_update_state_t state,const char *text)
 {
  portENTER_CRITICAL(&lock);status.state=state;snprintf(status.message,sizeof(status.message),"%s",text);portEXIT_CRITICAL(&lock);
@@ -66,10 +67,12 @@ bool station_update_configure(unsigned hours,bool automatic,unsigned start,unsig
  if(!commands||(hours!=1&&hours!=720)||start>=1440||end>=1440||start==end)return false;
  command_t c={.action=4,.hours=hours,.automatic=automatic,.start=start,.end=end};return xQueueSend(commands,&c,0)==pdTRUE;
 }
-static bool allowed_url(const char *url)
+static bool allowed_url(const char *url,bool metadata)
 {
- const char *hosts[]={"https://api.github.com/","https://github.com/","https://release-assets.githubusercontent.com/","https://objects.githubusercontent.com/"};
- for(unsigned i=0;i<4;i++)if(!strncmp(url,hosts[i],strlen(hosts[i])))return true;
+ if(metadata)return !strcmp(url,LATEST);
+ /* Manifest and signature files are release assets too; their CDN bytes are signed. */
+ const char *hosts[]={TEMPO_UPDATE_BASE,"https://release-assets.githubusercontent.com/","https://objects.githubusercontent.com/"};
+ for(unsigned i=0;i<3;i++)if(!strncmp(url,hosts[i],strlen(hosts[i])))return true;
  return false;
 }
 static esp_err_t response_header(esp_http_client_event_t *event)
@@ -92,9 +95,11 @@ static esp_err_t response_header(esp_http_client_event_t *event)
 /* Follow only bounded, certificate-verified GitHub redirects. Never send credentials. */
 static esp_http_client_handle_t open_url(const char *url,int *http)
 {
+ bool metadata=!strcmp(url,LATEST);
+ if(!metadata&&strncmp(url,TEMPO_UPDATE_BASE,strlen(TEMPO_UPDATE_BASE)))return NULL;
  char current[2048];snprintf(current,sizeof(current),"%s",url);
  for(unsigned redirects=0;redirects<4;redirects++){
-  if(!allowed_url(current))return NULL;
+  if(!allowed_url(current,metadata))return NULL;
   response_t response={0};
   esp_http_client_config_t config={.event_handler=response_header,.user_data=&response,.url=current,.timeout_ms=15000,.buffer_size=4096,.buffer_size_tx=2048,
    .crt_bundle_attach=esp_crt_bundle_attach,.disable_auto_redirect=true};
@@ -122,7 +127,7 @@ static bool verify(const unsigned char *data,size_t size,const unsigned char *si
 {
  unsigned char hash[32];mbedtls_pk_context pk;mbedtls_pk_init(&pk);
  bool ok=mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),data,size,hash)==0&&
-  mbedtls_pk_parse_public_key(&pk,(const unsigned char *)public_key,strlen(public_key)+1)==0&&
+  mbedtls_pk_parse_public_key(&pk,(const unsigned char *)public_key,(size_t)(public_key_end-public_key))==0&&
   mbedtls_pk_verify(&pk,MBEDTLS_MD_SHA256,hash,sizeof(hash),signature,signature_size)==0;
  mbedtls_pk_free(&pk);return ok;
 }
@@ -162,7 +167,7 @@ static bool install(void)
  const esp_partition_t *partition=esp_ota_get_next_update_partition(NULL);
  if(!partition||candidate.size>partition->size){message(UPDATE_ERROR,"Update does not fit this device.");return false;}
  message(UPDATE_DOWNLOADING,"Downloading update… Keep Tempo powered on.");int http=0;
- esp_http_client_handle_t h=open_url(candidate.url,&http);if(!h){message(UPDATE_ERROR,"Download unavailable. Current firmware is unchanged.");return false;}
+ esp_http_client_handle_t h=open_url(candidate.url,&http);if(!h||http!=200){if(h)esp_http_client_cleanup(h);message(UPDATE_ERROR,"Download unavailable. Current firmware is unchanged.");return false;}
  esp_ota_handle_t ota=0;bool begun=esp_ota_begin(partition,candidate.size,&ota)==ESP_OK;
  mbedtls_md_context_t hash;mbedtls_md_init(&hash);
  bool ok=begun&&mbedtls_md_setup(&hash,mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),0)==0&&mbedtls_md_starts(&hash)==0;
@@ -192,6 +197,7 @@ static void worker(void *unused)
   int64_t now=time(NULL),mono=esp_timer_get_time();station_network_status_t net;station_network_status(&net);
   bool ready=net.connected&&net.source!=TIME_UNSET&&now>=1577836800;
   if(!ready)connected_since=0;else if(!connected_since)connected_since=mono;
+  /* Preserve the trial marker until boot health is confirmed. A rollback reads it on old firmware. */
   if(saved.pending[0]&&!strcmp(saved.pending,status.installed)){
    esp_ota_img_states_t image_state;
    if(esp_ota_get_state_partition(esp_ota_get_running_partition(),&image_state)==ESP_OK&&image_state==ESP_OTA_IMG_VALID){
@@ -239,6 +245,7 @@ esp_err_t station_update_start(void)
   else if(err!=ESP_ERR_NVS_NOT_FOUND)return err;
  }else if(err!=ESP_ERR_NVS_NOT_FOUND)return err;
  snprintf(status.installed,sizeof(status.installed),"%s",esp_app_get_description()->version);
+ /* Installed identifies the running image, not acceptance: retain matching pending until VALID. */
  if(saved.pending[0]){if(strcmp(saved.pending,status.installed)){snprintf(saved.blocked,sizeof(saved.blocked),"%s",saved.pending);message(UPDATE_ERROR,"Previous update did not complete. Previous firmware restored.");saved.pending[0]=0;if(!persist())return ESP_FAIL;}}
  else message(UPDATE_IDLE,"Automatic update checks are ready.");
  publish();commands=xQueueCreate(4,sizeof(command_t));if(!commands)return ESP_ERR_NO_MEM;

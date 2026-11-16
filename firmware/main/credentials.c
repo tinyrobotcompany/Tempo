@@ -9,11 +9,11 @@ bool station_credential_get(char *out, size_t size)
     if(!out || size < STATION_PRIM_KEY_MAX+1) return false;
     out[0]=0;
     nvs_handle_t h;
-    if(nvs_open("tempo_secret",NVS_READONLY,&h)!=ESP_OK) return false;
+    if(nvs_open("tempo_secret",NVS_READONLY,&h)!=ESP_OK) { atomic_store(&configured,false); return false; }
     size_t length=size;
     esp_err_t err=nvs_get_str(h,"prim",out,&length);
     nvs_close(h);
-    if(err!=ESP_OK || !length || length>size || !out[0]) { memset(out,0,size); return false; }
+    if(err!=ESP_OK || !length || length>size || !out[0]) { memset(out,0,size); atomic_store(&configured,false); return false; }
     atomic_store(&configured,true);
     return true;
 }
