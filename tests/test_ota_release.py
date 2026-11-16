@@ -38,6 +38,8 @@ class ReleaseTests(unittest.TestCase):
   self.assertLess(workflow.index('gh release delete-asset'),workflow.index('gh release upload'))
   self.assertLess(workflow.index('verify-assets --downloaded'),workflow.index('gh release edit'))
   self.assertNotIn('--clobber',workflow)
+  self.assertIn("--pattern '*'",workflow)
+  self.assertNotIn('--archive',workflow)
  def test_signed_package_descriptor_hash_and_tampering(self):
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder);key=root/'private.pem';public=root/'public.pem';image=root/'app.bin';out=root/'release'

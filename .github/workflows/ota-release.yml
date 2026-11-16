@@ -94,6 +94,6 @@ jobs:
           done < "$verification/existing"
           gh release upload "$tag" build-host/release/tempo.bin build-host/release/tempo-manifest.json build-host/release/tempo-manifest.sig build-host/release/SHA256SUMS build-host/release/dependencies.lock build-host/release/release.json build-host/release/notes.md
           mkdir "$verification/downloaded"
-          gh release download "$tag" --dir "$verification/downloaded"
+          gh release download "$tag" --pattern '*' --dir "$verification/downloaded"
           python3 scripts/ota-release.py verify-assets --downloaded "$verification/downloaded"
           gh release edit "$tag" --draft=false --latest --notes-file build-host/release/notes.md
