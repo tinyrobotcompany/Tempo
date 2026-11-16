@@ -67,7 +67,11 @@ class ReleaseTests(unittest.TestCase):
     git('tag','v0.9.0');self.assertEqual(ota.plan(root/'out'),'0.9.0');self.assertIn('First OTA release.',(root/'out/notes.md').read_text())
     (root/'.changeset/second.md').write_text('---\n"tempo": patch\n---\nSecond change.')
     git('add','.changeset');git('commit','-qm','second');self.assertEqual(ota.plan(root/'out'),'0.9.1');self.assertNotIn('First OTA release.',(root/'out/notes.md').read_text())
-    git('tag','v0.9.1');git('checkout','--detach',first)
+    before=(root/'out/release.json').read_bytes();notes=(root/'out/notes.md').read_bytes()
+    git('tag','v0.9.1');self.assertEqual(ota.plan(root/'out'),'0.9.1')
+    self.assertEqual((root/'out/release.json').read_bytes(),before);self.assertEqual((root/'out/notes.md').read_bytes(),notes)
+    metadata=json.loads(before);self.assertEqual(metadata['tag'],'v0.9.1');self.assertEqual(metadata['previous'],'v0.9.0')
+    git('checkout','--detach',first)
     with self.assertRaises(subprocess.CalledProcessError):ota.plan(root/'out')
    finally:ota.ROOT=old_root
 if __name__=='__main__':unittest.main()

@@ -4,7 +4,7 @@ spec=importlib.util.spec_from_file_location('changes',Path(__file__).resolve().p
 changes=importlib.util.module_from_spec(spec);spec.loader.exec_module(changes)
 class FirmwareChangesTests(unittest.TestCase):
  def test_actual_build_inputs(self):
-  for p in ['firmware/main/main.c','firmware/sdkconfig.defaults','firmware/CMakeLists.txt','firmware/main/web/app.js','firmware/partitions.csv','firmware/dependencies.lock','scripts/ota-release.py','companion/shortcut/Weather Station Location.shortcut']:
+  for p in ['firmware/main/main.c','firmware/sdkconfig.defaults','firmware/CMakeLists.txt','firmware/main/web/app.js','firmware/partitions.csv','firmware/dependencies.lock','scripts/ota-release.py', 'scripts/generate_transport_config.py','companion/shortcut/Weather Station Location.shortcut']:
    self.assertTrue(changes.affects_firmware(p),p)
   for p in ['README.md','docs/BOM.md','tests/test_core.c','.github/workflows/ci.yaml','.changeset/fix.md','firmware/README.md']:
    self.assertFalse(changes.affects_firmware(p),p)

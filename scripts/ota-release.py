@@ -35,7 +35,8 @@ def plan(destination):
     body=f'# Tempo {version}\n\nSource: `{head}`\n\n'+('\n\n'.join(n[2] for n in notes) or 'Validated firmware and dependency updates.')
     body+='\n\n## Installation and compatibility\n\nWaveshare ESP32-P4 10.1-inch, revision 3, 32 MB flash. Existing A/B 8 MB partition layout only. Initial OTA bootstrap requires USB. Credentials and settings remain on the device.\n\nAutomated tests/build/security gates passed before publication. Physical hardware acceptance is recorded separately; CI does not claim a hardware test.\n'
     destination.mkdir(parents=True,exist_ok=True)
-    (destination/'release.json').write_text(json.dumps({'version':version,'commit':head,'previous':previous},indent=2)+'\n')
+    # previous is the predecessor used for release notes, never this release's own tag.
+    (destination/'release.json').write_text(json.dumps({'version':version,'tag':'v'+version,'commit':head,'previous':previous},indent=2)+'\n')
     (destination/'notes.md').write_text(body)
     return version
 
