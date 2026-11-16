@@ -85,8 +85,8 @@ jobs:
             fi
             gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA"
           fi
-          git fetch origin "refs/tags/$tag"
-          test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$GITHUB_SHA"
+          git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
+          test "$(git rev-parse "refs/tags/$tag^{commit}")" = "$GITHUB_SHA"
           if gh release view "$tag" --json isDraft --jq '.isDraft' | grep -qx false; then
             echo 'Release already published; immutable artifacts are not replaced.'
             exit 0
