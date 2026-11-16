@@ -13,30 +13,32 @@ def git(*args):
 def plan(destination):
     head = git('rev-parse', 'HEAD')
     tags = [t for t in git('tag','--list','v*').splitlines() if re.fullmatch(r'v\d+\.\d+\.\d+', t)]
-    previous = max(tags, key=lambda t: release.version_tuple(t[1:])) if tags else None
+    latest_tag = max(tags, key=lambda t: release.version_tuple(t[1:])) if tags else None
     for tag in tags:
         subprocess.run(['git','merge-base','--is-ancestor',tag,'HEAD'],cwd=ROOT,check=True)
-    if previous and git('rev-parse',previous+'^{commit}') == head:
-        version = previous[1:]
-        prior=[t for t in tags if t!=previous]
-        previous=max(prior,key=lambda t:release.version_tuple(t[1:])) if prior else None
+    retry_tag = latest_tag if latest_tag and git('rev-parse',latest_tag+'^{commit}') == head else None
+    predecessor_tags = [tag for tag in tags if tag != retry_tag]
+    notes_base_tag = max(predecessor_tags,key=lambda tag:release.version_tuple(tag[1:])) if predecessor_tags else None
+    # A retry uses the same predecessor range as the original allocation.
+    notes = release.pending(ROOT)
+    if notes_base_tag is not None:
+        changed = set(git('diff','--name-only',notes_base_tag,'HEAD','--','.changeset').splitlines())
+        notes = [note for note in notes if str(note[0].relative_to(ROOT)) in changed]
+    if retry_tag is not None:
+        allocated_tag = retry_tag
+        version = allocated_tag[1:]
     else:
-        base = max(release.version_tuple(release.current(ROOT)[2]), release.version_tuple(previous[1:]) if previous else (0,0,0))
-        changed = set(git('diff','--name-only',previous,'HEAD','--','.changeset').splitlines()) if previous else None
-        notes = [n for n in release.pending(ROOT) if changed is None or str(n[0].relative_to(ROOT)) in changed]
-        bump = max((n[1] for n in notes),key=['patch','minor','major'].index,default='patch')
+        base = max(release.version_tuple(release.current(ROOT)[2]), release.version_tuple(latest_tag[1:]) if latest_tag else (0,0,0))
+        bump = max((note[1] for note in notes),key=['patch','minor','major'].index,default='patch')
         a,b,c=base
         version = f'{a+1}.0.0' if bump=='major' else f'{a}.{b+1}.0' if bump=='minor' else f'{a}.{b}.{c+1}'
+        allocated_tag = 'v'+version
     release.version_tuple(version)
-    notes = release.pending(ROOT)
-    if previous:
-        names=set(git('diff','--name-only',previous,'HEAD','--','.changeset').splitlines())
-        notes=[n for n in notes if str(n[0].relative_to(ROOT)) in names]
     body=f'# Tempo {version}\n\nSource: `{head}`\n\n'+('\n\n'.join(n[2] for n in notes) or 'Validated firmware and dependency updates.')
     body+='\n\n## Installation and compatibility\n\nWaveshare ESP32-P4 10.1-inch, revision 3, 32 MB flash. Existing A/B 8 MB partition layout only. Initial OTA bootstrap requires USB. Credentials and settings remain on the device.\n\nAutomated tests/build/security gates passed before publication. Physical hardware acceptance is recorded separately; CI does not claim a hardware test.\n'
     destination.mkdir(parents=True,exist_ok=True)
     # previous is the predecessor used for release notes, never this release's own tag.
-    (destination/'release.json').write_text(json.dumps({'version':version,'tag':'v'+version,'commit':head,'previous':previous},indent=2)+'\n')
+    (destination/'release.json').write_text(json.dumps({'version':version,'tag':allocated_tag,'commit':head,'previous':notes_base_tag},indent=2)+'\n')
     (destination/'notes.md').write_text(body)
     return version
 

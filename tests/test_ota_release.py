@@ -100,6 +100,28 @@ class ReleaseTests(unittest.TestCase):
    with self.assertRaises(ValueError):ota.package(out,image,'1.0.0',key,public)
    image.write_bytes(b'bad')
    with self.assertRaises(ValueError):ota.package(out,image,'1.0.0',key,public)
+ def test_second_release_retry_preserves_metadata_and_notes_without_existing_output(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);(root/'firmware').mkdir();(root/'.changeset').mkdir()
+   (root/'firmware/CMakeLists.txt').write_text('project(weather_station VERSION 0.8.16)')
+   def git(*args):return subprocess.check_output(['git',*args],cwd=root,text=True,stderr=subprocess.DEVNULL).strip()
+   git('init','-q');git('config','user.name','Test');git('config','user.email','test@example.com')
+   (root/'.changeset/first.md').write_text('---\n"tempo": minor\n---\nFirst release.')
+   git('add','.');git('commit','-qm','first');git('tag','v0.9.0')
+   (root/'.changeset/second.md').write_text('---\n"tempo": patch\n---\nSecond release.')
+   git('add','.changeset');git('commit','-qm','second')
+   old_root=ota.ROOT;ota.ROOT=root
+   try:
+    self.assertEqual(ota.plan(root/'original'),'0.9.1')
+    git('tag','v0.9.1')
+    for output in ('fresh-retry','another-retry'):
+     self.assertEqual(ota.plan(root/output),'0.9.1')
+     for name in ('release.json','notes.md'):
+      self.assertEqual((root/output/name).read_bytes(),(root/'original'/name).read_bytes())
+    metadata=json.loads((root/'fresh-retry/release.json').read_text())
+    self.assertEqual(metadata['tag'],'v0.9.1');self.assertEqual(metadata['previous'],'v0.9.0')
+    self.assertNotIn('First release.',(root/'fresh-retry/notes.md').read_text())
+   finally:ota.ROOT=old_root
  def test_version_plan_notes_idempotence_and_old_commit_rejection(self):
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder);(root/'firmware').mkdir();(root/'.changeset').mkdir()
