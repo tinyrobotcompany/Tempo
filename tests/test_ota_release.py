@@ -42,7 +42,7 @@ class ReleaseTests(unittest.TestCase):
   self.assertNotIn('--archive',workflow)
  def test_publication_requires_remote_tag_at_exact_commit(self):
   workflow=(ROOT/'.github/workflows/ota-release.yml').read_text()
-  commands=workflow.split('          tag="v$VERSION"',1)[1].split('          if gh release view "$tag" --json isDraft',1)[0]
+  commands=workflow.split('          tag="v$VERSION"',1)[1].split('          if draft=',1)[0]
   commands='tag="v$VERSION"\n'+commands
   self.assertIn('--verify-tag --draft',workflow)
   self.assertIn("Release exists without its expected git tag",workflow)
@@ -117,6 +117,7 @@ class ReleaseTests(unittest.TestCase):
     git('tag','v0.9.1');self.assertEqual(ota.plan(root/'out'),'0.9.1')
     self.assertEqual((root/'out/release.json').read_bytes(),before);self.assertEqual((root/'out/notes.md').read_bytes(),notes)
     metadata=json.loads(before);self.assertEqual(metadata['tag'],'v0.9.1');self.assertEqual(metadata['previous'],'v0.9.0')
+    git('tag','v9.0.0',first) # Highest semantic tag is older than another production tag.
     git('checkout','--detach',first)
     with self.assertRaises(subprocess.CalledProcessError):ota.plan(root/'out')
    finally:ota.ROOT=old_root

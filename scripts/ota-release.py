@@ -14,8 +14,8 @@ def plan(destination):
     head = git('rev-parse', 'HEAD')
     tags = [t for t in git('tag','--list','v*').splitlines() if re.fullmatch(r'v\d+\.\d+\.\d+', t)]
     previous = max(tags, key=lambda t: release.version_tuple(t[1:])) if tags else None
-    if previous:
-        subprocess.run(['git','merge-base','--is-ancestor',previous,'HEAD'],cwd=ROOT,check=True)
+    for tag in tags:
+        subprocess.run(['git','merge-base','--is-ancestor',tag,'HEAD'],cwd=ROOT,check=True)
     if previous and git('rev-parse',previous+'^{commit}') == head:
         version = previous[1:]
         prior=[t for t in tags if t!=previous]

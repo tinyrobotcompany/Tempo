@@ -105,11 +105,13 @@ jobs:
           fi
           git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
           test "$(git rev-parse "refs/tags/$tag^{commit}")" = "$GITHUB_SHA"
-          if gh release view "$tag" --json isDraft --jq '.isDraft' | grep -qx false; then
-            echo 'Release already published; immutable artifacts are not replaced.'
-            exit 0
-          fi
-          if ! gh release view "$tag" >/dev/null 2>&1; then
+          if draft=$(gh release view "$tag" --json isDraft --jq '.isDraft'); then
+            if [[ "$draft" = false ]]; then
+              echo 'Release already published; immutable artifacts are not replaced.'
+              exit 0
+            fi
+            test "$draft" = true
+          else
             gh release create "$tag" --target "$GITHUB_SHA" --title "Tempo $VERSION" --verify-tag --draft --notes-file build-host/release/notes.md
           fi
           test "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = true
