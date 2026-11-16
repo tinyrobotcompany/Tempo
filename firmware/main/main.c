@@ -128,6 +128,7 @@ void app_main(void)
             phone_err=station_phone_start(&settings);
             if(phone_err!=ESP_OK)ESP_LOGW(TAG,"Phone setup retry failed: %s",esp_err_to_name(phone_err));
         }
+        /* This counter advances in the UI 100 ms timer; this loop only samples it. */
         unsigned beat = station_ui_heartbeat();
         stalled = beat == previous ? stalled + 1 : 0;
         previous = beat;
