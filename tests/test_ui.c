@@ -8,6 +8,11 @@
 static time_t test_now=1794729600;
 time_t time(time_t *out){if(out)*out=test_now;return test_now;}
 static unsigned saves, scans, connections, city_request, weather_requests;
+static unsigned update_requests;
+static station_update_status_t update_snapshot={.installed="0.9.0",.interval_hours=720};
+static void updates(station_update_status_t *out){*out=update_snapshot;}
+static bool request_update(const char *action){assert(!strcmp(action,"check")||!strcmp(action,"install")||!strcmp(action,"postpone"));update_requests++;return update_requests<3;}
+
 static station_weather_snapshot_t weather;
 static void weather_status(station_weather_snapshot_t *s){*s=weather;}
 static bool refresh_weather(void){weather_requests++;return true;}
@@ -75,7 +80,7 @@ int main(int argc,char **argv){
   if(strcmp(argv[1],"--boot-day")==0)boot.tm_hour=12;
   test_now=mktime(&boot);boot_level=status.source==TIME_UNSET||boot.tm_hour==12?65:initial.night_mode==1?10:0;
  }
- station_ui_start(&initial,(station_ui_actions_t){.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});
+ station_ui_start(&initial,(station_ui_actions_t){.update_status=updates,.update_request=request_update,.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});
  if(argc>1){assert(brightness_calls==1&&backlight==boot_level);tick();assert(brightness_calls==1&&backlight==boot_level);printf("PASS: %s starts directly at %u%% with no normal-brightness flash\n",argv[1],boot_level);lv_deinit();free(buf);return 0;}
  tick();
  const lv_font_t *text_fonts[]={&station_text_18,&station_text_24,&station_text_32,&station_text_48};
@@ -281,6 +286,12 @@ int main(int argc,char **argv){
  click("Settings");click("Power & night mode");shot("power-night-mode");click("Save night mode");assert(saved.night_mode==2);
  status.connected=false;transit.generation=status.location_generation;transit.valid=true;transit.row_count=1;transit.fetched_at=test_now;transit.state=TRANS_READY;
  click("Transport");assert(contains_text(lv_screen_active(),"Offline · saved"));assert(!contains_text(lv_screen_active(),"Arrives "));
+ click("Settings");click("Software updates");assert(contains_text(lv_screen_active(),"Installed: 0.9.0"));
+ click("Check for updates");assert(update_requests==1);click("Install update");click("Postpone");assert(contains_text(lv_screen_active(),"service busy"));
+ update_snapshot.state=UPDATE_DOWNLOADING;update_snapshot.progress=42;for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Downloading"));
+ update_snapshot.state=UPDATE_VERIFYING;for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Verifying"));
+ update_snapshot.state=UPDATE_RESTARTING;for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Restarting"));
+ update_snapshot.state=UPDATE_IDLE;
  puts("PASS: scheduled screen-off, first-touch consumption, timed wake, trusted-time fallback and offline departures");
  puts("PASS: equal visible date spacing for all ten styles at 00:00, 11:11, 12:34 and 23:59");
  puts("PASS: clock two-service layout, cancellation, updating animation with cached values, and 20-second automatic rotation");

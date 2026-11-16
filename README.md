@@ -5,13 +5,14 @@
 [![PR checks](https://github.com/tinyrobotcompany/Tempo/actions/workflows/pr-checks.yaml/badge.svg)](https://github.com/tinyrobotcompany/Tempo/actions/workflows/pr-checks.yaml)
 [![Codex review](https://github.com/tinyrobotcompany/Tempo/actions/workflows/codex-pr-review.yaml/badge.svg)](https://github.com/tinyrobotcompany/Tempo/actions/workflows/codex-pr-review.yaml)
 [![Required checks](https://github.com/tinyrobotcompany/Tempo/actions/workflows/ensure-codex-ruleset.yaml/badge.svg?branch=main)](https://github.com/tinyrobotcompany/Tempo/actions/workflows/ensure-codex-ruleset.yaml)
-[![Draft release](https://github.com/tinyrobotcompany/Tempo/actions/workflows/release.yml/badge.svg)](https://github.com/tinyrobotcompany/Tempo/actions/workflows/release.yml)
+[![OTA release](https://github.com/tinyrobotcompany/Tempo/actions/workflows/ota-release.yml/badge.svg)](https://github.com/tinyrobotcompany/Tempo/actions/workflows/ota-release.yml)
+[![Latest release](https://img.shields.io/github/v/release/tinyrobotcompany/Tempo)](https://github.com/tinyrobotcompany/Tempo/releases)
 
 [![Firmware version](https://img.shields.io/badge/firmware-0.8.16-blue)](CHANGELOG.md)
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--P4-blue)](docs/BOM.md)
 [![Display](https://img.shields.io/badge/display-10.1%22%20touchscreen-blue)](docs/BOM.md)
 [![Coverage gate](https://img.shields.io/badge/coverage%20floor-80%25-blue)](docs/TESTING.md)
-[![OTA](https://img.shields.io/badge/OTA-not%20implemented-orange)](docs/RELEASING.md)
+[![OTA](https://img.shields.io/badge/OTA-signed%20updates-blue)](docs/RELEASING.md)
 
 Workflow badges report GitHub results once these workflows are published and run; they do not assert that checks are already active. The firmware badge reports the source version, not a published release.
 
@@ -30,15 +31,15 @@ External mains power only: use a 5 V USB-C adapter. [Power supply purchase link,
 
 Current platform: the already-owned Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1 kit, with 32 MB flash and PSRAM. Embedded firmware runs the display and serves the iPhone control panel; no Raspberry Pi is required. This supersedes the earlier 14-inch/Pi proposal.
 
-Current firmware: **0.8.16**. Features include ten clock styles, equal weather/transport summary cards, location-based weather, nearby departures, service alerts, route diagrams, street maps and local iPhone controls. Wi-Fi profiles, screen brightness, colours and automatic view rotation are configurable. OTA delivery remains outstanding; the USB watcher is not OTA. See [development status](docs/DEVELOPMENT.md).
+Current firmware: **0.8.16**. Features include ten clock styles, equal weather/transport summary cards, location-based weather, nearby departures, service alerts, route diagrams, street maps and local iPhone controls. Wi-Fi profiles, screen brightness, colours and automatic view rotation are configurable. Signed OTA delivery is implemented with monthly checks, an optional hourly testing setting and paired phone controls. Initial USB bootstrap and hardware qualification are required; the USB watcher is not OTA. See [development status](docs/DEVELOPMENT.md).
 
 ## Configure and build
 
-Install ESP-IDF 6.1 for the tested ESP32-P4 revision, then copy `.env.example` to `.env` and set your own `IDFM_PRIM_API_KEY`. The build generates a private credential header; never publish build artifacts containing the key. Dependencies are restored from the component manifest and lock file. The patched LVGL adapter under `firmware/vendor` is required.
+Install ESP-IDF 6.1 for the tested ESP32-P4 revision, then build the credential-free firmware. Provision `IDFM_PRIM_API_KEY` once on the device after flashing; `.env` is used only by local diagnostic/provisioning scripts, never by the firmware build. Dependencies are restored from the component manifest and lock file. The patched LVGL adapter under `firmware/vendor` is required.
 
 ```sh
 cp .env.example .env
-# Edit .env with your PRIM API key.
+# Optional: keep your key in .env for diagnostics and one-time provisioning.
 ./scripts/idf.sh build
 ```
 
@@ -52,7 +53,7 @@ Install the mandatory local commit hook with `bash scripts/setup-hooks.sh` in ea
 
 ## Releases
 
-See the [release strategy](docs/RELEASING.md) and [changelog](CHANGELOG.md). Prepare versions and release notes with `python3 scripts/release.py prepare`; validated tags produce source-only GitHub drafts. OTA distribution is not yet implemented.
+See the [release strategy](docs/RELEASING.md) and [changelog](CHANGELOG.md). Firmware merges trigger validated, signed GitHub releases with notes and downloadable artifacts. See [OTA setup, credential migration and acceptance](docs/OTA.md). The legacy manual source-draft workflow is not the device delivery path.
 
 ## Testing and troubleshooting
 
