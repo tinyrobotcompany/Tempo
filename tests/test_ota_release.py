@@ -12,6 +12,15 @@ class ReleaseTests(unittest.TestCase):
   self.assertLess(build.index('test ! -f scripts/generate_transport_config.py'),build.index('idf.py -C firmware build'))
   self.assertNotIn('OTA_SIGNING_PRIVATE_KEY',build)
   self.assertIn('needs: [validation, security]',workflow)
+  copy_commands='\n'.join(line.strip() for line in build.splitlines() if line.strip().startswith(('mkdir -p build-host/release','cp firmware/dependencies.lock')))
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);(root/'firmware').mkdir();(root/'firmware/dependencies.lock').write_text('fixture-lock')
+   subprocess.run(['bash','-ec',copy_commands],cwd=root,check=True)
+   self.assertEqual((root/'build-host/release/dependencies.lock').read_text(),'fixture-lock')
+  upload=next(line for line in workflow.splitlines() if 'gh release upload' in line)
+  for asset in ['tempo.bin','tempo-manifest.json','tempo-manifest.sig','SHA256SUMS','dependencies.lock','release.json','notes.md']:
+   self.assertIn('build-host/release/'+asset+' ',upload)
+
 
  def test_signed_package_descriptor_hash_and_tampering(self):
   with tempfile.TemporaryDirectory() as folder:
