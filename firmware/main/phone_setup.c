@@ -15,7 +15,7 @@
 #include "sdkconfig.h"
 #include <string.h>
 #include <stdio.h>
-#include <math.h>
+#include <math.h> /* floor/isfinite validate numeric settings before conversion. */
 static portMUX_TYPE mux=portMUX_INITIALIZER_UNLOCKED;
 static station_settings_t current_settings;
 static station_view_t current_view;
