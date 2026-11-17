@@ -36,6 +36,8 @@ class ReleaseTests(unittest.TestCase):
    with self.assertRaises(ValueError):ota.verify_assets(expected,actual)
   workflow=(ROOT/'.github/workflows/ota-release.yml').read_text()
   self.assertLess(workflow.index('gh release delete-asset'),workflow.index('gh release upload'))
+  # No checkout may run after plan writes build-host/release metadata.
+  self.assertGreater(workflow.index('scripts/ota-release.py plan'),workflow.rindex('uses: actions/checkout@'))
   self.assertLess(workflow.index('verify-assets --downloaded'),workflow.index('gh release edit'))
   self.assertNotIn('--clobber',workflow)
   self.assertIn("--pattern '*'",workflow)

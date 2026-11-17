@@ -50,12 +50,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Allocate release version and notes
-        id: plan
-        run: |
-          git fetch origin '+refs/tags/*:refs/tags/*'
-          version=$(python3 scripts/ota-release.py plan)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+      # Check out ESP-IDF before planning so no later checkout runs after release metadata exists.
       - name: Checkout pinned ESP-IDF
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -64,6 +59,12 @@ jobs:
           path: .artifacts/esp-idf
           submodules: recursive
           persist-credentials: false
+      - name: Allocate release version and notes
+        id: plan
+        run: |
+          git fetch origin '+refs/tags/*:refs/tags/*'
+          version=$(python3 scripts/ota-release.py plan)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Build credential-free release firmware
         env:
           TEMPO_RELEASE_VERSION: ${{ steps.plan.outputs.version }}
