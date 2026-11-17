@@ -17,7 +17,7 @@ chmod +x build-host/coverage/bin/cc
 export PATH="$PWD/build-host/coverage/bin:$PATH"
 export LLVM_PROFILE_FILE="$PWD/build-host/coverage/raw/%m-%p.profraw"
 export TEMPO_COVERAGE=ON
-for suite in test.sh test-settings.sh test-network.sh test-weather.sh test-transport.sh test-phone.sh test-ui.sh; do
+for suite in test.sh test-settings.sh test-network.sh test-weather.sh test-transport.sh test-phone.sh test-ui.sh test-updates.sh; do
   bash "scripts/$suite"
 done
 xcrun llvm-profdata merge -sparse build-host/coverage/raw/*.profraw -o build-host/coverage/coverage.profdata
@@ -32,6 +32,6 @@ node --test --experimental-test-coverage --test-coverage-lines=80 \
   '--test-coverage-include=**/firmware/main/web/*.js' \
   '--test-coverage-include=**/companion/location-helper/helper.js' \
   tests/test_phone_location.js tests/test_phone_connection.js tests/test_shortcut.js \
-  tests/test_phone_reconnect_ui.js tests/test_location_editor.js tests/test_location_helper.js \
+  tests/test_phone_reconnect_ui.js tests/test_location_editor.js tests/test_location_helper.js tests/test_update_ui.js \
   | tee build-host/coverage/browser.txt
 python3 scripts/check-browser-coverage.py

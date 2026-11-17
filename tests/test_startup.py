@@ -7,11 +7,65 @@ cannot reproduce this FreeRTOS/ISR mismatch.
 """
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 
 class StartupContract(unittest.TestCase):
+    def test_trial_rolls_back_on_service_failure_or_deadline(self):
+        source=(ROOT/'firmware/main/main.c').read_text()
+        block=re.search(r'if \(pending && \(update_err.*?\n        }',source,re.S).group()
+        code='''#include <stdbool.h>
+#include <assert.h>
+#define ESP_OK 0
+#define ESP_LOGE(...) ((void)0)
+#define ESP_ERROR_CHECK(x) (x)
+static int calls;
+static long now;
+static long esp_timer_get_time(void){return now;}
+static int esp_ota_mark_app_invalid_rollback_and_reboot(void){calls++;return 0;}
+static int check(bool pending,int update_err,long elapsed){calls=0;now=elapsed;long started=0;
+'''+block+'''
+return calls;}
+int main(void){assert(check(true,-1,5000000)==1);assert(check(true,0,5000000)==0);assert(check(true,0,180000000)==1);assert(check(false,-1,180000000)==0);}
+'''
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);(p/'trial.c').write_text(code)
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',str(p/'trial.c'),'-o',str(p/'trial')],check=True)
+            subprocess.run([str(p/'trial')],check=True)
+
+    def test_healthy_trial_validates_at_120_seconds_before_rollback(self):
+        source=(ROOT/'firmware/main/main.c').read_text()
+        ui=(ROOT/'firmware/components/station_ui/station_ui.c').read_text()
+        self.assertIn('lv_timer_create(tick,100,NULL)',ui)
+        self.assertIn('atomic_fetch_add(&heartbeat,1)',ui.split('static void tick(',1)[1])
+        valid=re.search(r'if \(pending && phone_err.*?\n        }',source,re.S).group()
+        invalid=re.search(r'if \(pending && \(update_err.*?\n        }',source,re.S).group()
+        code='''#include <stdbool.h>
+#include <assert.h>
+#define ESP_OK 0
+#define ESP_LOGI(...) ((void)0)
+#define ESP_LOGE(...) ((void)0)
+#define ESP_ERROR_CHECK(x) (x)
+static long now;
+static int accepted,rolled;
+static long esp_timer_get_time(void){return now;}
+static bool healthy;
+static bool station_update_validate_trial(void){if(healthy)accepted++;return healthy;}
+static int esp_ota_mark_app_invalid_rollback_and_reboot(void){rolled++;return 0;}
+int main(void){for(int scenario=0;scenario<2;scenario++){healthy=scenario;accepted=rolled=0;bool pending=true;int phone_err=0,update_err=0;long started=0;
+for(now=5000000;now<=180000000;now+=5000000){unsigned beat=now/100000;
+'''+valid+invalid+'''
+if(!healthy||now<120000000)assert(accepted==0);else assert(accepted==1);}
+assert(healthy?(!pending&&rolled==0):(pending&&rolled==1));}}
+'''
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);(p/'health.c').write_text(code)
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',str(p/'health.c'),'-o',str(p/'health')],check=True)
+            subprocess.run([str(p/'health')],check=True)
+
     def test_main_defers_rendering_and_restores_backlight(self):
         source = (ROOT / 'firmware/main/main.c').read_text()
         source = re.sub(r'/\*.*?\*/|//[^\n]*', '', source, flags=re.S)

@@ -10,7 +10,7 @@ EXCLUDED = {
     'firmware/main/main.c': 'ESP-IDF/BSP startup, physical touch/display and reset watchdog; device acceptance required.',
     'firmware/components/station_core/timezones.c': 'Generated IANA table; tested but excluded from percentage to avoid inflating it.',
 }
-BINARIES = ['test_core', 'test_settings', 'test_network', 'test_weather', 'test_weather_service',
+BINARIES = ['test_credentials', 'test_update_policy', 'test_update_service', 'test_core', 'test_settings', 'test_network', 'test_weather', 'test_weather_service',
             'test_transport', 'test_transport_service', 'test_transport_json_filter',
             'test_phone_protocol', 'test_phone_server', 'test_phone_server_installer',
             'ui/test_ui', 'ui/test_map_tiles']

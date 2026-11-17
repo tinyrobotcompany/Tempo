@@ -19,6 +19,7 @@
 #include "transport_service.h"
 #include "map_tiles.h"
 #include "phone_setup.h"
+#include "update_service.h"
 
 static const char *TAG = "station";
 static atomic_uint flushes;
@@ -76,6 +77,8 @@ void app_main(void)
     if(map_err!=ESP_OK)ESP_LOGE(TAG,"Map worker could not start: %s",esp_err_to_name(map_err));
     esp_err_t transport_err=station_transport_start();
     if(transport_err!=ESP_OK)ESP_LOGE(TAG,"Transport task could not start: %s",esp_err_to_name(transport_err));
+    esp_err_t update_err=station_update_start();
+    if(update_err!=ESP_OK)ESP_LOGE(TAG,"Update service unavailable: %s",esp_err_to_name(update_err));
     esp_err_t phone_err=station_phone_start(&settings);
     if(phone_err!=ESP_OK)ESP_LOGE(TAG,"Phone setup could not start: %s",esp_err_to_name(phone_err));
     bsp_display_cfg_t display = {
@@ -98,6 +101,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_lv_adapter_set_touch_callbacks(bsp_display_get_input_dev(), &touch_callbacks));
     lv_display_add_event_cb(lv_display_get_default(),frame_submitted,LV_EVENT_FLUSH_FINISH,NULL);
     station_ui_start(&settings, (station_ui_actions_t){
+        .update_status=station_update_status,.update_request=station_update_request,
         .phone_link=station_phone_link, .phone_take=station_phone_take, .phone_publish=station_phone_publish,
         .transport_search=station_transport_search,.transport_search_status=station_transport_search_status,.transport_search_select=station_transport_search_select,
         .transport_line_map=station_transport_line_map,.transport_line_map_status=station_transport_line_map_status,.transport_line_stop_select=station_transport_line_stop_select,.transport_nearby_reset=station_transport_nearby_reset,
@@ -112,7 +116,7 @@ void app_main(void)
      * Forcing refresh here can wait forever on the wrong task notification. */
     bsp_display_unlock();
     ESP_LOGI(TAG, "UI released to renderer; backlight owned by the UI power policy");
-    ESP_LOGI(TAG, "UI and network/time service active; OTA download not implemented");
+    ESP_LOGI(TAG, "UI, network/time and signed OTA services active");
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t state;
     bool pending = esp_ota_get_state_partition(running, &state) == ESP_OK && state == ESP_OTA_IMG_PENDING_VERIFY;
@@ -124,6 +128,7 @@ void app_main(void)
             phone_err=station_phone_start(&settings);
             if(phone_err!=ESP_OK)ESP_LOGW(TAG,"Phone setup retry failed: %s",esp_err_to_name(phone_err));
         }
+        /* This counter advances in the UI 100 ms timer; this loop only samples it. */
         unsigned beat = station_ui_heartbeat();
         stalled = beat == previous ? stalled + 1 : 0;
         previous = beat;
@@ -139,11 +144,14 @@ void app_main(void)
             ESP_LOGE(TAG, "UI stopped responding; restart");
             esp_restart();
         }
-        if (pending && beat >= 100 && esp_timer_get_time()-started >= 120000000) {
-            /* Milestone checks only. Expand to networking before enabling OTA delivery. */
-            ESP_ERROR_CHECK(esp_ota_mark_app_valid_cancel_rollback());
+        if (pending && phone_err == ESP_OK && update_err == ESP_OK && beat >= 100 && esp_timer_get_time()-started >= 120000000 && station_update_validate_trial()) {
+            /* Worker confirmed durable trial state before accepting the image. */
             pending = false;
             ESP_LOGI(TAG, "Trial firmware healthy");
+        }
+        if (pending && (update_err != ESP_OK || esp_timer_get_time()-started >= 180000000)) {
+            ESP_LOGE(TAG, "Trial firmware failed local health checks; rolling back");
+            ESP_ERROR_CHECK(esp_ota_mark_app_invalid_rollback_and_reboot());
         }
     }
 }

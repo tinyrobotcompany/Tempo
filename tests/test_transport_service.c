@@ -8,6 +8,7 @@ static time_t now_seconds=1794557252;
 static time_t test_time(time_t *out){time_t n=now_seconds;if(out)*out=n;return n;}
 #define time test_time
 #include "../firmware/main/transport_service.c"
+bool station_credential_get(char *out,size_t size){snprintf(out,size,"host-fixture");return true;}
 static int64_t clock_us=1000000,declared=2;
 static int status_code=200,reads,opened,closed,cleaned;
 static size_t received,total=2;
@@ -53,7 +54,7 @@ void *esp_http_client_init(esp_http_client_config_t *config){assert(config->disa
   declared=0;total=strlen(response);
  }
  return (void*)1;}
-int esp_http_client_set_header(void *c,const char *name,const char *value){(void)c;if(!strcmp(name,"apikey"))assert(!strcmp(value,STATION_PRIM_API_KEY));return 0;}
+int esp_http_client_set_header(void *c,const char *name,const char *value){(void)c;if(!strcmp(name,"apikey"))assert(!strcmp(value,"host-fixture"));return 0;}
 int esp_http_client_set_timeout_ms(void *c,int ms){(void)c;assert(ms==2000);return ESP_OK;}
 int esp_http_client_open(void *c,int length){(void)c;assert(length==0);opened++;return ESP_OK;}
 int64_t esp_http_client_fetch_headers(void *c){(void)c;return declared;}

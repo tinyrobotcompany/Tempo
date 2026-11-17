@@ -1,6 +1,6 @@
 #include "transport_memory.h"
 #include "transport_service.h"
-#include "transport_config.h"
+#include "credentials.h"
 #include "transport_json_filter.h"
 #include "network_time.h"
 #include "esp_http_client.h"
@@ -58,7 +58,10 @@ static char *fetch(const char *url){
   .tls_version=ESP_HTTP_CLIENT_TLS_VER_TLS_1_3,
   .crt_bundle_attach=esp_crt_bundle_attach,.disable_auto_redirect=true};
  esp_http_client_handle_t client=esp_http_client_init(&config);if(!client){free(body);return NULL;}
- esp_http_client_set_header(client,"apikey",STATION_PRIM_API_KEY);
+ char key[STATION_PRIM_KEY_MAX+1];
+ if(!station_credential_get(key,sizeof(key))){free(body);esp_http_client_cleanup(client);fetch_failure=TRANS_KEY;return NULL;}
+ esp_http_client_set_header(client,"apikey",key);
+ memset(key,0,sizeof(key));
  esp_http_client_set_header(client,"Accept","application/json");esp_http_client_set_header(client,"Accept-Encoding","identity");
  esp_err_t err=esp_http_client_open(client,0);int http=0;size_t used=0;bool complete=false,oversized=false;
  if(err==ESP_OK){int64_t length=esp_http_client_fetch_headers(client);http=esp_http_client_get_status_code(client);
@@ -248,7 +251,8 @@ static void worker(void *unused){
   if(generation!=home.location_generation){generation=home.location_generation;discover_at=0;next=0;failures=0;
    portENTER_CRITICAL(&mux);memset(&snapshot,0,sizeof(snapshot));snapshot.generation=generation;snapshot.state=TRANS_LOCATION;selection=0;requested=false;station_override=false;portEXIT_CRITICAL(&mux);
   }
-  if(!STATION_PRIM_API_KEY[0])state(TRANS_KEY);
+  char key[STATION_PRIM_KEY_MAX+1];bool configured=station_credential_get(key,sizeof(key));memset(key,0,sizeof(key));
+  if(!configured)state(TRANS_KEY);
   else if(!home.location_valid)state(TRANS_LOCATION);
   else if(!home.connected)state(TRANS_WIFI);
   else if(home.source==TIME_UNSET)state(TRANS_TIME);
