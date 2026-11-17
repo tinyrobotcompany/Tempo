@@ -14,10 +14,10 @@ static int64_t mono=1000000;
 static station_network_status_t net={.connected=true,.source=TIME_NETWORK};
 static esp_app_desc_t desc={.version="0.9.0",.project_name="weather_station"};
 static esp_partition_t part={.size=0x800000};
-static int open_error,read_error=ESP_ERR_NVS_NOT_FOUND,write_error,commit_error,crypto_error,ota_error,begin_error,boot_error,http_code=200;
+static int open_error,read_error=ESP_ERR_NVS_NOT_FOUND,write_error,commit_error,crypto_error,ota_error,end_error,begin_error,boot_error,http_code=200;
 static bool namespace_missing,queue_fail,task_fail,active_pending,trial_aborted,no_partition,truncated,read_failed,init_failed,connect_failed,has_redirect;
 static unsigned accepted;static int accept_error;static bool cleanup_fails;
-static unsigned writes,begins,activated,aborted,restarted,cleanup_count,loops,stop_loop;
+static unsigned writes,begins,activated,boot_calls,aborted,restarted,cleanup_count,loops,stop_loop;
 static saved_t persisted,staged;
 static jmp_buf done;
 struct test_queue {command_t item[8];unsigned n;} q;
@@ -48,10 +48,10 @@ const esp_partition_t *esp_ota_get_next_update_partition(const void *p){(void)p;
 int esp_ota_get_state_partition(const esp_partition_t *p,esp_ota_img_states_t *s){(void)p;*s=trial_aborted?ESP_OTA_IMG_ABORTED:active_pending?ESP_OTA_IMG_PENDING_VERIFY:ESP_OTA_IMG_VALID;return 0;}
 int esp_ota_begin(const esp_partition_t *p,unsigned size,esp_ota_handle_t *h){(void)p;begins++;assert(size==1024);*h=1;return begin_error;}
 int esp_ota_write(esp_ota_handle_t h,const void *data,size_t n){assert(h==1&&data&&n>0);writes++;return ota_error;}
-int esp_ota_end(esp_ota_handle_t h){assert(h==1);return ota_error;}
+int esp_ota_end(esp_ota_handle_t h){assert(h==1);return end_error?end_error:ota_error;}
 int esp_ota_abort(esp_ota_handle_t h){assert(h==1);aborted++;return 0;}
 int esp_ota_get_partition_description(const esp_partition_t *p,esp_app_desc_t *d){(void)p;*d=desc;strcpy(d->version,"0.9.1");return 0;}
-int esp_ota_set_boot_partition(const esp_partition_t *p){(void)p;if(!boot_error)activated++;return boot_error;}
+int esp_ota_set_boot_partition(const esp_partition_t *p){(void)p;boot_calls++;if(!boot_error)activated++;return boot_error;}
 int esp_ota_mark_app_valid_cancel_rollback(void){if(accept_error)return accept_error;accepted++;active_pending=false;if(cleanup_fails)commit_error=-1;return 0;}
 void esp_restart(void){restarted++;}
 void esp_crt_bundle_attach(void){}
@@ -110,7 +110,11 @@ int main(void){
  for(int delta=-1;delta<=1;delta+=2){body_delta=delta;unsigned abort_count=aborted;assert(!install()&&aborted==abort_count+1&&activated==0);}
  body_delta=0;declared_size=-2;
  unsigned before=begins;http_code=500;assert(!install()&&begins==before);http_code=200;begin_error=-1;assert(!install());begin_error=0;
- ota_error=-1;assert(!install()&&aborted);ota_error=0;truncated=true;assert(!install());truncated=false;
+ ota_error=-1;assert(!install()&&aborted);ota_error=0;
+ /* esp_ota_end() validation failure: boot selection is never touched; the running image stays selected. */
+ {unsigned calls=boot_calls,abort_count=aborted;end_error=0x1503 /* ESP_ERR_OTA_VALIDATE_FAILED */;
+  assert(!install()&&boot_calls==calls&&activated==0&&aborted==abort_count&&!persisted.pending[0]);end_error=0;}
+truncated=true;assert(!install());truncated=false;
  candidate.sha256[0]='1';assert(!install());candidate.sha256[0]='0';commit_error=-1;assert(!install());commit_error=0;boot_error=-1;assert(!install()&&!persisted.pending[0]);boot_error=0;
  assert(activated==0);assert(install()&&activated==1&&restarted==1);
  assert(station_update_request("install"));run(63);assert(restarted==2);

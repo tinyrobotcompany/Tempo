@@ -218,6 +218,9 @@ static bool install(void)
  esp_http_client_cleanup(h);message(UPDATE_VERIFYING,"Verifying downloaded firmware…");
  ok=ok&&total==candidate.size&&mbedtls_md_finish(&hash,digest)==0;mbedtls_md_free(&hash);
  char hex[65];for(unsigned i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",digest[i]);ok=ok&&!strcmp(hex,candidate.sha256);
+ /* esp_ota_end() only finalises and validates the written image; it never changes the boot
+    selection (otadata). On any failure below we return before esp_ota_set_boot_partition(),
+    so the running image stays the boot image. tests/test_update_service.c pins this. */
  if(ok){ok=esp_ota_end(ota)==ESP_OK;begun=false;}
  if(begun)esp_ota_abort(ota);
  esp_app_desc_t description;
