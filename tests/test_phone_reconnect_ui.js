@@ -67,3 +67,25 @@ setImmediate(async()=>{
  assert.equal(buttons[0].textContent,'Clock');assert(!buttons[0].disabled);
  console.log('PASS: view button gives immediate progress and restores after reply');
 });
+
+// Exercise the actual idle form, including presets, custom values and persisted confirmation.
+setImmediate(async()=>{
+ const localNodes=new Map();let idleOptions,submitted,requests=0;
+ function field(id){if(!localNodes.has(id))localNodes.set(id,{value:'',textContent:'',disabled:false,hidden:false,focus(){this.focused=true;},classList:{toggle(){}},setAttribute(){},addEventListener(type,fn){this[type]=fn;}});return localNodes.get(id);}
+ const idleContext={...context,document:{...context.document,getElementById:field,querySelectorAll:()=>[]},
+  StationConnection:{create:config=>{idleOptions=config;return{connected:()=>true,start:()=>{},wake:()=>{},request:async(path,body)=>{requests++;if(path==='settings'){submitted=body;return{};}return{settings:submitted,saveState:2};}};}}};
+ vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),idleContext,{filename:require('node:path').resolve('firmware/main/web/app.js')});
+ idleOptions.onState({phase:'connected',failures:0});
+ idleOptions.onStatus({...status,settings:{...settings,dimAfter:3,offAfter:5,dimBrightness:10}});
+ assert.equal(field('dimPreset').value,'custom');assert.equal(field('offPreset').value,'5');
+ field('dimPreset').value='2';field('dimPreset').onchange();assert.equal(field('dimAfter').value,'2');
+ field('dimPreset').value='custom';field('dimPreset').onchange();assert(field('dimAfter').focused);
+ field('offAfter').value='1';field('offAfter').oninput();assert.equal(field('offPreset').value,'1');
+ await field('settingsForm').onsubmit({preventDefault(){}});assert.equal(requests,0);assert.match(field('settingsMessage').textContent,/later than dim/);
+ field('offAfter').value='4';
+ const pending=field('settingsForm').onsubmit({preventDefault(){}});
+ assert.equal(field('settingsMessage').textContent,'Saving…');assert(field('saveSettings').disabled);
+ await pending;assert.equal(submitted.dimAfter,2);assert.equal(submitted.offAfter,4);assert.equal(submitted.dimBrightness,10);
+ assert.match(field('settingsMessage').textContent,/SAVED/);assert(!field('saveSettings').disabled);
+ console.log('PASS: idle presets/custom minutes, conflicting timer rejection and persisted save feedback');
+});

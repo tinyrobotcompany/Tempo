@@ -28,13 +28,17 @@ LV_FONT_DECLARE(station_light_clock_font);
 static station_settings_t settings;
 static station_ui_actions_t actions;
 static station_network_status_t network;
-static uint64_t awake_until_ms;
+static uint64_t last_activity_ms, power_now_ms;
+static uint32_t power_tick;
+static void power_clock(void) { uint32_t now=lv_tick_get();power_now_ms+=(uint32_t)(now-power_tick);power_tick=now; }
 static unsigned applied_brightness=UINT32_MAX, requested_brightness=UINT32_MAX;
 static bool brightness_failed;
 static uint64_t brightness_retry_ms;
 static bool consume_wake_touch;
 static lv_obj_t *night_level_text;
-static lv_obj_t *night_mode_picker, *night_level, *night_start_hour, *night_start_minute, *night_end_hour, *night_end_minute;
+static lv_obj_t *night_level, *idle_inputs[2], *idle_buttons[2][5], *power_save;
+static uint64_t preview_until_ms;
+static unsigned preview_level;
 static void update_power(void);
 
 static station_view_t view;
@@ -524,7 +528,7 @@ static void weather_view(void)
 static void brightness_changed(lv_event_t *e)
 {
     unsigned value=lv_slider_get_value(lv_event_get_target_obj(e));
-    settings.brightness=value;awake_until_ms=elapsed_ms+60000;update_power();save_settings();
+    settings.brightness=value;last_activity_ms=power_now_ms;update_power();save_settings();
 }
 static void rotate_changed(lv_event_t *e)
 {
@@ -869,57 +873,105 @@ static void show_profile(lv_event_t *e)
     label(content,"Shown as a welcome on your home display.",60,315,&station_text_24);
     settings_status=label(content,"Your name stays on this device.",60,470,&station_text_24); keyboard(profile_input);
 }
-static lv_obj_t *time_picker(int x,int y,unsigned count,unsigned selected)
+static void power_feedback(const char *text, bool success)
 {
-    char options[200]="";size_t used=0;
-    for(unsigned i=0;i<count;i++)used+=(size_t)snprintf(options+used,sizeof(options)-used,"%s%02u",i?"\n":"",i);
-    lv_obj_t *picker=lv_dropdown_create(content);lv_obj_set_pos(picker,x,y);lv_obj_set_size(picker,120,60);
-    lv_obj_set_style_text_font(picker,&station_text_24,0);lv_dropdown_set_options(picker,options);lv_dropdown_set_selected(picker,selected);
-    return picker;
+    lv_label_set_text(settings_status,text);
+    lv_obj_set_style_bg_color(settings_status,lv_color_hex(success?0x195642:0x65382d),0);
+    lv_obj_set_style_bg_opa(settings_status,LV_OPA_COVER,0);
+    lv_obj_set_style_pad_all(settings_status,12,0);
+    lv_obj_set_style_radius(settings_status,10,0);
+}
+static bool idle_minutes(lv_obj_t *field, uint16_t *result)
+{
+    const char *text=lv_textarea_get_text(field);
+    unsigned value=0;
+    if(!*text)return false;
+    for(;*text;text++){if(*text<'0'||*text>'9')return false;value=value*10+(unsigned)(*text-'0');if(value>1440)return false;}
+    *result=(uint16_t)value;return true;
 }
 static void apply_power(lv_event_t *e)
 {
     (void)e;station_settings_t next=settings;
-    next.night_mode=lv_dropdown_get_selected(night_mode_picker);
+    next.night_mode=0;
     next.night_brightness=lv_slider_get_value(night_level);
-    next.night_start=lv_dropdown_get_selected(night_start_hour)*60+lv_dropdown_get_selected(night_start_minute);
-    next.night_end=lv_dropdown_get_selected(night_end_hour)*60+lv_dropdown_get_selected(night_end_minute);
-    if(!station_settings_valid(&next)){lv_label_set_text(settings_status,"Choose different start and end times.");return;}
-    settings=next;awake_until_ms=elapsed_ms+60000;update_power();save_settings();
+    if(!idle_minutes(idle_inputs[0],&next.dim_after_minutes)||!idle_minutes(idle_inputs[1],&next.off_after_minutes)) {
+        power_feedback("Enter 0 (Never) or 1–1440 minutes.",false);return;
+    }
+    if(!station_settings_valid(&next)){power_feedback("Screen off must be later than dim, or set either to Never.",false);return;}
+    settings=next;last_activity_ms=power_now_ms;preview_until_ms=0;update_power();save_settings();
+    lv_obj_add_flag(network_keyboard,LV_OBJ_FLAG_HIDDEN);
+    power_feedback(awaiting_save?"Saving display settings…":"Could not save. Please retry.",awaiting_save);
+    if(awaiting_save)lv_obj_add_state(power_save,LV_STATE_DISABLED);
 }
 static void night_level_changed(lv_event_t *e)
 {
     lv_label_set_text_fmt(night_level_text,"%d%%",(int)lv_slider_get_value(lv_event_get_target_obj(e)));
 }
+static void idle_selection(lv_event_t *e)
+{
+    unsigned row=(unsigned)(uintptr_t)lv_event_get_user_data(e);
+    static const unsigned minutes[]={0,1,2,5,10};uint16_t value;
+    bool valid=idle_minutes(idle_inputs[row],&value);
+    for(unsigned i=0;i<5;i++)lv_obj_set_style_bg_color(idle_buttons[row][i],lv_color_hex(valid&&value==minutes[i]?0x276a56:0x223246),0);
+}
+static void idle_preset(lv_event_t *e)
+{
+    unsigned choice=(unsigned)(uintptr_t)lv_event_get_user_data(e);
+    static const unsigned minutes[]={0,1,2,5,10};
+    char text[8];snprintf(text,sizeof(text),"%u",minutes[choice%5]);
+    lv_textarea_set_text(idle_inputs[choice/5],text);
+    lv_obj_add_flag(network_keyboard,LV_OBJ_FLAG_HIDDEN);
+}
+static void preview_power(lv_event_t *e)
+{
+    station_settings_t candidate=settings;candidate.night_brightness=lv_slider_get_value(night_level);
+    preview_level=lv_event_get_user_data(e)?0:station_dim_brightness(&candidate);
+    preview_until_ms=power_now_ms+5000;
+    power_feedback("Preview for 5 seconds. Touch to wake. Settings are not saved.",true);
+    update_power();
+}
 static void show_power(lv_event_t *e)
 {
-    (void)e;page_header("Power & night mode",PAGE_POWER);
-    box(content,32,94,1216,440,CARD);
-    label(content,"Night mode",60,120,&station_text_24);
-    night_mode_picker=lv_dropdown_create(content);lv_obj_set_pos(night_mode_picker,360,104);lv_obj_set_size(night_mode_picker,480,60);
-    lv_obj_set_style_text_font(night_mode_picker,&station_text_24,0);lv_dropdown_set_options(night_mode_picker,"Off\nDim\nScreen off");lv_dropdown_set_selected(night_mode_picker,settings.night_mode);
-    label(content,"From (local time)",60,215,&station_text_24);
-    night_start_hour=time_picker(360,195,24,settings.night_start/60);night_start_minute=time_picker(500,195,60,settings.night_start%60);
-    label(content,"Until",700,215,&station_text_24);
-    night_end_hour=time_picker(840,195,24,settings.night_end/60);night_end_minute=time_picker(980,195,60,settings.night_end%60);
-    label(content,"Dim level (1–100%)",60,305,&station_text_24);
-    night_level=lv_slider_create(content);lv_obj_set_pos(night_level,360,315);lv_obj_set_size(night_level,640,22);lv_slider_set_range(night_level,1,100);lv_slider_set_value(night_level,settings.night_brightness,LV_ANIM_OFF);
-    night_level_text=label(content,"",1040,300,&station_text_24);lv_label_set_text_fmt(night_level_text,"%u%%",settings.night_brightness);
+    (void)e;page_header("Display & sleep",PAGE_POWER);
+    box(content,32,85,1216,440,CARD);
+    label(content,"Custom minutes",990,86,&station_text_18);
+    const char *captions[]={"Dim after", "Screen off after"};
+    const char *presets[]={"Never","1 min","2 min","5 min","10 min"};
+    for(unsigned row=0;row<2;row++) {
+        int y=110+(int)row*95;
+        label(content,captions[row],60,y+15,&station_text_24);
+        for(unsigned i=0;i<5;i++)idle_buttons[row][i]=button(content,presets[i],300+(int)i*130,y,115,idle_preset,(void *)(uintptr_t)(row*5+i));
+        idle_inputs[row]=input(content,990,y,210,4,"Custom minutes");
+        lv_textarea_set_accepted_chars(idle_inputs[row],"0123456789");
+        char value[8];snprintf(value,sizeof(value),"%u",row?settings.off_after_minutes:settings.dim_after_minutes);
+        lv_obj_add_event_cb(idle_inputs[row],idle_selection,LV_EVENT_VALUE_CHANGED,(void *)(uintptr_t)row);
+        lv_textarea_set_text(idle_inputs[row],value);
+    }
+    label(content,"Minutes without touch or phone control. Custom: 0 = Never, up to 1440.",60,285,&station_text_18);
+    label(content,"Dim level",60,333,&station_text_24);
+    night_level=lv_slider_create(content);lv_obj_set_pos(night_level,300,345);lv_obj_set_size(night_level,690,22);
+    lv_slider_set_range(night_level,1,100);lv_slider_set_value(night_level,settings.night_brightness,LV_ANIM_OFF);
+    lv_obj_set_ext_click_area(night_level,20);
+    night_level_text=label(content,"",1040,330,&station_text_24);lv_label_set_text_fmt(night_level_text,"%u%%",settings.night_brightness);
     lv_obj_add_event_cb(night_level,night_level_changed,LV_EVENT_VALUE_CHANGED,NULL);
-    label(content,"Touch wakes the screen for 60 seconds. Wi-Fi and the clock stay on.",60,390,&station_text_24);
-    label(content,"No battery. Tempo restarts automatically when external power returns.",60,450,&station_text_24);
-    settings_status=label(content,"Uses your saved time zone. Changes take effect after 60 seconds idle.",40,565,&station_text_18);
-    lv_obj_set_width(settings_status,820);
-    button(content,"Save night mode",900,545,310,apply_power,NULL);
+    label(content,"Relative to normal brightness. Touch wakes; clock and Wi-Fi stay on.",60,390,&station_text_18);
+    button(content,"Preview dim",60,440,250,preview_power,NULL);
+    button(content,"Preview off",340,440,250,preview_power,(void *)1);
+    power_save=button(content,"Save display settings",830,440,370,apply_power,NULL);
+    settings_status=label(content,"Choose timers, then save. No time window needed.",55,555,&station_text_24);
+    lv_obj_set_width(settings_status,1170);
+    keyboard(idle_inputs[0]);lv_keyboard_set_mode(network_keyboard,LV_KEYBOARD_MODE_NUMBER);
 }
 static lv_obj_t *update_label,*update_version,*update_progress,*update_spinner;
+/* Action feedback stays visible briefly; the 1 s status refresh must not erase it. */
+static const char *update_feedback;static uint64_t update_feedback_until;
 static void render_updates(void)
 {
  if(!actions.update_status)return;
  station_update_status_t u;actions.update_status(&u);update_snapshot=u;
  if(view==VIEW_SETTINGS&&page==PAGE_UPDATES){
   lv_label_set_text_fmt(update_version,"Installed: %s   Available: %s",u.installed,u.available[0]?u.available:"—");
-  lv_label_set_text_fmt(update_label,"%s\nChecks: %s · Automatic installation: %s\nTransport credential: %s",u.message,u.interval_hours==1?"hourly (testing)":"every 30 days",u.automatic?"on":"off",u.credential_configured?"configured":"set up on your phone");
+  lv_label_set_text_fmt(update_label,"%s\nChecks: %s · Automatic installation: %s\nTransport credential: %s",update_feedback&&elapsed_ms<update_feedback_until?update_feedback:u.message,u.interval_hours==1?"hourly (testing)":"every 30 days",u.automatic?"on":"off",u.credential_configured?"configured":"set up on your phone");
   lv_bar_set_value(update_progress,(int)u.progress,LV_ANIM_OFF);
   if(u.state==UPDATE_CHECKING||u.state==UPDATE_DOWNLOADING||u.state==UPDATE_VERIFYING)lv_obj_remove_flag(update_spinner,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(update_spinner,LV_OBJ_FLAG_HIDDEN);
  }
@@ -928,7 +980,8 @@ static void update_action(lv_event_t *e)
 {
  const char *action=lv_event_get_user_data(e);
  bool ok=actions.update_request&&actions.update_request(action);
- lv_label_set_text(update_label,ok?"Request queued…":"Update service busy. Please retry.");
+ update_feedback=ok?"Request queued…":"Update service busy. Please retry.";update_feedback_until=elapsed_ms+5000;
+ lv_label_set_text(update_label,update_feedback);
 }
 static void show_updates(lv_event_t *e)
 {
@@ -973,7 +1026,7 @@ static void settings_view(void)
     button(content,"Home location",900,240,310,show_location,NULL);
     button(content,"Your profile",900,315,310,show_profile,NULL);
     button(content,"iPhone setup",900,390,310,show_phone,NULL);
-    button(content,"Power & night mode",900,465,310,show_power,NULL);
+    button(content,"Display & sleep",900,465,310,show_power,NULL);
     button(content,"Software updates",900,540,310,show_updates,NULL);
 }
 static const char *transport_state_text(void)
@@ -1155,17 +1208,14 @@ static void show_view(station_view_t next)
     else if(view==VIEW_WEATHER) weather_view();
     else transport_view();
 }
-static unsigned power_target(bool *clock_trusted)
+static unsigned power_target(void)
 {
-    time_t now=time(NULL);struct tm local={0};
-    bool valid=network.source!=TIME_UNSET && localtime_r(&now,&local)!=NULL;
-    if(clock_trusted)*clock_trusted=valid;
-    return station_power_brightness(&settings,valid,(unsigned)(local.tm_hour*60+local.tm_min),elapsed_ms,awake_until_ms);
+    if(power_now_ms<preview_until_ms)return preview_level;
+    return station_power_brightness(&settings,power_now_ms,last_activity_ms);
 }
 static void update_power(void)
 {
-    bool valid;
-    unsigned level=power_target(&valid);
+    unsigned level=power_target();
     if(level!=requested_brightness){requested_brightness=level;brightness_retry_ms=0;}
     if((!brightness_failed&&level==applied_brightness)||elapsed_ms<brightness_retry_ms)return;
     if(actions.brightness && actions.brightness(level)) {
@@ -1174,7 +1224,7 @@ static void update_power(void)
         brightness_failed=false;brightness_retry_ms=0;
         applied_brightness=level;
 #ifdef ESP_PLATFORM
-        ESP_LOGI("power","Backlight %u%%; night mode=%u, clock trusted=%d",level,settings.night_mode,valid);
+        ESP_LOGI("power","Backlight PWM %u%%; idle=%llu ms, dim after=%u min, off after=%u min",level,(unsigned long long)(power_now_ms-last_activity_ms),settings.dim_after_minutes,settings.off_after_minutes);
 #endif
     } else {
         brightness_failed=true;brightness_retry_ms=elapsed_ms+5000;
@@ -1187,12 +1237,13 @@ static void update_power(void)
 }
 bool station_ui_touch(bool pressed)
 {
+    power_clock();
     if(pressed) {
-        /* Check current policy before extending wake: the schedule can change between ticks.
+        /* Check current policy before extending wake: the idle deadline can pass between ticks.
          * Keep the latch until release, even when the wake brightness succeeds immediately. */
-        if(power_target(NULL)==0||requested_brightness==0||applied_brightness==0||brightness_failed)
+        if(power_target()==0||requested_brightness==0||applied_brightness==0||brightness_failed)
             consume_wake_touch=true;
-        awake_until_ms=elapsed_ms+60000;
+        last_activity_ms=power_now_ms;preview_until_ms=0;
         update_power();
         /* The wake attempt itself can fail. Never forward that same press until
          * a nonzero requested level has been confirmed by the driver. */
@@ -1205,15 +1256,15 @@ bool station_ui_touch(bool pressed)
 }
 static void tick(lv_timer_t *timer)
 {
-    (void)timer; elapsed_ms+=100; atomic_fetch_add(&heartbeat,1);
+    (void)timer; power_clock(); elapsed_ms+=100; atomic_fetch_add(&heartbeat,1);
     if(tap_notice&&elapsed_ms>=tap_notice_until)lv_obj_add_flag(tap_notice,LV_OBJ_FLAG_HIDDEN);
     station_phone_command_t command;
     if(actions.phone_take && actions.phone_take(&command)) {
         if(command.change_settings && station_settings_valid(&command.settings)) {
-            settings=command.settings;awake_until_ms=elapsed_ms+60000;update_power();actions.save(&settings);
+            settings=command.settings;last_activity_ms=power_now_ms;preview_until_ms=0;update_power();actions.save(&settings);
             show_view(view);
         }
-        if(command.change_view && command.view<VIEW_COUNT){awake_until_ms=elapsed_ms+60000;if(command.view==VIEW_TRANSPORT&&actions.transport_nearby_reset)actions.transport_nearby_reset();show_view(command.view);}
+        if(command.change_view && command.view<VIEW_COUNT){last_activity_ms=power_now_ms;preview_until_ms=0;if(command.view==VIEW_TRANSPORT&&actions.transport_nearby_reset)actions.transport_nearby_reset();show_view(command.view);}
     }
     if(actions.phone_publish)actions.phone_publish(&settings,view);
     refresh_network();
@@ -1222,7 +1273,11 @@ static void tick(lv_timer_t *timer)
     if(view==VIEW_SETTINGS && page==PAGE_PHONE && elapsed_ms%1000==0)update_phone();
     if(awaiting_save && view==VIEW_SETTINGS) {
         int state=actions.save_state();
-        if(state==2 || state==3) { lv_label_set_text(settings_status,state==2?"Saved":"Could not save. Please retry."); awaiting_save=false; }
+        if(state==2 || state==3) {
+            if(page==PAGE_POWER){power_feedback(state==2?"SAVED — Display settings are stored. Idle timers have started.":"SAVE FAILED — Please try again.",state==2);lv_obj_remove_state(power_save,LV_STATE_DISABLED);}
+            else lv_label_set_text(settings_status,state==2?"Saved":"Could not save. Please retry.");
+            awaiting_save=false;
+        }
     }
     if(view==VIEW_CLOCK && elapsed_ms%1000==0) update_clock();
     if((view==VIEW_CLOCK||view==VIEW_WEATHER) && elapsed_ms%1000==0) update_weather();
@@ -1239,7 +1294,7 @@ static void tick(lv_timer_t *timer)
 void station_ui_start(const station_settings_t *initial,station_ui_actions_t handlers)
 {
     station_text_fonts_init();
-    settings=*initial; actions=handlers;awake_until_ms=0;applied_brightness=requested_brightness=UINT32_MAX;brightness_failed=false;brightness_retry_ms=0;consume_wake_touch=false;
+    settings=*initial; actions=handlers;power_tick=lv_tick_get();power_now_ms=0;elapsed_ms=0;last_activity_ms=0;preview_until_ms=0;applied_brightness=requested_brightness=UINT32_MAX;brightness_failed=false;brightness_retry_ms=0;consume_wake_touch=false;
     lv_obj_t *screen=lv_screen_active(); lv_obj_remove_style_all(screen);
     lv_obj_set_style_bg_color(screen,lv_color_hex(BG),0); lv_obj_set_style_bg_opa(screen,LV_OPA_COVER,0);
     lv_obj_remove_flag(screen,LV_OBJ_FLAG_SCROLLABLE);

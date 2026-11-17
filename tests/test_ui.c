@@ -22,7 +22,8 @@ static station_network_status_t status={.automatic=true,.timezone="UTC",.tz_rule
 static bool scan_wifi(void){scans++;scan_result.state=WIFI_SCAN_RUNNING;scan_result.revision++;return true;}
 static void wifi_scan_status(station_wifi_scan_t*s){*s=scan_result;}
 static void snapshot(station_network_status_t*s){*s=status;}
-static int save_state(void){return 2;}
+static int persistence_state=2;
+static int save_state(void){return persistence_state;}
 static bool save(const station_settings_t*s){assert(station_settings_valid(s));saved=*s;saves++;return true;}
 static unsigned backlight, brightness_calls;
 static bool brightness_failure;
@@ -75,10 +76,10 @@ int main(int argc,char **argv){
  unsigned boot_level=0;
  if(argc>1){
   setenv("TZ","UTC0",1);tzset();struct tm boot={.tm_year=126,.tm_mon=10,.tm_mday=14,.tm_hour=23};
-  initial.night_mode=strcmp(argv[1],"--boot-dim")==0?1:2;
+  initial.dim_after_minutes=strcmp(argv[1],"--boot-dim")==0?1:0;initial.off_after_minutes=2;
   status.source=strcmp(argv[1],"--boot-unset")==0?TIME_UNSET:TIME_NETWORK;
   if(strcmp(argv[1],"--boot-day")==0)boot.tm_hour=12;
-  test_now=mktime(&boot);boot_level=status.source==TIME_UNSET||boot.tm_hour==12?65:initial.night_mode==1?10:0;
+  test_now=mktime(&boot);boot_level=65;
  }
  station_ui_start(&initial,(station_ui_actions_t){.update_status=updates,.update_request=request_update,.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});
  if(argc>1){assert(brightness_calls==1&&backlight==boot_level);tick();assert(brightness_calls==1&&backlight==boot_level);printf("PASS: %s starts directly at %u%% with no normal-brightness flash\n",argv[1],boot_level);lv_deinit();free(buf);return 0;}
@@ -242,7 +243,7 @@ int main(int argc,char **argv){
   if(t==2){char capture[48];snprintf(capture,sizeof(capture),"clock-spacing-style-%u",style);shot(capture);}
  }
  /* Night mode is applied by the same LVGL tick as the real device. */
- initial=station_defaults();initial.rotate=false;initial.night_mode=2;initial.night_start=1380;initial.night_end=420;
+ initial=station_defaults();initial.rotate=false;initial.off_after_minutes=1;
  setenv("TZ","UTC0",1);tzset();test_now=1794697200; /* 2026-11-14 23:00 UTC, replaced below explicitly */
  struct tm night={.tm_year=126,.tm_mon=10,.tm_mday=14,.tm_hour=23};test_now=mktime(&night);
  status.source=TIME_NETWORK;status.connected=true;
@@ -263,36 +264,47 @@ int main(int argc,char **argv){
  unsigned sleeping_beat=station_ui_heartbeat();for(unsigned i=0;i<20;i++)tick();assert(station_ui_heartbeat()>sleeping_beat);
  assert(station_ui_touch(true));assert(backlight==65);assert(station_ui_touch(true));assert(station_ui_touch(false));assert(!station_ui_touch(false));
  for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
- test_now+=8*3600;for(unsigned i=0;i<10;i++)tick();assert(backlight==65);
- /* Cross into screen-off before the next power timer: first gesture must not click through. */
- test_now-=8*3600;
- assert(backlight==65);
- assert(station_ui_touch(true));assert(backlight==65);
- assert(station_ui_touch(true));assert(station_ui_touch(false));assert(!station_ui_touch(false));
- assert(!station_ui_touch(true));assert(!station_ui_touch(false)); /* next gesture works while awake */
- for(unsigned i=0;i<610;i++)tick();assert(backlight==0);
+ test_now+=8*3600;status.source=TIME_UNSET;for(unsigned i=0;i<10;i++)tick();assert(backlight==0);
+ assert(station_ui_touch(true));assert(station_ui_touch(false));
+ /* A delayed render tick still observes the complete idle interval. */
+ lv_tick_inc(61000);lv_timer_handler();assert(backlight==0);
  /* A dim-to-awake driver failure occurs inside the first press, not before it. */
- initial.night_mode=1;
+ initial.dim_after_minutes=1;initial.off_after_minutes=0;
  phone_command=(station_phone_command_t){.change_settings=true,.settings=initial};phone_pending=true;tick();
- for(unsigned i=0;i<610;i++)tick();assert(backlight==10);
+ for(unsigned i=0;i<610;i++)tick();assert(backlight==1);
  brightness_failure=true;
  assert(station_ui_touch(true));assert(station_ui_touch(false));
  assert(station_ui_touch(true));assert(station_ui_touch(false));
  brightness_failure=false;for(unsigned i=0;i<55;i++)tick();assert(backlight==65);
  assert(!station_ui_touch(true));assert(!station_ui_touch(false));
- initial.night_mode=2;
+ initial.dim_after_minutes=0;initial.off_after_minutes=1;
  phone_command=(station_phone_command_t){.change_settings=true,.settings=initial};phone_pending=true;tick();
  status.source=TIME_UNSET;tick();assert(backlight==65);
- click("Settings");click("Power & night mode");shot("power-night-mode");click("Save night mode");assert(saved.night_mode==2);
+ click("Settings");click("Display & sleep");shot("display-sleep");
+ click("Preview dim");assert(backlight==1);for(unsigned i=0;i<51;i++)tick();assert(backlight==65);
+ click("Preview off");assert(backlight==0);assert(station_ui_touch(true));assert(station_ui_touch(false));assert(backlight==65);
+ persistence_state=1;click("Save display settings");assert(saved.off_after_minutes==1);
+ assert(contains_text(lv_screen_active(),"Saving display settings"));
+ assert(lv_obj_has_state(lv_obj_get_parent(find(lv_screen_active(),"Save display settings")),LV_STATE_DISABLED));
+ persistence_state=3;tick();assert(contains_text(lv_screen_active(),"SAVE FAILED"));
+ persistence_state=2;click("Save display settings");assert(contains_text(lv_screen_active(),"SAVED"));shot("display-sleep-saved");
+ /* Presets update the same custom fields; invalid mixed timers cannot be saved. */
+ click("2 min");assert(!strcmp(lv_textarea_get_text(widget(&lv_textarea_class,0)),"2"));
+ unsigned saves_before=saves;click("Save display settings");assert(saves==saves_before);assert(contains_text(lv_screen_active(),"Screen off must be later"));
+ lv_textarea_set_text(widget(&lv_textarea_class,0),"3");lv_textarea_set_text(widget(&lv_textarea_class,1),"4");
+ click("Save display settings");assert(saved.dim_after_minutes==3&&saved.off_after_minutes==4);
+ lv_textarea_set_text(widget(&lv_textarea_class,0),"");click("Save display settings");assert(contains_text(lv_screen_active(),"Enter 0"));
  status.connected=false;transit.generation=status.location_generation;transit.valid=true;transit.row_count=1;transit.fetched_at=test_now;transit.state=TRANS_READY;
  click("Transport");assert(contains_text(lv_screen_active(),"Offline · saved"));assert(!contains_text(lv_screen_active(),"Arrives "));
  click("Settings");click("Software updates");assert(contains_text(lv_screen_active(),"Installed: 0.9.0"));
  click("Check for updates");assert(update_requests==1);click("Install update");click("Postpone");assert(contains_text(lv_screen_active(),"service busy"));
+ for(unsigned i=0;i<20;i++)tick();assert(contains_text(lv_screen_active(),"service busy"));
+ for(unsigned i=0;i<40;i++)tick();assert(!contains_text(lv_screen_active(),"service busy"));
  update_snapshot.state=UPDATE_DOWNLOADING;update_snapshot.progress=42;for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Downloading"));
  update_snapshot.state=UPDATE_VERIFYING;for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Verifying"));
  update_snapshot.state=UPDATE_RESTARTING;for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Restarting"));
  update_snapshot.state=UPDATE_IDLE;
- puts("PASS: scheduled screen-off, first-touch consumption, timed wake, trusted-time fallback and offline departures");
+ puts("PASS: idle screen-off, first-touch consumption, timed wake, clock-independent policy and offline departures");
  puts("PASS: equal visible date spacing for all ten styles at 00:00, 11:11, 12:34 and 23:59");
  puts("PASS: clock two-service layout, cancellation, updating animation with cached values, and 20-second automatic rotation");
  puts("PASS: phone QR online/offline/network changes, hotspot guide and queued remote settings");

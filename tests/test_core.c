@@ -83,28 +83,33 @@ int main(void)
     assert(scan.count==STATION_MAX_NETWORKS);
     assert(strcmp(scan.networks[0].ssid,"Guest")==0);
     assert(strcmp(scan.networks[1].ssid,"Home")==0);
-    station_settings_t power=station_defaults();
-    assert(station_power_brightness(&power,true,0,1000,0)==65);
-    power.night_mode=1;
-    assert(station_power_brightness(&power,false,0,1000,0)==65);
-    assert(station_power_brightness(&power,true,1440,1000,0)==65);
-    assert(station_power_brightness(&power,true,1380,1000,0)==10);
-    assert(station_power_brightness(&power,true,419,1000,0)==10);
-    assert(station_power_brightness(&power,true,420,1000,0)==65);
-    assert(station_power_brightness(&power,true,1379,1000,0)==65);
-    assert(station_power_brightness(&power,true,0,1000,1001)==65);
-    power.night_brightness=90;assert(station_power_brightness(&power,true,0,1000,0)==65);
-    power.night_mode=2;assert(station_power_brightness(&power,true,0,1000,1000)==0);
-    power.night_start=60;power.night_end=120;
-    assert(station_power_brightness(&power,true,60,0,0)==0);
-    assert(station_power_brightness(&power,true,120,0,0)==65);
-    station_settings_t restored;
+    station_settings_t power=station_defaults(), restored;
+    assert(station_power_brightness(&power,86400000,0)==65); /* Never */
+    power.dim_after_minutes=1;power.off_after_minutes=2;
+    assert(station_power_brightness(&power,59999,0)==65);
+    assert(station_power_brightness(&power,60000,0)==1); /* 10% perceptual => 1% PWM */
+    assert(station_power_brightness(&power,119999,0)==1);
+    assert(station_power_brightness(&power,120000,0)==0);
+    assert(station_power_brightness(&power,120000,120000)==65);
+    assert(station_power_brightness(&power,0,1)==65); /* defensive clock regression */
+    power.night_brightness=100;assert(station_dim_brightness(&power)==65);
+    power.night_brightness=50;assert(station_dim_brightness(&power)==16);
+    power.night_brightness=1;assert(station_dim_brightness(&power)==1);
+    power.dim_after_minutes=0;assert(station_power_brightness(&power,60000,0)==65);
+    power.off_after_minutes=1440;
+    assert(station_power_brightness(&power,86399999,0)==65);
+    assert(station_power_brightness(&power,86400000,0)==0);
+    power.dim_after_minutes=17;
     station_settings_encode(&power,encoded);assert(station_settings_decode(encoded,sizeof(encoded),&restored));
-    assert(restored.night_mode==2&&restored.night_start==60&&restored.night_end==120);
-    encoded[0]=2;assert(station_settings_decode(encoded,STATION_SETTINGS_V2_BYTES,&restored));assert(restored.night_mode==0);
-    power.night_end=60;assert(!station_settings_valid(&power));
-    power.night_end=1440;assert(!station_settings_valid(&power));
-    power.night_end=120;power.night_brightness=0;assert(!station_settings_valid(&power));
-    power.night_brightness=10;power.night_mode=3;assert(!station_settings_valid(&power));
+    assert(restored.dim_after_minutes==17&&restored.off_after_minutes==1440);
+    encoded[0]=3;encoded[59]=1;
+    assert(station_settings_decode(encoded,STATION_SETTINGS_V3_BYTES,&restored));assert(restored.dim_after_minutes==1&&!restored.off_after_minutes);
+    encoded[59]=2;assert(station_settings_decode(encoded,STATION_SETTINGS_V3_BYTES,&restored));assert(!restored.dim_after_minutes&&restored.off_after_minutes==1);
+    encoded[0]=2;assert(station_settings_decode(encoded,STATION_SETTINGS_V2_BYTES,&restored));assert(!restored.dim_after_minutes&&!restored.off_after_minutes);
+    power.off_after_minutes=17;assert(!station_settings_valid(&power));
+    power.off_after_minutes=16;assert(!station_settings_valid(&power));
+    power.off_after_minutes=0;assert(station_settings_valid(&power));
+    power.dim_after_minutes=1441;assert(!station_settings_valid(&power));
+    power.dim_after_minutes=1;power.night_brightness=0;assert(!station_settings_valid(&power));
     puts("PASS: settings validation, rotation, calendar/DST and digit rendering");
 }

@@ -107,8 +107,8 @@ static esp_err_t status_get(httpd_req_t *r)
     cJSON_AddStringToObject(settings,"name",s.user_name);cJSON_AddNumberToObject(settings,"brightness",s.brightness);
     cJSON_AddNumberToObject(settings,"theme",s.theme);cJSON_AddNumberToObject(settings,"color",s.custom_color);
     cJSON_AddNumberToObject(settings,"font",s.clock_font);cJSON_AddBoolToObject(settings,"rotate",s.rotate);cJSON_AddNumberToObject(settings,"dwell",s.dwell_seconds);
-    cJSON_AddNumberToObject(settings,"nightMode",s.night_mode);cJSON_AddNumberToObject(settings,"nightBrightness",s.night_brightness);
-    cJSON_AddNumberToObject(settings,"nightStart",s.night_start);cJSON_AddNumberToObject(settings,"nightEnd",s.night_end);
+    cJSON_AddNumberToObject(settings,"dimAfter",s.dim_after_minutes);cJSON_AddNumberToObject(settings,"offAfter",s.off_after_minutes);
+    cJSON_AddNumberToObject(settings,"dimBrightness",s.night_brightness);
     cJSON_AddNumberToObject(j,"view",v);cJSON_AddBoolToObject(j,"connected",net.connected);
     cJSON_AddNumberToObject(j,"saveState",station_settings_save_state());
 #ifdef STATION_HAS_LOCATION_SHORTCUT
