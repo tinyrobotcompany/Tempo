@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build-host
-cc -std=c11 -Wall -Wextra -Werror -Ifirmware/main -Ifirmware/components/station_core/include -I"${CJSON_SOURCE_DIR:-firmware/managed_components/espressif__cjson/cJSON}" tests/test_phone_protocol.c firmware/main/phone_protocol.c firmware/components/station_core/station_core.c "${CJSON_SOURCE_DIR:-firmware/managed_components/espressif__cjson/cJSON}/cJSON.c" -lm -o build-host/test_phone_protocol
+cc -std=c11 -Wall -Wextra -Werror -Ifirmware/main -Ifirmware/components/station_transport/include -Ifirmware/components/station_core/include -I"${CJSON_SOURCE_DIR:-firmware/managed_components/espressif__cjson/cJSON}" tests/test_phone_protocol.c firmware/main/phone_protocol.c firmware/components/station_core/station_core.c "${CJSON_SOURCE_DIR:-firmware/managed_components/espressif__cjson/cJSON}/cJSON.c" -lm -o build-host/test_phone_protocol
 ./build-host/test_phone_protocol
 node tests/test_phone_location.js
 node --check firmware/main/web/app.js
@@ -26,3 +26,5 @@ python3 tests/test_shortcut_artifact.py
 
 node tests/test_phone_connection.js
 node tests/test_phone_reconnect_ui.js
+
+node tests/test_update_ui.js

@@ -20,3 +20,6 @@
 /mechanical/exports/**
 !/mechanical/exports/**/
 !/mechanical/exports/.gitkeep
+
+# Local signing backup; never distribute or commit private material.
+/.secrets/
