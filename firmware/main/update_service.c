@@ -170,6 +170,7 @@ static bool check_release(void)
  unsigned char *data=download(LATEST,131072,&length,&http);
  if(!data){if(http==404){message(UPDATE_IDLE,"No published update yet.");return true;}message(UPDATE_ERROR,"Update check failed. Will retry automatically.");return false;}
  cJSON *j=station_phone_json_shallow((char *)data)?cJSON_ParseWithOpts((char *)data,NULL,true):NULL;free(data);
+ if(!cJSON_IsObject(j)){cJSON_Delete(j);message(UPDATE_ERROR,"Invalid release metadata.");return false;}
  const cJSON *tag=cJSON_GetObjectItemCaseSensitive(j,"tag_name"),*draft=cJSON_GetObjectItemCaseSensitive(j,"draft"),*pre=cJSON_GetObjectItemCaseSensitive(j,"prerelease");
  char version[32]={0};unsigned parts[3];bool valid=cJSON_IsString(tag)&&tag->valuestring[0]=='v'&&
   station_update_version(tag->valuestring+1,parts)&&cJSON_IsFalse(draft)&&cJSON_IsFalse(pre);

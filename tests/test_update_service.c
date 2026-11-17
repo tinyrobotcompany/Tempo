@@ -25,6 +25,7 @@ static int64_t declared_size=-2;static int body_delta;
 static const char *client_url;
 static const char *response;static size_t offset,response_size;static char image[1025],manifest_text[1024];
 static const char latest[]="{\"tag_name\":\"v0.9.1\",\"draft\":false,\"prerelease\":false}";
+static const char *latest_body=latest;
 void test_log(const char *tag,const char *fmt,...){(void)tag;(void)fmt;}
 int64_t esp_timer_get_time(void){return mono;}
 void station_network_status(station_network_status_t *v){*v=net;}
@@ -57,7 +58,7 @@ void esp_restart(void){restarted++;}
 void esp_crt_bundle_attach(void){}
 void *esp_http_client_init(esp_http_client_config_t *c){assert(c->crt_bundle_attach&&c->disable_auto_redirect);offset=0;client_url=c->url;
  if(has_redirect&&strstr(c->url,"github.com")){esp_http_client_event_t e={.event_id=HTTP_EVENT_ON_HEADER,.header_key="Location",.header_value="https://release-assets.githubusercontent.com/test",.user_data=c->user_data};c->event_handler(&e);}
- if(!strstr(c->url,"release-assets.githubusercontent.com"))response=strstr(c->url,"/latest")?latest:strstr(c->url,"manifest.json")?manifest_text:strstr(c->url,"manifest.sig")?"signature":image;
+ if(!strstr(c->url,"release-assets.githubusercontent.com"))response=strstr(c->url,"/latest")?latest_body:strstr(c->url,"manifest.json")?manifest_text:strstr(c->url,"manifest.sig")?"signature":image;
  response_size=response==image?(size_t)(1024+body_delta):strlen(response);return init_failed?NULL:(void *)1;}
 int esp_http_client_open(void *h,int n){(void)h;(void)n;return connect_failed?-1:0;}
 int esp_http_client_set_header(void *h,const char *key,const char *value){(void)h;(void)value;assert(strcmp(key,"apikey"));return 0;}
@@ -91,6 +92,10 @@ int main(void){
  net.connected=false;assert(station_update_request("check"));run(1);assert(status.state==UPDATE_ERROR);assert(station_update_request("install"));run(1);net.connected=true;
  http_code=404;assert(check_release());http_code=500;assert(!check_release());http_code=200;
  crypto_error=-1;assert(!check_release());crypto_error=0;
+ /* Malformed or non-object release metadata fails cleanly, never dereferencing a failed parse. */
+ static const char *const bad_latest[]={"{not json","null","[]","\"v0.9.1\"","{\"tag_name\":1,\"draft\":false,\"prerelease\":false}","{\"tag_name\":\"v0.9.1\",\"draft\":true,\"prerelease\":false}"};
+ for(unsigned i=0;i<sizeof(bad_latest)/sizeof(bad_latest[0]);i++){latest_body=bad_latest[i];assert(!check_release()&&strstr(status.message,"Invalid release metadata"));}
+ latest_body=latest;
  strcpy(saved.blocked,"0.9.1");assert(check_release());saved.blocked[0]=0;strcpy(status.installed,"0.9.1");assert(check_release());strcpy(status.installed,"0.9.0");
  truncated=true;assert(!check_release());truncated=false;read_failed=true;assert(!check_release());read_failed=false;
  init_failed=true;assert(!check_release());init_failed=false;connect_failed=true;assert(!check_release());connect_failed=false;assert(check_release());
