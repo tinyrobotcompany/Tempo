@@ -1,4 +1,5 @@
 #include "phone_setup.h"
+#include "pairing.h"
 #include "phone_protocol.h"
 #include "network_time.h"
 #include "settings.h"
@@ -123,6 +124,7 @@ static esp_err_t status_get(httpd_req_t *r)
     station_update_status_t u;station_update_status(&u);cJSON *update=cJSON_AddObjectToObject(j,"update");
     cJSON_AddStringToObject(update,"installed",u.installed);cJSON_AddStringToObject(update,"available",u.available);
     cJSON_AddStringToObject(update,"message",u.message);cJSON_AddStringToObject(update,"notes",u.notes_url);
+    cJSON_AddBoolToObject(update,"upToDate",u.up_to_date);
     cJSON_AddNumberToObject(update,"countdown",u.countdown_seconds);cJSON_AddNumberToObject(update,"state",u.state);cJSON_AddNumberToObject(update,"progress",u.progress);
     cJSON_AddNumberToObject(update,"hours",u.interval_hours);cJSON_AddBoolToObject(update,"automatic",u.automatic);
     cJSON_AddNumberToObject(update,"start",u.window_start);cJSON_AddNumberToObject(update,"end",u.window_end);
@@ -224,8 +226,8 @@ esp_err_t station_phone_start(const station_settings_t *settings)
 {
     if(server_ready)return ESP_OK;
     if(!queue){
-        station_phone_publish(settings,VIEW_CLOCK);uint8_t random[16];esp_fill_random(random,sizeof(random));
-        for(unsigned i=0;i<16;i++)snprintf(token+2*i,3,"%02x",random[i]);
+        station_phone_publish(settings,VIEW_CLOCK);
+        esp_err_t pairing=station_pairing_load(token);if(pairing!=ESP_OK)return pairing;
         queue=xQueueCreate(2,sizeof(station_phone_command_t));if(!queue)return ESP_ERR_NO_MEM;
     }
     httpd_config_t config=HTTPD_DEFAULT_CONFIG();config.stack_size=8192;config.max_open_sockets=3;

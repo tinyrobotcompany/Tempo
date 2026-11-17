@@ -61,6 +61,14 @@ static esp_err_t read_landscape_touch(esp_lcd_touch_handle_t touch,
     pressed = valid > 0;
     return ESP_OK;
 }
+static atomic_bool ui_ready;
+static bool update_display_guard(bool quiet)
+{
+    if(!atomic_load(&ui_ready)||bsp_display_lock(1000)!=ESP_OK)return false;
+    bool ok=station_ui_update_quiet(quiet);
+    bsp_display_unlock();
+    return ok;
+}
 void app_main(void)
 {
     ESP_LOGI(TAG, "Reset reason: %d", (int)esp_reset_reason());
@@ -77,6 +85,7 @@ void app_main(void)
     if(map_err!=ESP_OK)ESP_LOGE(TAG,"Map worker could not start: %s",esp_err_to_name(map_err));
     esp_err_t transport_err=station_transport_start();
     if(transport_err!=ESP_OK)ESP_LOGE(TAG,"Transport task could not start: %s",esp_err_to_name(transport_err));
+    station_update_display_guard(update_display_guard);
     esp_err_t update_err=station_update_start();
     if(update_err!=ESP_OK)ESP_LOGE(TAG,"Update service unavailable: %s",esp_err_to_name(update_err));
     esp_err_t phone_err=station_phone_start(&settings);
@@ -115,6 +124,7 @@ void app_main(void)
     /* The adapter task owns rendering and receives the VSYNC notifications.
      * Forcing refresh here can wait forever on the wrong task notification. */
     bsp_display_unlock();
+    atomic_store(&ui_ready,true);
     ESP_LOGI(TAG, "UI released to renderer; backlight owned by the UI power policy");
     ESP_LOGI(TAG, "UI, network/time and signed OTA services active");
     const esp_partition_t *running = esp_ota_get_running_partition();

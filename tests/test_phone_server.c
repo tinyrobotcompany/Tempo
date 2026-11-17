@@ -8,6 +8,8 @@
 #include "update_service.h"
 #include "credentials.h"
 static char test_key[513];
+static bool pairing_fail;
+esp_err_t station_pairing_load(char token[33]){if(pairing_fail)return ESP_FAIL;strcpy(token,"abababababababababababababababab");return ESP_OK;}
 esp_err_t station_credential_set(const char *key){if(strlen(key)>512)return ESP_ERR_INVALID_ARG;snprintf(test_key,sizeof(test_key),"%s",key);return ESP_OK;}
 bool station_transport_refresh(void){return true;}
 void station_update_status(station_update_status_t *out){memset(out,0,sizeof(*out));strcpy(out->installed,"0.9.0");out->interval_hours=720;out->credential_configured=test_key[0]!=0;}
@@ -43,7 +45,7 @@ esp_err_t httpd_stop(httpd_handle_t h){(void)h;route_count=0;return ESP_OK;}
 esp_err_t httpd_start(httpd_handle_t *h,const httpd_config_t *c){assert(c->max_open_sockets==3&&c->recv_wait_timeout==3&&c->stack_size==8192);if(fail_start)return ESP_FAIL;*h=(void*)1;return ESP_OK;}
 esp_err_t httpd_register_uri_handler(httpd_handle_t h,const httpd_uri_t *route){(void)h;if(fail_route&&route_count==3)return ESP_FAIL;assert(route_count<14);routes[route_count++]=*route;return ESP_OK;}
 static httpd_req_t request(const char *uri,const char *body,const char *auth){httpd_req_t r={.uri=uri,.body=body,.content_len=body?strlen(body):0,.auth=auth,.type="application/json",.code=200};for(unsigned i=0;i<route_count;i++)if(!strcmp(uri,routes[i].uri)){assert(routes[i].handler(&r)==ESP_OK);return r;}assert(0);return r;}
-int main(void){station_settings_t initial=station_defaults();assert(station_phone_start(&initial)==ESP_FAIL);station_phone_link_t unavailable;network.connected=true;station_phone_link(&unavailable);assert(!unavailable.online);
+int main(void){station_settings_t initial=station_defaults();pairing_fail=true;assert(station_phone_start(&initial)==ESP_FAIL);pairing_fail=false;assert(station_phone_start(&initial)==ESP_FAIL);station_phone_link_t unavailable;network.connected=true;station_phone_link(&unavailable);assert(!unavailable.online);
  fail_start=false;assert(station_phone_start(&initial)==ESP_FAIL&&route_count==0);station_phone_link(&unavailable);assert(!unavailable.online);
  fail_route=false;assert(station_phone_start(&initial)==ESP_OK&&route_count==14);assert(station_phone_start(&initial)==ESP_OK&&route_count==14);network.connected=false;
  httpd_req_t asset=request("/",NULL,NULL);assert(strstr(asset.response,"Your weather station"));

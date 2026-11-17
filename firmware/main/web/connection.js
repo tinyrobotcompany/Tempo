@@ -2,7 +2,7 @@
 (function(root){
 'use strict';
 function create({token,fetch:send=root.fetch.bind(root),setTimer=setTimeout,clearTimer=clearTimeout,onState=()=>{},onStatus=()=>{},hidden=()=>false}){
- let phase=token?'connecting':'pairing',failures=0,timer=null,tail=Promise.resolve(),statusRequest=null,polling=null,stopped=false;
+ let phase=token?'connecting':'pairing',failures=0,timer=null,tail=Promise.resolve(),statusRequest=null,polling=null,stopped=false,activeUpdate=false;
  const emit=()=>onState({phase,failures});
  function schedule(delay){clearTimer(timer);timer=null;if(!stopped&&phase!=='pairing'&&!hidden())timer=setTimer(poll,delay);}
  function failed(error){if(error.status===401){phase='pairing';clearTimer(timer);}else{phase='reconnecting';failures++;}emit();}
@@ -16,6 +16,7 @@ function create({token,fetch:send=root.fetch.bind(root),setTimer=setTimeout,clea
    // Only a validated status response establishes that controls can be used.
    if(path==='status'){
     if(!result.settings||!result.location)throw new Error('Invalid display status');
+    activeUpdate=!!result.update&&(!!result.update.countdown||[1,3,4,5,7].includes(result.update.state));
     phase='connected';failures=0;emit();onStatus(result);
    }
    return result;
@@ -36,7 +37,7 @@ function create({token,fetch:send=root.fetch.bind(root),setTimer=setTimeout,clea
   if(polling)return polling;
   clearTimer(timer);timer=null;
   polling=request('status').catch(()=>{}).finally(()=>{
-   polling=null;schedule(phase==='connected'?5000:Math.min(15000,1000*2**Math.min(Math.max(failures-1,0),4)));
+   polling=null;schedule(phase==='connected'?(activeUpdate?1000:3000):Math.min(15000,1000*2**Math.min(Math.max(failures-1,0),4)));
   });return polling;
  }
  return {request,start(){emit();return poll();},wake(){clearTimer(timer);return poll();},stop(){stopped=true;clearTimer(timer);},connected:()=>phase==='connected'};

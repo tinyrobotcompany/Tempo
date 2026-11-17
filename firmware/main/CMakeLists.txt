@@ -1,4 +1,4 @@
-idf_component_register(SRCS "main.c" "settings.c" "network_time.c" "weather_service.c" "transport_service.c" "map_tiles.c" "phone_setup.c" "phone_protocol.c" "credentials.c" "update_policy.c" "update_service.c" INCLUDE_DIRS "."
+idf_component_register(SRCS "main.c" "settings.c" "network_time.c" "weather_service.c" "transport_service.c" "map_tiles.c" "phone_setup.c" "phone_protocol.c" "credentials.c" "pairing.c" "update_policy.c" "update_service.c" INCLUDE_DIRS "."
     EMBED_TXTFILES "ota_public.pem" "web/index.html" "web/app.js" "web/style.css" "web/location.js" "web/shortcut.js" "web/connection.js"
     REQUIRES esp_http_server station_transport station_weather station_core station_ui nvs_flash app_update esp_timer esp_netif esp_wifi esp_event espressif__esp_wifi_remote espressif__esp_hosted esp_http_client mbedtls espressif__cjson)
 

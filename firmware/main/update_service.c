@@ -27,6 +27,9 @@
 static portMUX_TYPE lock=portMUX_INITIALIZER_UNLOCKED;
 static station_update_status_t status;
 static QueueHandle_t commands;
+static bool (*display_guard)(bool quiet);
+static bool display_restore_pending;
+void station_update_display_guard(bool (*guard)(bool quiet)){display_guard=guard;}
 static bool trial_validated,trial_accepted;
 static station_update_manifest_t candidate;
 static int64_t rate_limited_until;
@@ -84,7 +87,7 @@ void station_update_status(station_update_status_t *out)
 bool station_update_request(const char *action)
 {
  if(!commands||!action)return false;
- command_t c={0};c.action=!strcmp(action,"check")?1:!strcmp(action,"install")?2:!strcmp(action,"postpone")?3:0;
+ command_t c={0};c.action=!strcmp(action,"check")?1:!strcmp(action,"install")?2:!strcmp(action,"postpone")?3:!strcmp(action,"install_now")?6:0;
  return c.action&&xQueueSend(commands,&c,0)==pdTRUE;
 }
 bool station_update_configure(unsigned hours,bool automatic,unsigned start,unsigned end)
@@ -170,10 +173,10 @@ static bool check_release(void)
 {
  if(rate_limited_until>(int64_t)time(NULL)){message(UPDATE_ERROR,"Update server asked us to wait. Check will retry later.");return false;}
  memset(&candidate,0,sizeof(candidate));
- portENTER_CRITICAL(&lock);status.available[0]=0;status.notes_url[0]=0;portEXIT_CRITICAL(&lock);
+ portENTER_CRITICAL(&lock);status.available[0]=0;status.notes_url[0]=0;status.up_to_date=false;portEXIT_CRITICAL(&lock);
  message(UPDATE_CHECKING,"Checking for updates…");size_t length;int http;
  unsigned char *data=download(LATEST,131072,&length,&http);
- if(!data){if(http==404){message(UPDATE_IDLE,"No published update yet.");return true;}message(UPDATE_ERROR,"Update check failed. Will retry automatically.");return false;}
+ if(!data){if(http==404){portENTER_CRITICAL(&lock);status.up_to_date=true;portEXIT_CRITICAL(&lock);message(UPDATE_IDLE,"No published update yet.");return true;}message(UPDATE_ERROR,"Update check failed. Will retry automatically.");return false;}
  cJSON *j=station_phone_json_shallow((char *)data)?cJSON_ParseWithOpts((char *)data,NULL,true):NULL;free(data);
  if(!cJSON_IsObject(j)){cJSON_Delete(j);message(UPDATE_ERROR,"Invalid release metadata.");return false;}
  const cJSON *tag=cJSON_GetObjectItemCaseSensitive(j,"tag_name"),*draft=cJSON_GetObjectItemCaseSensitive(j,"draft"),*pre=cJSON_GetObjectItemCaseSensitive(j,"prerelease");
@@ -182,7 +185,7 @@ static bool check_release(void)
  if(valid)snprintf(version,sizeof(version),"%s",tag->valuestring+1);
  cJSON_Delete(j);
  if(!valid){message(UPDATE_ERROR,"Invalid release metadata.");return false;}
- if(!station_update_newer(version,status.installed)){message(UPDATE_IDLE,"Tempo is up to date.");return true;}
+ if(!station_update_newer(version,status.installed)){portENTER_CRITICAL(&lock);status.up_to_date=true;portEXIT_CRITICAL(&lock);message(UPDATE_IDLE,"No new updates. Tempo is up to date.");return true;}
  if(!strcmp(version,saved.blocked)){message(UPDATE_ERROR,"This version was rolled back. Waiting for a newer release.");return true;}
  char url[256];snprintf(url,sizeof(url),TEMPO_UPDATE_BASE "v%s/tempo-manifest.json",version);
  data=download(url,4096,&length,&http);if(!data){message(UPDATE_ERROR,"Update manifest unavailable.");return false;}
@@ -233,7 +236,7 @@ static const char *write_image(const esp_partition_t *partition)
  if(!ok)return extra_bytes?"Download contains extra bytes. Current firmware is unchanged.":"Firmware verification failed. Current firmware is unchanged.";
  return NULL;
 }
-static bool install(void)
+static bool install_image(void)
 {
  if(!candidate.version[0]){message(UPDATE_ERROR,"Check for an update first.");return false;}
  esp_ota_img_states_t state;
@@ -251,10 +254,23 @@ static bool install(void)
  if(esp_ota_set_boot_partition(partition)!=ESP_OK){saved.pending[0]=0;persist();message(UPDATE_ERROR,"Could not activate update. Current firmware is unchanged.");return false;}
  message(UPDATE_RESTARTING,"Update verified. Restarting Tempo…");vTaskDelay(pdMS_TO_TICKS(1500));esp_restart();return true;
 }
+static bool install(void)
+{
+ /* Never erase flash until the display owner confirms darkness. Failure is closed. */
+ if(!display_guard){message(UPDATE_ERROR,"Display protection is unavailable. Update not started.");return false;}
+ message(UPDATE_PREPARING,"Preparing update. The screen will rest; follow progress on your phone.");
+ vTaskDelay(pdMS_TO_TICKS(2000));
+ if(!display_guard(true)){display_restore_pending=!display_guard(false);message(UPDATE_ERROR,"Could not safely prepare the display. Update not started.");return false;}
+ bool ok=install_image();
+ /* A successful install restarts; the dark state is intentionally retained until boot. */
+ if(!ok)display_restore_pending=!display_guard(false);
+ return ok;
+}
 static void worker(void *unused)
 {
  (void)unused;unsigned failures=0;int64_t connected_since=0,postponed_until=saved.postponed,countdown=0;bool manual_install=false,force_check=false;
  for(;;){
+  if(display_restore_pending&&display_guard)display_restore_pending=!display_guard(false);
   int64_t now=time(NULL),mono=esp_timer_get_time();station_network_status_t net;station_network_status(&net);
   bool ready=net.connected&&net.source!=TIME_UNSET&&now>=1577836800;
   if(!ready)connected_since=0;else if(!connected_since)connected_since=mono;
@@ -271,6 +287,10 @@ static void worker(void *unused)
    if(cmd.action==5)accept_trial();
    if(cmd.action==1){if(ready){saved.next=0;force_check=true;}else message(UPDATE_ERROR,"Connect to Wi-Fi and synchronise time to check updates.");}
    if(cmd.action==2){if(ready&&candidate.version[0]){manual_install=true;countdown=mono+60000000;message(UPDATE_AVAILABLE,"Installing in 60 seconds. Choose Postpone to cancel.");}else message(UPDATE_ERROR,"Check for an available update while connected first.");}
+   if(cmd.action==6){
+    if(ready&&candidate.version[0]){manual_install=true;countdown=mono;message(UPDATE_AVAILABLE,"Starting installation now…");}
+    else message(UPDATE_ERROR,"Check for an available update while connected first.");
+   }
    if(cmd.action==3){countdown=0;manual_install=false;postponed_until=now+86400;saved.postponed=postponed_until;if(!persist())message(UPDATE_ERROR,"Postponed, but saving failed. This may not survive a restart.");else message(candidate.version[0]?UPDATE_AVAILABLE:UPDATE_IDLE,"Installation postponed for 24 hours.");}
    if(cmd.action==4){saved_t old=saved;saved.hours=cmd.hours;saved.automatic=cmd.automatic;saved.start=cmd.start;saved.end=cmd.end;
     saved.next=station_update_next(now,saved.hours,esp_random());if(!persist()){saved=old;message(UPDATE_ERROR,"Could not save update settings.");}else message(candidate.version[0]?UPDATE_AVAILABLE:UPDATE_IDLE,"Update settings saved.");publish();}

@@ -27,7 +27,12 @@ function harness(){
  h.fire(1000);await flush();h.reply();await flush();assert(h.client.connected());
  assert.equal(h.calls.filter(c=>c.options.method==='POST').length,1);
  const read1=h.client.request('status'),read2=h.client.request('status');assert.equal(read1,read2);await flush();h.reply();await read1;
- // A reboot's new token is an authentication failure, not endless reconnection.
+ // Active update status polls every second and new versions arrive without refreshing.
+ h.fire(3000);await flush();h.reply(200,{...status,update:{installed:'0.9.0',available:'0.9.1',state:2,countdown:45}});await flush();
+ h.fire(1000);await flush();h.calls.at(-1).reject(new TypeError('Device restarting'));await flush();
+ h.fire(1000);await flush();h.reply(200,{...status,update:{installed:'0.9.1',available:'',state:0}});await flush();
+ assert.equal(h.results.at(-1).update.installed,'0.9.1');assert(h.client.connected());
+ // A revoked pairing token is an authentication failure, not endless reconnection.
  h.client.wake();await flush();h.reply(401);await flush();assert.equal(h.states.at(-1).phase,'pairing');assert.equal(h.timers.size,0);
  const count=h.calls.length;h.client.wake();await flush();assert.equal(h.calls.length,count);
  h.client.stop();

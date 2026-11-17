@@ -49,7 +49,8 @@ void vTaskDelay(unsigned ticks){mono+=(int64_t)ticks*1000;test_clock+=ticks/1000
 const esp_partition_t *esp_ota_get_running_partition(void){return &part;}
 const esp_partition_t *esp_ota_get_next_update_partition(const void *p){(void)p;return no_partition?NULL:&part;}
 int esp_ota_get_state_partition(const esp_partition_t *p,esp_ota_img_states_t *s){(void)p;*s=trial_aborted?ESP_OTA_IMG_ABORTED:active_pending?ESP_OTA_IMG_PENDING_VERIFY:ESP_OTA_IMG_VALID;return 0;}
-int esp_ota_begin(const esp_partition_t *p,unsigned size,esp_ota_handle_t *h){(void)p;begins++;assert(size==1024);*h=1;return begin_error;}
+static bool guard_failed,guard_quiet;
+int esp_ota_begin(const esp_partition_t *p,unsigned size,esp_ota_handle_t *h){(void)p;assert(guard_quiet);begins++;assert(size==1024);*h=1;return begin_error;}
 int esp_ota_write(esp_ota_handle_t h,const void *data,size_t n){assert(h==1&&data&&n>0);writes++;return ota_error;}
 int esp_ota_end(esp_ota_handle_t h){assert(h==1);return end_error?end_error:ota_error;}
 int esp_ota_abort(esp_ota_handle_t h){assert(h==1);aborted++;return 0;}
@@ -80,7 +81,10 @@ void mbedtls_pk_init(mbedtls_pk_context *c){(void)c;}void mbedtls_pk_free(mbedtl
 int mbedtls_pk_parse_public_key(mbedtls_pk_context *c,const unsigned char *p,size_t n){(void)c;assert(p&&n==sizeof("test public key")&&p[n-1]==0);return crypto_error;}
 int mbedtls_pk_verify(mbedtls_pk_context *c,int t,const unsigned char *p,size_t n,const unsigned char *s,size_t sn){(void)c;(void)t;(void)p;(void)n;(void)s;(void)sn;return crypto_error;}
 static void run(unsigned count){loops=0;stop_loop=count;if(!setjmp(done))worker(NULL);stop_loop=0;}
+static bool guard(bool quiet){guard_quiet=quiet;return !guard_failed;}
 int main(void){
+ assert(!install());station_update_display_guard(guard);
+ guard_failed=true;assert(!install()&&!guard_quiet&&display_restore_pending);guard_failed=false;
  snprintf(manifest_text,sizeof(manifest_text),"{\"schema\":1,\"version\":\"0.9.1\",\"target\":\"%s\",\"layout\":\"%s\",\"size\":1024,\"sha256\":\"%064d\",\"url\":\"%sv0.9.1/tempo.bin\"}",TEMPO_UPDATE_TARGET,TEMPO_UPDATE_LAYOUT,0,TEMPO_UPDATE_BASE);
  assert(!station_update_request("check"));assert(!station_update_configure(720,true,180,240));
  open_error=-1;assert(station_update_start()!=0);open_error=0;read_error=-1;assert(station_update_start()!=0);read_error=ESP_ERR_NVS_NOT_FOUND;
@@ -88,17 +92,17 @@ int main(void){
  queue_fail=true;assert(station_update_start()!=0);queue_fail=false;task_fail=true;assert(station_update_start()!=0);task_fail=false;assert(station_update_start()==0);assert(station_update_start()==0);
  station_update_status_t s;station_update_status(&s);assert(s.interval_hours==720&&s.automatic&&s.credential_configured);
  assert(!station_update_request(NULL));assert(!station_update_request("bad"));assert(!station_update_configure(2,true,180,240));assert(!station_update_configure(1,true,180,180));
- assert(station_update_request("check"));run(1);assert(status.state==UPDATE_AVAILABLE&&saved.next>test_clock);assert(candidate.size==1024);
+ assert(station_update_request("check"));run(1);assert(status.state==UPDATE_AVAILABLE&&saved.next>test_clock&&!display_restore_pending);assert(candidate.size==1024);
  assert(station_update_configure(1,false,10,20));run(1);assert(saved.hours==1&&!saved.automatic);
  assert(station_update_request("postpone"));run(1);assert(saved.postponed>test_clock);
  net.connected=false;assert(station_update_request("check"));run(1);assert(status.state==UPDATE_ERROR);assert(station_update_request("install"));run(1);net.connected=true;
- http_code=404;assert(check_release());http_code=500;assert(!check_release());http_code=200;
+ http_code=404;assert(check_release()&&status.up_to_date);http_code=500;assert(!check_release()&&!status.up_to_date);http_code=200;
  crypto_error=-1;assert(!check_release());crypto_error=0;
  /* Malformed or non-object release metadata fails cleanly, never dereferencing a failed parse. */
  static const char *const bad_latest[]={"{not json","null","[]","\"v0.9.1\"","{\"tag_name\":1,\"draft\":false,\"prerelease\":false}","{\"tag_name\":\"v0.9.1\",\"draft\":true,\"prerelease\":false}"};
  for(unsigned i=0;i<sizeof(bad_latest)/sizeof(bad_latest[0]);i++){latest_body=bad_latest[i];assert(!check_release()&&strstr(status.message,"Invalid release metadata"));}
  latest_body=latest;
- strcpy(saved.blocked,"0.9.1");assert(check_release());saved.blocked[0]=0;strcpy(status.installed,"0.9.1");assert(check_release());strcpy(status.installed,"0.9.0");
+ strcpy(saved.blocked,"0.9.1");assert(check_release());saved.blocked[0]=0;strcpy(status.installed,"0.9.1");assert(check_release()&&status.up_to_date);strcpy(status.installed,"0.9.0");
  truncated=true;assert(!check_release());truncated=false;read_failed=true;assert(!check_release());read_failed=false;
  init_failed=true;assert(!check_release());init_failed=false;connect_failed=true;assert(!check_release());connect_failed=false;assert(check_release());
  assert(!allowed_url("https://api.github.com.evil/test",true,0));assert(!allowed_url("https://github.com/other/repo",false,0));
@@ -140,7 +144,8 @@ int main(void){
 truncated=true;assert(!install());truncated=false;
  candidate.sha256[0]='1';assert(!install());candidate.sha256[0]='0';commit_error=-1;assert(!install());commit_error=0;boot_error=-1;assert(!install()&&!persisted.pending[0]);boot_error=0;
  assert(activated==0);assert(install()&&activated==1&&restarted==1);
- assert(station_update_request("install"));run(63);assert(restarted==2);
+ assert(station_update_request("install"));run(65);assert(restarted==2);
+ unsigned previous=restarted;assert(station_update_request("install_now"));run(5);assert(restarted==previous+1&&status.countdown_seconds==0);
  /* Failed trial survives reboot. */
  commands=NULL;read_error=0;strcpy(desc.version,"0.9.1");active_pending=true;assert(station_update_start()==0);run(2);assert(!strcmp(persisted.pending,"0.9.1"));
  commands=NULL;strcpy(desc.version,"0.9.0");active_pending=false;trial_aborted=true;assert(station_update_start()==0);trial_aborted=false;assert(!strcmp(persisted.blocked,"0.9.1")&&!persisted.pending[0]);assert(check_release()&&!candidate.version[0]);

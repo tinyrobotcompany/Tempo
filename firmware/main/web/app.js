@@ -1,21 +1,27 @@
 'use strict';
 const $=id=>document.getElementById(id),L=StationLocation;
 const incoming=new URLSearchParams(location.hash.slice(1));
-let token=incoming.get('token')||sessionStorage.getItem('stationToken')||'';
-if(/^[a-f0-9]{32}$/.test(token))sessionStorage.setItem('stationToken',token);else token='';
-// The token stays in the fragment; the callback query carries coordinates to the local device.
-// Clear both from the visible URL immediately.
+// Pairing is scoped to this device origin. Storage can be unavailable in private browsers.
+function storedToken(){for(const name of ['localStorage','sessionStorage']){try{const value=globalThis[name]?.getItem('stationToken');if(/^[a-f0-9]{32}$/.test(value||''))return value;}catch{}}return '';}
+let token=incoming.get('token')||storedToken();
+if(!/^[a-f0-9]{32}$/.test(token))token='';
+let tokenStored=false;
+if(token)for(const name of ['localStorage','sessionStorage']){try{const storage=globalThis[name];if(storage){storage.setItem('stationToken',token);tokenStored=true;}}catch{}}
 const callbackSearch=location.search;
 const callbackState=new URLSearchParams(callbackSearch).get('location_state');
 let callbackDone=!callbackState,callbackPending=false;
-history.replaceState(null,'',location.pathname);
+// If storage is blocked retain only the pairing fragment, so refreshing still works.
+history.replaceState(null,'',location.pathname+(!tokenStored&&token?'#token='+token:''));
 let state=null,initialised=false,savePending=false,locationPending=false,pendingPoint=null;
 let updateEdited=false,updateBusy=false,credentialBusy=false;
 function message(text,id='message',error=false){$(id).textContent=text;$(id).classList.toggle('error',error);if(id==='locationMessage'){$('locationSaveStatus').textContent=text;$('locationSaveStatus').classList.toggle('error',error);}}
 let appearanceEdited=false;
 let linkPhase='connecting',viewPending=false,locatePending=false;
 function updateControls(){const ready=linkPhase==='connected';
- for(const id of ['checkUpdate','installUpdate','postponeUpdate','saveUpdates'])$(id).disabled=!ready||updateBusy;
+ const u=state?.update,busy=u&&[1,3,4,5,7].includes(u.state);
+ for(const id of ['checkUpdate','installUpdate','postponeUpdate','saveUpdates'])$(id).disabled=!ready||updateBusy||busy;
+ $('checkUpdate').disabled=!ready||updateBusy||busy||!!u?.countdown;
+ for(const id of ['installUpdate','postponeUpdate'])$(id).disabled=!ready||updateBusy||busy||!u?.available;
  $('saveCredential').disabled=!ready||credentialBusy;
  $('saveSettings').disabled=!ready||savePending;
  $('saveSettings').setAttribute('aria-busy',String(savePending));
@@ -47,8 +53,17 @@ for(const kind of ['dim','off']){
 function fill(s){for(const key of ['name','brightness','theme','font','dwell'])$(key).value=s[key];$('dimBrightness').value=s.dimBrightness??10;for(const kind of ['dim','off']){$(kind+'After').value=s[kind+'After']??0;syncIdlePreset(kind);}$('rotate').checked=s.rotate;$('color').value='#'+s.color.toString(16).padStart(6,'0');$('brightnessValue').textContent=s.brightness+'%';}
 function applyStatus(next){state=next;
  if(next.update){const u=next.update;
-  $('updateVersion').textContent=`Installed: ${u.installed} · Available: ${u.available||'none'}`;
-  $('updateStatus').textContent=u.message;$('updateStatus').classList.toggle('reconnecting',[1,3,4,5].includes(u.state));$('updateProgress').value=u.progress;
+  const titles={1:'Checking for updates…',2:u.countdown?'Your update is ready to install':'A new update is available',3:'Downloading update',4:'Verifying update',5:'Restarting Tempo — reconnecting automatically',6:'Update needs attention',7:'Preparing to install'};
+  $('updateTitle').textContent=titles[u.state]||(u.upToDate?'No new updates — Tempo is up to date':'Ready to check for updates');
+  $('updateTitle').classList.toggle('error',u.state===6);
+  $('updateVersion').textContent='Installed version: '+u.installed+(u.available?' · Update available: '+u.available:'');
+  $('updateStatus').textContent=u.message;
+  $('updateCountdown').textContent=u.countdown?'Installing in '+u.countdown+' seconds':u.state===3?u.progress+'% downloaded':u.state===7?'Tempo’s screen will rest during installation. Keep it powered on.':'';
+  $('updateCountdown').hidden=!$('updateCountdown').textContent;
+  $('updateProgress').hidden=!(u.countdown||u.state===3);
+  $('updateProgress').value=u.countdown?Math.max(0,100-u.countdown*100/60):u.progress;
+  $('updateProgress').setAttribute('aria-label',u.countdown?'Automatic installation countdown':'Download progress');
+  $('updateMessage').textContent='';
   $('releaseNotes').hidden=!u.notes;$('releaseNotes').href=/^https:\/\/github\.com\/tinyrobotcompany\/Tempo\/releases\/tag\/v[0-9.]+$/.test(u.notes)?u.notes:'#';
   if(!updateEdited){$('updateHours').value=u.hours;$('updateAutomatic').checked=u.automatic;for(const [id,n] of [['updateStart',u.start],['updateEnd',u.end]])$(id).value=String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');}
   $('credentialStatus').textContent=next.transportConfigured?'Transport key is saved.':'No transport key configured.';
@@ -107,11 +122,11 @@ async function updateCommand(action,body={}){
  if(updateBusy||!connection.connected())return;
  updateBusy=true;message('Sending update request…','updateMessage');
  for(const id of ['checkUpdate','installUpdate','postponeUpdate','saveUpdates']){$(id).disabled=true;$(id).setAttribute('aria-busy','true');}
- try{await api('update',{action,...body});message('Request accepted. Status will update automatically.','updateMessage');}
+ try{await api('update',{action,...body});message('Request accepted. Waiting for Tempo…','updateMessage');await connection.wake();}
  catch(e){message(e.message,'updateMessage',true);}
  finally{updateBusy=false;for(const id of ['checkUpdate','installUpdate','postponeUpdate','saveUpdates']){$(id).setAttribute('aria-busy','false');}updateControls();}
 }
-$('checkUpdate').onclick=()=>updateCommand('check');$('installUpdate').onclick=()=>updateCommand('install');$('postponeUpdate').onclick=()=>updateCommand('postpone');
+$('checkUpdate').onclick=()=>updateCommand('check');$('installUpdate').onclick=()=>updateCommand('install_now');$('postponeUpdate').onclick=()=>updateCommand('postpone');
 $('updateForm').addEventListener('input',()=>{updateEdited=true;});
 $('updateForm').onsubmit=e=>{e.preventDefault();const start=minutes($('updateStart').value),end=minutes($('updateEnd').value);if(start===end){message('Choose different start and end times.','updateMessage',true);return;}return updateCommand('configure',{hours:Number($('updateHours').value),automatic:$('updateAutomatic').checked,start,end});};
 $('credentialForm').onsubmit=async e=>{e.preventDefault();if(credentialBusy||!connection.connected())return;
