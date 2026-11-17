@@ -1,6 +1,8 @@
 #include "phone_setup.h"
 #include "phone_protocol.h"
 #include "network_time.h"
+#include "credentials.h"
+#include "transport_service.h"
 #include "settings.h"
 #include "esp_http_server.h"
 #include "esp_netif.h"
@@ -12,7 +14,7 @@
 #include "sdkconfig.h"
 #include <string.h>
 #include <stdio.h>
-#include <math.h>
+#include <math.h> /* floor/isfinite validate numeric settings before conversion. */
 static portMUX_TYPE mux=portMUX_INITIALIZER_UNLOCKED;
 static station_settings_t current_settings;
 static station_view_t current_view;
@@ -117,11 +119,17 @@ static esp_err_t status_get(httpd_req_t *r)
     cJSON_AddStringToObject(loc,"name",net.location_name);cJSON_AddStringToObject(loc,"timezone",net.timezone);
     cJSON_AddStringToObject(loc,"message",net.location_message);cJSON_AddNumberToObject(loc,"completion",net.location_completion);
     cJSON_AddBoolToObject(loc,"success",net.location_success);cJSON_AddBoolToObject(loc,"pending",location_busy);
+    cJSON_AddBoolToObject(j,"transportConfigured",station_credential_configured());
     return json_reply(r,j);
 }
 static esp_err_t post(httpd_req_t *r)
 {
-    headers(r);if(!authorised(r))return httpd_resp_send_err(r,HTTPD_401_UNAUTHORIZED,"Scan the QR code again.");
+    /* Single authentication gate for every POST route: /api/credential,
+       /api/location-request, /api/location, /api/settings and /api/view all require the
+       pairing bearer token before the body is read or any route is dispatched.
+       There are no unauthenticated POST endpoints; tests/test_phone_server.c pins this. */
+    headers(r);
+    if(!authorised(r))return httpd_resp_send_err(r,HTTPD_401_UNAUTHORIZED,"Scan the QR code again.");
     char type[64];if(httpd_req_get_hdr_value_str(r,"Content-Type",type,sizeof(type))!=ESP_OK||strcmp(type,"application/json"))return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"JSON required");
     if(r->content_len==0||r->content_len>1024)return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid request size");
     char body[1025];size_t used=0;
@@ -147,6 +155,16 @@ static esp_err_t post(httpd_req_t *r)
         cJSON_Delete(j);cJSON *result=cJSON_CreateObject();
         if(!result)return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"Out of memory");
         cJSON_AddStringToObject(result,"state",location_request);return json_reply(r,result);
+    }
+    /* Authorised: only reachable after the authorised() gate at the top of post(). */
+    if(!strcmp(r->uri,"/api/credential")) {
+        cJSON *key=cJSON_GetObjectItemCaseSensitive(j,"key");
+        bool ok=cJSON_IsString(key)&&strlen(key->valuestring)<=STATION_PRIM_KEY_MAX;
+        esp_err_t result=ok?station_credential_set(key->valuestring):ESP_ERR_INVALID_ARG;
+        if(cJSON_IsString(key))memset(key->valuestring,0,strlen(key->valuestring));
+        memset(body,0,sizeof(body));cJSON_Delete(j);
+        if(result!=ESP_OK)return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Credential could not be saved. Check the value and retry.");
+        station_transport_refresh();return httpd_resp_sendstr(r,"{\"saved\":true}");
     }
     bool accepted=false,valid=false;
     if(!strcmp(r->uri,"/api/location")) {
@@ -191,9 +209,10 @@ esp_err_t station_phone_start(const station_settings_t *settings)
         queue=xQueueCreate(2,sizeof(station_phone_command_t));if(!queue)return ESP_ERR_NO_MEM;
     }
     httpd_config_t config=HTTPD_DEFAULT_CONFIG();config.stack_size=8192;config.max_open_sockets=3;
-    config.lru_purge_enable=true;config.recv_wait_timeout=3;config.send_wait_timeout=3;config.max_uri_handlers=12;
+    config.lru_purge_enable=true;config.recv_wait_timeout=3;config.send_wait_timeout=3;config.max_uri_handlers=13;
     esp_err_t err=httpd_start(&server,&config);if(err!=ESP_OK){server=NULL;return err;}
     const httpd_uri_t routes[]={
+        {.uri="/api/credential",.method=HTTP_POST,.handler=post},
         {.uri="/api/location-request",.method=HTTP_POST,.handler=post},
         {.uri="/connection.js",.method=HTTP_GET,.handler=asset},
         {.uri="/shortcut.js",.method=HTTP_GET,.handler=asset},{.uri="/Weather-Station-Location.shortcut",.method=HTTP_GET,.handler=shortcut_download},
