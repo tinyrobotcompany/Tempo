@@ -14,7 +14,8 @@ typedef struct {
     char user_name[49];
     uint8_t night_mode; /* 0 disabled, 1 dim, 2 screen off */
     uint8_t night_brightness;
-    uint16_t night_start, night_end; /* local minutes since midnight */
+    uint16_t night_start, night_end; /* legacy schedule, retained for migration */
+    uint16_t dim_after_minutes, off_after_minutes; /* 0 = never; 1..1440 idle minutes */
 } station_settings_t;
 station_settings_t station_defaults(void);
 bool station_settings_valid(const station_settings_t *s);
@@ -69,10 +70,11 @@ typedef struct {
 void station_scan_add(station_wifi_scan_t *scan, const station_wifi_ap_t *ap);
 
 #define STATION_SETTINGS_V2_BYTES 59
-#define STATION_SETTINGS_BYTES 65
-/* Pure policy: no clock trust means normal brightness. Wake uses monotonic time. */
-unsigned station_power_brightness(const station_settings_t *s, bool time_valid, unsigned minute,
-                                  uint64_t now_ms, uint64_t awake_until_ms);
+#define STATION_SETTINGS_V3_BYTES 65
+#define STATION_SETTINGS_BYTES 69
+/* Idle policy uses monotonic time only. Dim level is perceptual, relative to normal. */
+unsigned station_power_brightness(const station_settings_t *s, uint64_t now_ms, uint64_t last_activity_ms);
+unsigned station_dim_brightness(const station_settings_t *s);
 bool station_settings_decode(const uint8_t *data, unsigned size, station_settings_t *settings);
 void station_settings_encode(const station_settings_t *settings, uint8_t data[STATION_SETTINGS_BYTES]);
 typedef struct { const char *name, *zone, *coordinates; } station_city_t;

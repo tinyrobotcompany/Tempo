@@ -39,14 +39,15 @@ bool station_phone_parse_settings(const cJSON *j,station_settings_t *s)
        !cJSON_IsBool(rotate)||!string(j,"name",candidate.user_name,sizeof(candidate.user_name)))return false;
     candidate.brightness=brightness;candidate.theme=theme;candidate.custom_color=color;candidate.clock_font=font;
     candidate.rotate=cJSON_IsTrue(rotate);candidate.dwell_seconds=dwell;
-    const char *keys[]={"nightMode","nightBrightness","nightStart","nightEnd"};
-    unsigned present=0;for(unsigned i=0;i<4;i++)present+=cJSON_GetObjectItemCaseSensitive(j,keys[i])!=NULL;
+    /* Stale schedule-based clients must reload instead of silently changing idle policy. */
+    if(cJSON_GetObjectItemCaseSensitive(j,"nightMode")||cJSON_GetObjectItemCaseSensitive(j,"nightStart")||cJSON_GetObjectItemCaseSensitive(j,"nightEnd"))return false;
+    const char *keys[]={"dimAfter","offAfter","dimBrightness"};
+    unsigned present=0;for(unsigned i=0;i<3;i++)present+=cJSON_GetObjectItemCaseSensitive(j,keys[i])!=NULL;
     if(present) {
-        double mode,level,start,end;
-        if(present!=4||!number(j,keys[0],0,2,&mode)||!number(j,keys[1],1,100,&level)||
-           !number(j,keys[2],0,1439,&start)||!number(j,keys[3],0,1439,&end)||
-           floor(mode)!=mode||floor(level)!=level||floor(start)!=start||floor(end)!=end)return false;
-        candidate.night_mode=mode;candidate.night_brightness=level;candidate.night_start=start;candidate.night_end=end;
+        double dim,off,level;
+        if(present!=3||!number(j,keys[0],0,1440,&dim)||!number(j,keys[1],0,1440,&off)||!number(j,keys[2],1,100,&level)||
+           floor(dim)!=dim||floor(off)!=off||floor(level)!=level)return false;
+        candidate.dim_after_minutes=dim;candidate.off_after_minutes=off;candidate.night_brightness=level;candidate.night_mode=0;
     }
     if(!station_settings_valid(&candidate))return false;
     *s=candidate;
