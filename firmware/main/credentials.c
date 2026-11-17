@@ -2,12 +2,22 @@
 #include "nvs.h"
 #include <string.h>
 #include <stdatomic.h>
-static atomic_bool configured;
-bool station_credential_configured(void){return atomic_load(&configured);}
+static atomic_bool configured, known;
+/* After boot, the first status query reads NVS once so the UI is accurate before any transport fetch. */
+bool station_credential_configured(void)
+{
+    if(!atomic_load(&known)) {
+        char key[STATION_PRIM_KEY_MAX+1];
+        station_credential_get(key,sizeof(key));
+        memset(key,0,sizeof(key));
+    }
+    return atomic_load(&configured);
+}
 bool station_credential_get(char *out, size_t size)
 {
     if(!out || size < STATION_PRIM_KEY_MAX+1) return false;
     out[0]=0;
+    atomic_store(&known,true);
     nvs_handle_t h;
     if(nvs_open("tempo_secret",NVS_READONLY,&h)!=ESP_OK) { atomic_store(&configured,false); return false; }
     size_t length=size;
@@ -28,6 +38,6 @@ esp_err_t station_credential_set(const char *key)
     err=nvs_set_str(h,"prim",key);
     if(err==ESP_OK) err=nvs_commit(h);
     nvs_close(h);
-    if(err==ESP_OK)atomic_store(&configured,key[0]!=0);
+    if(err==ESP_OK){atomic_store(&configured,key[0]!=0);atomic_store(&known,true);}
     return err;
 }

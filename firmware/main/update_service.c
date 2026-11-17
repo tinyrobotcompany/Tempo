@@ -92,12 +92,18 @@ bool station_update_configure(unsigned hours,bool automatic,unsigned start,unsig
  if(!commands||(hours!=1&&hours!=720)||start>=1440||end>=1440||start==end)return false;
  command_t c={.action=4,.hours=hours,.automatic=automatic,.start=start,.end=end};return xQueueSend(commands,&c,0)==pdTRUE;
 }
-static bool allowed_url(const char *url,bool metadata)
+/* hop 0 is the URL we chose; later hops come from a Location header.
+   Metadata never redirects. Release assets start at this repository's github.com release URL
+   and may then move only to GitHub's asset CDN (never back to github.com or elsewhere).
+   github.com issues that redirect over verified TLS, and every asset is signature/hash checked,
+   so the redirect path is not matched against GitHub's undocumented CDN query format. */
+static bool allowed_url(const char *url,bool metadata,unsigned hop)
 {
- if(metadata)return !strcmp(url,LATEST);
- /* Manifest and signature files are release assets too; their CDN bytes are signed. */
- const char *hosts[]={TEMPO_UPDATE_BASE,"https://release-assets.githubusercontent.com/","https://objects.githubusercontent.com/"};
- for(unsigned i=0;i<3;i++)if(!strncmp(url,hosts[i],strlen(hosts[i])))return true;
+ for(const unsigned char *p=(const unsigned char *)url;*p;p++)if(*p<=' '||*p>=0x7f||*p=='\\')return false;
+ if(metadata)return hop==0&&!strcmp(url,LATEST);
+ if(hop==0)return !strncmp(url,TEMPO_UPDATE_BASE,strlen(TEMPO_UPDATE_BASE));
+ const char *cdn[]={"https://release-assets.githubusercontent.com/","https://objects.githubusercontent.com/"};
+ for(unsigned i=0;i<2;i++)if(!strncmp(url,cdn[i],strlen(cdn[i]))&&url[strlen(cdn[i])])return true;
  return false;
 }
 static esp_err_t response_header(esp_http_client_event_t *event)
@@ -122,12 +128,11 @@ static esp_http_client_handle_t open_url(const char *url,int *http,int64_t *body
 {
  *http=0;if(body_length)*body_length=-1;
  bool metadata=!strcmp(url,LATEST);
- if(!metadata&&strncmp(url,TEMPO_UPDATE_BASE,strlen(TEMPO_UPDATE_BASE)))return NULL;
  /* Only the OTA worker opens clients; storage survives reads and cleanup callbacks. */
  static char current[2048];static response_t response;
  snprintf(current,sizeof(current),"%s",url);
  for(unsigned redirects=0;redirects<4;redirects++){
-  if(!allowed_url(current,metadata))return NULL;
+  if(!allowed_url(current,metadata,redirects))return NULL;
   memset(&response,0,sizeof(response));
   esp_http_client_config_t config={.event_handler=response_header,.user_data=&response,.url=current,.timeout_ms=15000,.buffer_size=4096,.buffer_size_tx=2048,
    .crt_bundle_attach=esp_crt_bundle_attach,.disable_auto_redirect=true};
@@ -190,18 +195,16 @@ static bool check_release(void)
  portENTER_CRITICAL(&lock);snprintf(status.available,sizeof(status.available),"%s",version);snprintf(status.notes_url,sizeof(status.notes_url),"https://github.com/tinyrobotcompany/Tempo/releases/tag/v%s",version);status.progress=0;portEXIT_CRITICAL(&lock);
  message(UPDATE_AVAILABLE,"Update available. See What’s new before installing.");return true;
 }
-static bool install(void)
+/* Downloads candidate.url into partition and finalises it. Returns NULL on success or the
+   user-facing error. Once the HTTP client, OTA handle and hash exist there are no early returns:
+   all three are released in the single cleanup block at the end. */
+static const char *write_image(const esp_partition_t *partition)
 {
- if(!candidate.version[0]){message(UPDATE_ERROR,"Check for an update first.");return false;}
- esp_ota_img_states_t state;
- if(esp_ota_get_state_partition(esp_ota_get_running_partition(),&state)==ESP_OK&&state==ESP_OTA_IMG_PENDING_VERIFY){message(UPDATE_ERROR,"Current firmware is still completing startup checks.");return false;}
- const esp_partition_t *partition=esp_ota_get_next_update_partition(NULL);
- if(!partition||candidate.size>partition->size){message(UPDATE_ERROR,"Update does not fit this device.");return false;}
- message(UPDATE_DOWNLOADING,"Downloading update… Keep Tempo powered on.");int http=0;
- int64_t body_length=-1;
- esp_http_client_handle_t h=open_url(candidate.url,&http,&body_length);if(!h||http!=200){if(h)esp_http_client_cleanup(h);message(UPDATE_ERROR,"Download unavailable. Current firmware is unchanged.");return false;}
+ int http=0;int64_t body_length=-1;
+ esp_http_client_handle_t h=open_url(candidate.url,&http,&body_length);
+ if(!h||http!=200){if(h)esp_http_client_cleanup(h);return "Download unavailable. Current firmware is unchanged.";}
  /* Require the signed size before erasing flash. */
- if(body_length<=0||(uint64_t)body_length!=candidate.size){esp_http_client_cleanup(h);message(UPDATE_ERROR,"Download size mismatch or unknown. Current firmware is unchanged.");return false;}
+ if(body_length<=0||(uint64_t)body_length!=candidate.size){esp_http_client_cleanup(h);return "Download size mismatch or unknown. Current firmware is unchanged.";}
  esp_ota_handle_t ota=0;bool begun=esp_ota_begin(partition,candidate.size,&ota)==ESP_OK;
  mbedtls_md_context_t hash;mbedtls_md_init(&hash);
  bool ok=begun&&mbedtls_md_setup(&hash,mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),0)==0&&mbedtls_md_starts(&hash)==0;
@@ -216,17 +219,33 @@ static bool install(void)
   /* Require EOF and complete framing. */
   ok=n==0&&esp_http_client_is_complete_data_received(h);
  }
- esp_http_client_cleanup(h);message(UPDATE_VERIFYING,"Verifying downloaded firmware…");
- ok=ok&&total==candidate.size&&mbedtls_md_finish(&hash,digest)==0;mbedtls_md_free(&hash);
+ message(UPDATE_VERIFYING,"Verifying downloaded firmware…");
+ ok=ok&&total==candidate.size&&mbedtls_md_finish(&hash,digest)==0;
  char hex[65];for(unsigned i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",digest[i]);ok=ok&&!strcmp(hex,candidate.sha256);
  /* esp_ota_end() only finalises and validates the written image; it never changes the boot
-    selection (otadata). On any failure below we return before esp_ota_set_boot_partition(),
+    selection (otadata). On any failure we return before esp_ota_set_boot_partition(),
     so the running image stays the boot image. tests/test_update_service.c pins this. */
  if(ok){ok=esp_ota_end(ota)==ESP_OK;begun=false;}
+ /* Single cleanup: every path after the size check reaches here. */
  if(begun)esp_ota_abort(ota);
+ mbedtls_md_free(&hash);
+ esp_http_client_cleanup(h);
+ if(!ok)return extra_bytes?"Download contains extra bytes. Current firmware is unchanged.":"Firmware verification failed. Current firmware is unchanged.";
+ return NULL;
+}
+static bool install(void)
+{
+ if(!candidate.version[0]){message(UPDATE_ERROR,"Check for an update first.");return false;}
+ esp_ota_img_states_t state;
+ if(esp_ota_get_state_partition(esp_ota_get_running_partition(),&state)==ESP_OK&&state==ESP_OTA_IMG_PENDING_VERIFY){message(UPDATE_ERROR,"Current firmware is still completing startup checks.");return false;}
+ const esp_partition_t *partition=esp_ota_get_next_update_partition(NULL);
+ if(!partition||candidate.size>partition->size){message(UPDATE_ERROR,"Update does not fit this device.");return false;}
+ message(UPDATE_DOWNLOADING,"Downloading update… Keep Tempo powered on.");
+ const char *error=write_image(partition);
+ if(error){message(UPDATE_ERROR,error);return false;}
  esp_app_desc_t description;
- ok=ok&&esp_ota_get_partition_description(partition,&description)==ESP_OK&&!strcmp(description.version,candidate.version)&&!strcmp(description.project_name,"weather_station");
- if(!ok){message(UPDATE_ERROR,extra_bytes?"Download contains extra bytes. Current firmware is unchanged.":"Firmware verification failed. Current firmware is unchanged.");return false;}
+ if(esp_ota_get_partition_description(partition,&description)!=ESP_OK||strcmp(description.version,candidate.version)||strcmp(description.project_name,"weather_station")){
+  message(UPDATE_ERROR,"Firmware verification failed. Current firmware is unchanged.");return false;}
  snprintf(saved.pending,sizeof(saved.pending),"%s",candidate.version);
  if(!persist()){saved.pending[0]=0;message(UPDATE_ERROR,"Could not save activation intent. Current firmware is unchanged.");return false;}
  if(esp_ota_set_boot_partition(partition)!=ESP_OK){saved.pending[0]=0;persist();message(UPDATE_ERROR,"Could not activate update. Current firmware is unchanged.");return false;}

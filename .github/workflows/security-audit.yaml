@@ -8,7 +8,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: security-${{ github.event.pull_request.number || github.ref }}
+  # Include the workflow name: when called from Publish OTA Release this run must not cancel the standalone audit.
+  group: security-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   secret-scan:

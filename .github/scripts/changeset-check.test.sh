@@ -28,14 +28,17 @@ EOF
 }
 
 run_check() {
-  local repo="$1"
-  (
+  local repo="$1" output status=0
+  output="$(
     cd "$repo"
     GITHUB_EVENT_NAME="pull_request" \
     GITHUB_ACTOR="simon" \
     GITHUB_BASE_REF="main" \
-    bash "$SCRIPT"
-  )
+    bash "$SCRIPT" 2>&1
+  )" || status=$?
+  # Expected failures must not become GitHub error annotations on a passing job.
+  printf '%s\n' "$output" | sed 's/^::error::/(expected) /'
+  return "$status"
 }
 
 test_non_releasable_change_passes() {
