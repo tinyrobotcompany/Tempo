@@ -5,7 +5,12 @@
 #include "phone_setup.h"
 #include "esp_http_server.h"
 #include "esp_netif.h"
-static httpd_uri_t routes[12];static unsigned route_count,location_calls;
+#include "credentials.h"
+static char test_key[513];
+esp_err_t station_credential_set(const char *key){if(strlen(key)>512)return ESP_ERR_INVALID_ARG;snprintf(test_key,sizeof(test_key),"%s",key);return ESP_OK;}
+bool station_credential_configured(void){return test_key[0]!=0;}
+bool station_transport_refresh(void){return true;}
+static httpd_uri_t routes[13];static unsigned route_count,location_calls;
 static station_network_status_t network;
 static int64_t now_us=1000000;
 int64_t esp_timer_get_time(void){return now_us;}
@@ -32,14 +37,19 @@ int httpd_req_recv(httpd_req_t *r,char *out,size_t n){size_t take=n>7?7:n;memcpy
 static bool fail_start=true,fail_route=true;
 esp_err_t httpd_stop(httpd_handle_t h){(void)h;route_count=0;return ESP_OK;}
 esp_err_t httpd_start(httpd_handle_t *h,const httpd_config_t *c){assert(c->max_open_sockets==3&&c->recv_wait_timeout==3&&c->stack_size==8192);if(fail_start)return ESP_FAIL;*h=(void*)1;return ESP_OK;}
-esp_err_t httpd_register_uri_handler(httpd_handle_t h,const httpd_uri_t *route){(void)h;if(fail_route&&route_count==3)return ESP_FAIL;assert(route_count<12);routes[route_count++]=*route;return ESP_OK;}
+esp_err_t httpd_register_uri_handler(httpd_handle_t h,const httpd_uri_t *route){(void)h;if(fail_route&&route_count==3)return ESP_FAIL;assert(route_count<13);routes[route_count++]=*route;return ESP_OK;}
 static httpd_req_t request(const char *uri,const char *body,const char *auth){httpd_req_t r={.uri=uri,.body=body,.content_len=body?strlen(body):0,.auth=auth,.type="application/json",.code=200};for(unsigned i=0;i<route_count;i++)if(!strcmp(uri,routes[i].uri)){assert(routes[i].handler(&r)==ESP_OK);return r;}assert(0);return r;}
 int main(void){station_settings_t initial=station_defaults();assert(station_phone_start(&initial)==ESP_FAIL);station_phone_link_t unavailable;network.connected=true;station_phone_link(&unavailable);assert(!unavailable.online);
  fail_start=false;assert(station_phone_start(&initial)==ESP_FAIL&&route_count==0);station_phone_link(&unavailable);assert(!unavailable.online);
- fail_route=false;assert(station_phone_start(&initial)==ESP_OK&&route_count==12);assert(station_phone_start(&initial)==ESP_OK&&route_count==12);network.connected=false;
+ fail_route=false;assert(station_phone_start(&initial)==ESP_OK&&route_count==13);assert(station_phone_start(&initial)==ESP_OK&&route_count==13);network.connected=false;
  httpd_req_t asset=request("/",NULL,NULL);assert(strstr(asset.response,"Your weather station"));
  asset=request("/connection.js",NULL,NULL);assert(strstr(asset.response,"StationConnection"));
  const char *auth="Bearer abababababababababababababababab";
+ httpd_req_t secret=request("/api/credential","{\"key\":\"fixture-only\"}",NULL);assert(secret.code==401&&!test_key[0]);
+ secret=request("/api/credential","{\"key\":\"fixture-only\"}",auth);assert(secret.code==200&&!strcmp(test_key,"fixture-only")&&!strstr(secret.response,"fixture-only"));
+ secret=request("/api/credential","{\"key\":false}",auth);assert(secret.code==400);
+ secret=request("/api/credential","",NULL);assert(secret.code==401&&!strcmp(test_key,"fixture-only"));
+ secret=request("/api/credential","{\"key\":\"\"}","Bearer wrong");assert(secret.code==401&&!strcmp(test_key,"fixture-only"));
  httpd_req_t r=request("/api/status",NULL,NULL);assert(r.code==401&&!strstr(r.response,"settings"));
  r=request("/api/status",NULL,"Bearer wrong");assert(r.code==401);
  r=request("/api/status",NULL,auth);assert(r.code==200&&r.no_store&&r.no_referrer&&strstr(r.response,"brightness")&&!strstr(r.response,"ababab"));

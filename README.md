@@ -34,7 +34,7 @@ Current firmware: **0.8.16**. Features include ten clock styles, equal weather/t
 
 ## Configure and build
 
-Install ESP-IDF 6.1 for the tested ESP32-P4 revision, then copy `.env.example` to `.env` and set your own `IDFM_PRIM_API_KEY`. The build generates a private credential header; never publish build artifacts containing the key. Dependencies are restored from the component manifest and lock file. The patched LVGL adapter under `firmware/vendor` is required.
+Install ESP-IDF 6.1 for the tested ESP32-P4 revision, then provision the PRIM key through paired phone setup after installation; firmware builds no longer read `.env`. Dependencies are restored from the component manifest and lock file. The patched LVGL adapter under `firmware/vendor` is required.
 
 ```sh
 cp .env.example .env
