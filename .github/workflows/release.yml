@@ -1,7 +1,7 @@
-name: Draft Release
+name: Legacy Source Draft
 on:
   push:
-    tags: ['v*']
+    tags: ['source-v*']
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -34,10 +34,10 @@ jobs:
           test "$release_commit" = "$event_commit"
           git checkout --detach "$release_commit"
           git merge-base --is-ancestor HEAD refs/remotes/origin/main
-          python3 scripts/release.py check --tag "$GITHUB_REF_NAME"
+          python3 scripts/release.py check --tag "${GITHUB_REF_NAME#source-}"
       - name: Create source-only draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then exit 0; fi
-          gh release create "$GITHUB_REF_NAME" --target "$GITHUB_SHA" --title "Tempo $GITHUB_REF_NAME" --verify-tag --draft --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md"
+          gh release create "$GITHUB_REF_NAME" --target "$GITHUB_SHA" --title "Tempo $GITHUB_REF_NAME" --verify-tag --draft --prerelease --notes-file "docs/releases/${GITHUB_REF_NAME#source-v}.md"

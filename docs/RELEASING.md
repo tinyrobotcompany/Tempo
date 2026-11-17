@@ -1,57 +1,37 @@
 # Tempo release strategy
 
-## Version and release policy
+## Automatic signed application releases
 
-Use stable semantic versions `MAJOR.MINOR.PATCH`; `firmware/CMakeLists.txt` is the version authority. Tags are `vX.Y.Z`, and the device reports the same firmware version. Tempo is currently in the 0.x development series. Patch = compatible fixes/tooling; minor = compatible features; major = breaking behaviour, settings format or installation requirements. Even before 1.0, document every breaking change and its migration explicitly. Prerelease channels and OTA rollout policy are deferred.
+A firmware-related merge into main starts **Publish OTA Release** (`ota-release.yml`). Required host tests, 80% per-file coverage, firmware build/memory checks and security jobs must pass before signing/publication. PR builds do not access signing secrets or publish firmware.
 
-Adapted from Voxa's change-note-driven versioning, validation gates and GitHub release notes. Tempo deliberately prepares the version in a reviewed commit before tagging: computing a new tag after building firmware would leave the device version inconsistent. Releases are batched deliberately, not automatically published on every merge.
+There is one production channel. Devices normally check every **30 days**; hourly checking is an explicit temporary testing setting. Checking, downloading and scheduled installation are separate operations. Read [OTA operation, credential migration and physical acceptance](OTA.md) before the first bootstrap.
 
-## Change notes on each PR
+## Versions and release notes
 
-Add `.changeset/<unique-description>.md`:
+Each application PR adds `.changeset/<description>.md`, with `"tempo": patch`, `minor` or `major`, and user-visible notes, compatibility and known limitations. The release job computes the next semantic version using the latest published/tagged version and the new notes since that tag. Dependency-only changes default to patch. It builds the reviewed source commit with `TEMPO_RELEASE_VERSION` and refuses an artifact whose ESP application descriptor does not match.
 
-```markdown
----
-"tempo": patch
----
+Tags point to reviewed source commits; generated release metadata does not bypass main's PR rules. `firmware/CMakeLists.txt` is the local-development baseline, while the GitHub release tag, signed manifest and installed image are the authority for published versions. The pipeline records the source SHA in `release.json` and release notes. GitHub Releases are the published changelog; `.changeset` retains the source notes. Never invent historical releases or move a published tag.
 
-Describe the user-visible change and why it matters.
+## Signing and publishing
 
-Compatibility/migration: explain any settings, partition or API changes.
-Known issues: document relevant limitations.
-Validation: state what was actually tested, including hardware when relevant.
-```
+The private signing key is an encrypted GitHub environment secret named `OTA_SIGNING_PRIVATE_KEY`, in the **production-ota** environment restricted to the `main` branch. Its matching public key is committed in `firmware/main/ota_public.pem`. No production PRIM or GitHub credential is supplied to the firmware build. The private key must be backed up securely by the maintainer; losing it can require a USB trust bootstrap. See OTA.md for deliberate key-rotation sequencing.
 
-Use `patch`, `minor` or `major`. Notes become release content verbatim; do not include secrets, private addresses or tokens. Code PRs require a note; Dependabot retains the existing explicit exemption. Documentation-only PRs need a note when the information matters to the release. CI validates all pending note formats.
+The serialised job creates a draft, attaches firmware, a signed manifest, signature, checksums, dependency lock and build/source metadata, then publishes the complete release with notes. Published packages must be immutable; reruns only complete existing drafts or exit if the release is already published. An older source commit cannot allocate a release after a newer tagged commit. Failed validation/signing leaves no installable release.
 
-## Prepare and review a release
+GitHub release assets provide downloads without separate website hosting or a device-side PAT. The public repository is part of this distribution assumption. A fleet service/telemetry is not implemented.
 
-On a release-preparation branch containing the intended changes, run:
+## Initial activation
 
-```sh
-python3 scripts/release.py prepare
-```
+1. Configure the main-only signing environment and matching signing key.
+2. Merge the OTA implementation after review/checks and acceptance planning; its firmware changes trigger the first release automatically.
+3. Verify the GitHub release contains matching notes and all six update/metadata assets.
+4. USB-install an OTA-capable bootstrap with the same public key and rollback-enabled bootloader. Provision PRIM once into device NVS.
+5. Validate one complete update and rollback/power-cut matrix on hardware before sale or claiming production qualification. Restore monthly checks after testing.
 
-The command chooses the highest requested bump, updates CMake, creates `docs/releases/X.Y.Z.md`, prepends the same content to `CHANGELOG.md`, updates the README firmware text/badge, and removes the consumed notes. It rejects missing/invalid notes and existing target release records. It does not commit, tag, publish, flash or call APIs. Inspect the diff before committing; an interrupted operation must be inspected and repaired before retrying. Git remains the recovery/history mechanism.
+No release, merge or device flash is implied by local source changes. Do not distribute older binaries containing a compiled transport key.
 
-Review release notes for real user impact, hardware compatibility, migration steps, known issues and actual validation. Run the full suite and device acceptance tests appropriate to the changes. Submit a PR; release preparation is accepted by the changeset gate only when firmware version, changelog and versioned notes are present and no pending notes remain. Merge only after required checks/review pass. Avoid bundling unrelated implementation changes in a release-preparation PR.
+## Legacy source-only tooling
 
-## Tag and draft
+`scripts/release.py prepare` and `release.yml` remain available for deliberately prepared `source-vX.Y.Z` source-only tags (for example `source-v0.8.16`). Automatic OTA uses `vX.Y.Z`; those tags never trigger the legacy source workflow. They are not the automatic OTA publication path. They require matching checked-in versioned notes and create a draft that a maintainer must explicitly publish. Do not mark a source-only release as the latest production OTA release: it has no signed package for devices. New firmware releases should use the automatic workflow above.
 
-After the preparation commit is merged into main, an authorised maintainer creates an annotated `vX.Y.Z` tag on that exact commit and pushes that tag. Never move a published tag. This is an intentional release action, not performed by the preparation command.
-
-The Draft Release workflow:
-
-1. Runs full host tests, the ESP32-P4 build/memory check, and security scans on the tagged commit.
-2. Requires the commit to belong to main, the tag to equal the firmware version, no pending notes, and matching versioned notes/changelog.
-3. Creates a source-only GitHub **draft** using the checked-in notes, with concurrency protection and an existing-release check for reruns.
-
-A maintainer reviews and publishes the draft explicitly. There are no firmware binaries with embedded transport credentials, no automatic installation, and no OTA claims. Failed checks produce no release draft. Do not bypass failed gates; correct the preparation before publication, or use a new version if already released.
-
-## OTA work to follow
-
-Future work must define signed firmware, credential provisioning, artifact hashes, device compatibility, staged rollout, interruption recovery, rollback and update channels. Release tags, matching firmware versions, notes and validation gates established here will supply the identity/history for that system; they do not implement it.
-
-## Activation and current status
-
-These workflow files must be published/merged to GitHub before they can run. Required checks need repository ruleset activation. `OPENAI_API_KEY` enables PR review; `REPO_ADMIN_TOKEN` is needed only by the ruleset configuration workflow. The tag release uses GitHub's built-in token and does not need the OpenAI or PRIM key. No release was published as part of implementing this strategy.
+If release automation lands before the runtime prerequisite, CI/security still validate the commit and the readiness job reports publication inactive. No signing or publication runs. A later firmware merge reevaluates readiness automatically; the build retains the same prerequisite checks as defense in depth.

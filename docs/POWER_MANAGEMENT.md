@@ -37,11 +37,11 @@ After external power returns, boot loads committed settings, remembered Wi-Fi cr
 
 During a network outage, already fetched data remains in RAM. Weather shows cached status and age; transport lists retain service identity and data age but suppress countdowns/arrival predictions while disconnected or stale. A connected Wi-Fi icon means a LAN address, not proof that providers are reachable; failed fetches retain original timestamps and age out. Cold boot has no persisted forecast/departure cache and displays unavailable/loading data until fetched. Reconnection triggers refresh without user action.
 
-## OTA contract — delivery remains unimplemented
+## OTA contract — signed application delivery
 
-External-only power makes interrupted-update handling mandatory. Future OTA must download into the inactive slot, verify signature, complete image integrity and hardware compatibility before switching the boot target, retain the previous bootable image, trial-boot with local health checks, and roll back a failed trial. Internet/provider availability must not determine whether otherwise healthy firmware is accepted. Never overwrite the active image or mark an incomplete download bootable.
+External-only power makes interrupted-update handling mandatory. The OTA worker downloads into the inactive slot, verify signature, complete image integrity and hardware compatibility before switching the boot target, retain the previous bootable image, trial-boot with local health checks, and roll back a failed trial. Internet/provider availability must not determine whether otherwise healthy firmware is accepted. Never overwrite the active image or mark an incomplete download bootable.
 
-Existing A/B partitions and UI boot-health checks are foundations, not a completed signed OTA system. Settings migration must remain readable after rollback. Release qualification must cut power during download, flash writes, activation, trial boot and settings commits, and prove recovery to a valid old/new image. No battery or shutdown grace period may be assumed. See PRD OTA-01–08 and RELEASING.md.
+Signed manifest verification, inactive-slot writes and UI boot-health checks implement the application OTA path. See [OTA.md](OTA.md). Physical interruption qualification is still required. Settings migration must remain readable after rollback. Release qualification must cut power during download, flash writes, activation, trial boot and settings commits, and prove recovery to a valid old/new image. No battery or shutdown grace period may be assumed. See PRD OTA-01–08 and RELEASING.md.
 
 ## Test a feature branch without merging
 
