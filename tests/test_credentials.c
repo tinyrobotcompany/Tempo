@@ -7,7 +7,10 @@ void nvs_close(nvs_handle_t h){assert(h==1);}
 int nvs_get_str(nvs_handle_t h,const char *key,char *out,size_t *size){(void)h;assert(!strcmp(key,"prim"));if(read_error)return read_error;assert(*size>strlen(stored));strcpy(out,stored);*size=strlen(stored)+1;return 0;}
 int nvs_set_str(nvs_handle_t h,const char *key,const char *value){(void)h;assert(!strcmp(key,"prim"));if(write_error)return write_error;strcpy(pending,value);return 0;}
 int nvs_commit(nvs_handle_t h){(void)h;if(commit_error)return commit_error;strcpy(stored,pending);return 0;}
-int main(void){char key[513];assert(!station_credential_configured());assert(!station_credential_get(NULL,513));assert(!station_credential_get(key,2));assert(!station_credential_get(key,sizeof(key)));
+int main(void){char key[513];
+ /* A key saved before reboot is reported on the first status query, without a transport fetch. */
+ strcpy(stored,"saved-before-boot");assert(station_credential_configured());assert(station_credential_configured());
+ stored[0]=0;assert(!station_credential_get(key,sizeof(key)));assert(!station_credential_configured());assert(!station_credential_get(NULL,513));assert(!station_credential_get(key,2));assert(!station_credential_get(key,sizeof(key)));
  assert(station_credential_set(NULL)!=0);assert(station_credential_set("has space")!=0);assert(station_credential_set("bad\n")!=0);
  char long_key[515];memset(long_key,'a',514);long_key[514]=0;assert(station_credential_set(long_key)!=0);
  assert(station_credential_set("fixture-123")==0);assert(station_credential_configured());assert(station_credential_get(key,sizeof(key))&&!strcmp(key,"fixture-123"));

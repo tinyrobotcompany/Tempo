@@ -16,8 +16,10 @@ static esp_app_desc_t desc={.version="0.9.0",.project_name="weather_station"};
 static esp_partition_t part={.size=0x800000};
 static int open_error,read_error=ESP_ERR_NVS_NOT_FOUND,write_error,commit_error,crypto_error,ota_error,end_error,begin_error,boot_error,http_code=200;
 static bool namespace_missing,queue_fail,task_fail,active_pending,trial_aborted,no_partition,truncated,read_failed,init_failed,connect_failed,has_redirect;
+static const char *redirect_to="https://release-assets.githubusercontent.com/test";
 static unsigned accepted;static int accept_error;static bool cleanup_fails;
-static unsigned writes,begins,activated,boot_calls,aborted,restarted,cleanup_count,loops,stop_loop;
+static unsigned writes,begins,activated,boot_calls,aborted,restarted,cleanup_count,loops,stop_loop,md_frees;
+static int md_setup_error;
 static saved_t persisted,staged;
 static jmp_buf done;
 struct test_queue {command_t item[8];unsigned n;} q;
@@ -57,7 +59,7 @@ int esp_ota_mark_app_valid_cancel_rollback(void){if(accept_error)return accept_e
 void esp_restart(void){restarted++;}
 void esp_crt_bundle_attach(void){}
 void *esp_http_client_init(esp_http_client_config_t *c){assert(c->crt_bundle_attach&&c->disable_auto_redirect);offset=0;client_url=c->url;
- if(has_redirect&&strstr(c->url,"github.com")){esp_http_client_event_t e={.event_id=HTTP_EVENT_ON_HEADER,.header_key="Location",.header_value="https://release-assets.githubusercontent.com/test",.user_data=c->user_data};c->event_handler(&e);}
+ if(has_redirect&&strstr(c->url,"github.com")){esp_http_client_event_t e={.event_id=HTTP_EVENT_ON_HEADER,.header_key="Location",.header_value=redirect_to,.user_data=c->user_data};c->event_handler(&e);}
  if(!strstr(c->url,"release-assets.githubusercontent.com"))response=strstr(c->url,"/latest")?latest_body:strstr(c->url,"manifest.json")?manifest_text:strstr(c->url,"manifest.sig")?"signature":image;
  response_size=response==image?(size_t)(1024+body_delta):strlen(response);return init_failed?NULL:(void *)1;}
 int esp_http_client_open(void *h,int n){(void)h;(void)n;return connect_failed?-1:0;}
@@ -65,11 +67,11 @@ int esp_http_client_set_header(void *h,const char *key,const char *value){(void)
 int64_t esp_http_client_fetch_headers(void *h){(void)h;return declared_size==-2?(int64_t)response_size:declared_size;}
 int esp_http_client_get_status_code(void *h){(void)h;if(has_redirect){has_redirect=false;return 302;}return http_code;}
 void esp_http_client_cleanup(void *h){(void)h;cleanup_count++;}
-int esp_http_client_read(void *h,char *out,int n){(void)h;assert(allowed_url(client_url,!strcmp(client_url,LATEST)));if(read_failed)return -1;size_t take=response_size-offset;if(take>(size_t)n)take=(size_t)n;memcpy(out,response+offset,take);offset+=take;return (int)take;}
+int esp_http_client_read(void *h,char *out,int n){(void)h;assert(allowed_url(client_url,!strcmp(client_url,LATEST),0)||allowed_url(client_url,false,1));if(read_failed)return -1;size_t take=response_size-offset;if(take>(size_t)n)take=(size_t)n;memcpy(out,response+offset,take);offset+=take;return (int)take;}
 bool esp_http_client_is_complete_data_received(void *h){(void)h;return !truncated&&offset==response_size;}
-void mbedtls_md_init(mbedtls_md_context_t *c){(void)c;}void mbedtls_md_free(mbedtls_md_context_t *c){(void)c;}
+void mbedtls_md_init(mbedtls_md_context_t *c){(void)c;}void mbedtls_md_free(mbedtls_md_context_t *c){(void)c;md_frees++;}
 void *mbedtls_md_info_from_type(int t){assert(t==MBEDTLS_MD_SHA256);return (void *)1;}
-int mbedtls_md_setup(mbedtls_md_context_t *c,const void *t,int n){(void)c;(void)t;(void)n;return crypto_error;}
+int mbedtls_md_setup(mbedtls_md_context_t *c,const void *t,int n){(void)c;(void)t;(void)n;return md_setup_error?md_setup_error:crypto_error;}
 int mbedtls_md_starts(mbedtls_md_context_t *c){(void)c;return 0;}
 int mbedtls_md_update(mbedtls_md_context_t *c,const void *p,size_t n){(void)c;(void)p;(void)n;return 0;}
 int mbedtls_md_finish(mbedtls_md_context_t *c,unsigned char *out){(void)c;memset(out,0,32);return 0;}
@@ -99,8 +101,17 @@ int main(void){
  strcpy(saved.blocked,"0.9.1");assert(check_release());saved.blocked[0]=0;strcpy(status.installed,"0.9.1");assert(check_release());strcpy(status.installed,"0.9.0");
  truncated=true;assert(!check_release());truncated=false;read_failed=true;assert(!check_release());read_failed=false;
  init_failed=true;assert(!check_release());init_failed=false;connect_failed=true;assert(!check_release());connect_failed=false;assert(check_release());
- assert(!allowed_url("https://api.github.com.evil/test",true));assert(!allowed_url("https://github.com/other/repo",false));assert(allowed_url("https://objects.githubusercontent.com/asset",false));
+ assert(!allowed_url("https://api.github.com.evil/test",true,0));assert(!allowed_url("https://github.com/other/repo",false,0));
+ assert(allowed_url("https://objects.githubusercontent.com/asset",false,1));assert(!allowed_url("https://objects.githubusercontent.com/asset",false,0));
+ /* Redirect hops: CDN only, never back to github.com, no metadata redirects, no ambiguous characters. */
+ assert(!allowed_url(TEMPO_UPDATE_BASE "v0.9.1/tempo.bin",false,1));assert(!allowed_url(LATEST,true,1));
+ static const char *const bad_hops[]={"http://release-assets.githubusercontent.com/x","//release-assets.githubusercontent.com/x","https://release-assets.githubusercontent.com@evil.example/x",
+   "https://release-assets.githubusercontent.com.evil.example/x","https://release-assets.githubusercontent.com/","https://release-assets.githubusercontent.com/a b","https://release-assets.githubusercontent.com/a\\b","https://evil.example/x"};
+ for(unsigned i=0;i<sizeof(bad_hops)/sizeof(bad_hops[0]);i++)assert(!allowed_url(bad_hops[i],false,1));
  int http;assert(!open_url("http://github.com/evil",&http,NULL));has_redirect=true;assert(!open_url(LATEST,&http,NULL));has_redirect=true;void *h=open_url(TEMPO_UPDATE_BASE "v0.9.1/tempo-manifest.json",&http,NULL);assert(h);esp_http_client_cleanup(h);
+ redirect_to=TEMPO_UPDATE_BASE "v0.9.1/tempo-manifest.json";has_redirect=true;assert(!open_url(TEMPO_UPDATE_BASE "v0.9.1/tempo-manifest.json",&http,NULL));
+ redirect_to="https://evil.example/tempo-manifest.json";has_redirect=true;assert(!open_url(TEMPO_UPDATE_BASE "v0.9.1/tempo-manifest.json",&http,NULL));
+ redirect_to="https://release-assets.githubusercontent.com/test";
  char ver[32];strcpy(ver,candidate.version);candidate.version[0]=0;assert(!install());strcpy(candidate.version,ver);
  active_pending=true;assert(!install());active_pending=false;no_partition=true;assert(!install());no_partition=false;
  /* Reject bad lengths before flash writes. */
@@ -116,6 +127,13 @@ int main(void){
  body_delta=0;declared_size=-2;
  unsigned before=begins;http_code=500;assert(!install()&&begins==before);http_code=200;begin_error=-1;assert(!install());begin_error=0;
  ota_error=-1;assert(!install()&&aborted);ota_error=0;
+ /* Every exit after the size check releases the HTTP client, hash and OTA handle exactly once. */
+ {unsigned c=cleanup_count,f=md_frees,a=aborted;md_setup_error=-1;
+  assert(!install()&&cleanup_count==c+1&&md_frees==f+1&&aborted==a+1&&activated==0);md_setup_error=0;
+  c=cleanup_count;f=md_frees;a=aborted;begin_error=-1;
+  assert(!install()&&cleanup_count==c+1&&md_frees==f+1&&aborted==a&&activated==0);begin_error=0;
+  c=cleanup_count;f=md_frees;a=aborted;ota_error=-1;
+  assert(!install()&&cleanup_count==c+1&&md_frees==f+1&&aborted==a+1&&activated==0);ota_error=0;}
  /* esp_ota_end() validation failure: boot selection is never touched; the running image stays selected. */
  {unsigned calls=boot_calls,abort_count=aborted;end_error=0x1503 /* ESP_ERR_OTA_VALIDATE_FAILED */;
   assert(!install()&&boot_calls==calls&&activated==0&&aborted==abort_count&&!persisted.pending[0]);end_error=0;}
