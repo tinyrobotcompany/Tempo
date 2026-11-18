@@ -7,3 +7,5 @@ button.saving::before,button[aria-busy="true"]::before{content:"";display:inline
 button:active,.button:active{filter:brightness(1.3);transform:translateY(1px)}
 
 #settingsMessage:not(:empty){padding:16px;border:2px solid currentColor;border-radius:12px;background:#193f35;font-weight:700;font-size:1.1rem}#settingsMessage.error{background:#552c28}
+
+.update-card{border:1px solid #42665c;background:#152721}.update-card h3{font-size:1.6rem;color:#9ce8cf}.update-countdown{font-size:1.7rem;font-weight:700;padding:18px;background:#233c34;border-radius:12px}.update-card progress{width:100%;height:16px;accent-color:#8cd8bf}.update-card .error{color:#ffbea8}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

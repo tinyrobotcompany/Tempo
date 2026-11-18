@@ -11,7 +11,7 @@ static unsigned saves, scans, connections, city_request, weather_requests;
 static unsigned update_requests;
 static station_update_status_t update_snapshot={.installed="0.9.0",.interval_hours=720};
 static void updates(station_update_status_t *out){*out=update_snapshot;}
-static bool request_update(const char *action){assert(!strcmp(action,"check")||!strcmp(action,"install")||!strcmp(action,"postpone"));update_requests++;return update_requests<3;}
+static bool request_update(const char *action){assert(!strcmp(action,"check")||!strcmp(action,"install_now")||!strcmp(action,"postpone"));update_requests++;return update_requests<3;}
 
 static station_weather_snapshot_t weather;
 static void weather_status(station_weather_snapshot_t *s){*s=weather;}
@@ -297,13 +297,23 @@ int main(int argc,char **argv){
  status.connected=false;transit.generation=status.location_generation;transit.valid=true;transit.row_count=1;transit.fetched_at=test_now;transit.state=TRANS_READY;
  click("Transport");assert(contains_text(lv_screen_active(),"Offline · saved"));assert(!contains_text(lv_screen_active(),"Arrives "));
  click("Settings");click("Software updates");assert(contains_text(lv_screen_active(),"Installed: 0.9.0"));
- click("Check for updates");assert(update_requests==1);click("Install update");click("Postpone");assert(contains_text(lv_screen_active(),"service busy"));
+ click("Check for updates");assert(update_requests==1);
+ strcpy(update_snapshot.available,"0.9.1");update_snapshot.state=UPDATE_AVAILABLE;for(unsigned i=0;i<10;i++)tick();
+ click("Install now");click("Postpone 24 hours");assert(contains_text(lv_screen_active(),"service busy"));
  for(unsigned i=0;i<20;i++)tick();assert(contains_text(lv_screen_active(),"service busy"));
  for(unsigned i=0;i<40;i++)tick();assert(!contains_text(lv_screen_active(),"service busy"));
  update_snapshot.state=UPDATE_DOWNLOADING;update_snapshot.progress=42;for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Downloading"));
  update_snapshot.state=UPDATE_VERIFYING;for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Verifying"));
  update_snapshot.state=UPDATE_RESTARTING;for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Restarting"));
- update_snapshot.state=UPDATE_IDLE;
+ update_snapshot.state=UPDATE_IDLE;update_snapshot.last_check=1;update_snapshot.up_to_date=true;update_snapshot.available[0]=0;
+ for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"No new updates"));shot("updates-current");
+ update_snapshot.countdown_seconds=45;update_snapshot.state=UPDATE_AVAILABLE;strcpy(update_snapshot.available,"0.9.1");
+ for(unsigned i=0;i<10;i++)tick();assert(contains_text(lv_screen_active(),"Installing in 45 seconds"));shot("updates-countdown");
+ update_snapshot.countdown_seconds=0;update_snapshot.state=UPDATE_PREPARING;for(unsigned i=0;i<10;i++)tick();shot("updates-preparing");
+ assert(station_ui_update_quiet(true)&&backlight==0);assert(station_ui_touch(true));assert(station_ui_touch(false));assert(backlight==0);
+ for(unsigned i=0;i<20;i++)tick();assert(backlight==0);
+ update_snapshot.state=UPDATE_ERROR;assert(station_ui_update_quiet(false)&&backlight==initial.brightness);
+ brightness_failure=true;assert(!station_ui_update_quiet(true));brightness_failure=false;assert(station_ui_update_quiet(false));
  puts("PASS: idle screen-off, first-touch consumption, timed wake, clock-independent policy and offline departures");
  puts("PASS: equal visible date spacing for all ten styles at 00:00, 11:11, 12:34 and 23:59");
  puts("PASS: clock two-service layout, cancellation, updating animation with cached values, and 20-second automatic rotation");

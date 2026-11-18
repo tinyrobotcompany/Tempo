@@ -34,7 +34,7 @@ static void power_clock(void) { uint32_t now=lv_tick_get();power_now_ms+=(uint32
 static unsigned applied_brightness=UINT32_MAX, requested_brightness=UINT32_MAX;
 static bool brightness_failed;
 static uint64_t brightness_retry_ms;
-static bool consume_wake_touch;
+static bool consume_wake_touch, update_quiet;
 static lv_obj_t *night_level_text;
 static lv_obj_t *night_level, *idle_inputs[2], *idle_buttons[2][5], *power_save;
 static uint64_t preview_until_ms;
@@ -962,36 +962,87 @@ static void show_power(lv_event_t *e)
     lv_obj_set_width(settings_status,1170);
     keyboard(idle_inputs[0]);lv_keyboard_set_mode(network_keyboard,LV_KEYBOARD_MODE_NUMBER);
 }
-static lv_obj_t *update_label,*update_version,*update_progress,*update_spinner;
-/* Action feedback stays visible briefly; the 1 s status refresh must not erase it. */
+static lv_obj_t *update_label,*update_version,*update_progress,*update_title,*update_countdown;
+static lv_obj_t *update_check,*update_install,*update_postpone;
+static lv_obj_t *update_notice,*notice_title,*notice_detail,*notice_install,*notice_postpone;
 static const char *update_feedback;static uint64_t update_feedback_until;
-static void render_updates(void)
+static bool update_busy(station_update_state_t state)
 {
- if(!actions.update_status)return;
- station_update_status_t u;actions.update_status(&u);update_snapshot=u;
- if(view==VIEW_SETTINGS&&page==PAGE_UPDATES){
-  lv_label_set_text_fmt(update_version,"Installed: %s   Available: %s",u.installed,u.available[0]?u.available:"—");
-  lv_label_set_text_fmt(update_label,"%s\nChecks: %s · Automatic installation: %s\nTransport credential: %s",update_feedback&&elapsed_ms<update_feedback_until?update_feedback:u.message,u.interval_hours==1?"hourly (testing)":"every 30 days",u.automatic?"on":"off",u.credential_configured?"configured":"set up on your phone");
-  lv_bar_set_value(update_progress,(int)u.progress,LV_ANIM_OFF);
-  if(u.state==UPDATE_CHECKING||u.state==UPDATE_DOWNLOADING||u.state==UPDATE_VERIFYING)lv_obj_remove_flag(update_spinner,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(update_spinner,LV_OBJ_FLAG_HIDDEN);
+ return state==UPDATE_CHECKING||state==UPDATE_PREPARING||state==UPDATE_DOWNLOADING||state==UPDATE_VERIFYING||state==UPDATE_RESTARTING;
+}
+static const char *update_heading(const station_update_status_t *u)
+{
+ switch(u->state){
+ case UPDATE_CHECKING:return "Checking for updates…";
+ case UPDATE_PREPARING:return "Preparing to install";
+ case UPDATE_DOWNLOADING:return "Downloading update";
+ case UPDATE_VERIFYING:return "Verifying update";
+ case UPDATE_RESTARTING:return "Restarting Tempo";
+ case UPDATE_ERROR:return "Update needs attention";
+ case UPDATE_AVAILABLE:return u->countdown_seconds?"Your update is ready to install":"A new update is available";
+ default:return u->up_to_date?"No new updates — Tempo is up to date":"Ready to check for updates";
  }
 }
 static void update_action(lv_event_t *e)
 {
  const char *action=lv_event_get_user_data(e);
  bool ok=actions.update_request&&actions.update_request(action);
- update_feedback=ok?"Request queued…":"Update service busy. Please retry.";update_feedback_until=elapsed_ms+5000;
- lv_label_set_text(update_label,update_feedback);
+ update_feedback=ok?"Request sent…":"Update service busy. Please retry.";update_feedback_until=elapsed_ms+(ok?2000:5000);
+ if(view==VIEW_SETTINGS&&page==PAGE_UPDATES)lv_label_set_text(update_label,update_feedback);
+}
+static void enable_update_button(lv_obj_t *button,bool enabled)
+{
+ if(enabled)lv_obj_remove_state(button,LV_STATE_DISABLED);else lv_obj_add_state(button,LV_STATE_DISABLED);
+}
+static void render_updates(void)
+{
+ if(!actions.update_status)return;
+ station_update_status_t u;actions.update_status(&u);update_snapshot=u;
+ bool busy=update_busy(u.state),installable=u.available[0]&&!busy;
+ char text[256];
+ if(view==VIEW_SETTINGS&&page==PAGE_UPDATES){
+  set_label_if_changed(update_title,update_heading(&u));
+  set_text_color_if_changed(update_title,u.state==UPDATE_ERROR?0xffb598:ACCENT);
+  snprintf(text,sizeof(text),u.available[0]?"Installed: %s     Update available: %s":"Installed: %s",u.installed,u.available);
+  set_label_if_changed(update_version,text);
+  snprintf(text,sizeof(text),"%s\nChecks: %s · Automatic installation: %s",update_feedback&&elapsed_ms<update_feedback_until?update_feedback:u.message,u.interval_hours==1?"hourly (testing)":"every 30 days",u.automatic?"on":"off");
+  set_label_if_changed(update_label,text);
+  if(u.countdown_seconds)snprintf(text,sizeof(text),"Installing in %u seconds",u.countdown_seconds);
+  else if(u.state==UPDATE_DOWNLOADING)snprintf(text,sizeof(text),"%u%% downloaded · Keep Tempo powered on",u.progress);
+  else snprintf(text,sizeof(text),"%s",u.state==UPDATE_PREPARING?"The screen will rest during installation. Follow progress on your phone.":"");
+  set_label_if_changed(update_countdown,text);
+  if(u.countdown_seconds||u.state==UPDATE_DOWNLOADING){lv_obj_remove_flag(update_progress,LV_OBJ_FLAG_HIDDEN);lv_bar_set_value(update_progress,u.countdown_seconds?(int)(100-u.countdown_seconds*100/60):(int)u.progress,LV_ANIM_OFF);}
+  else lv_obj_add_flag(update_progress,LV_OBJ_FLAG_HIDDEN);
+  enable_update_button(update_check,!busy&&!u.countdown_seconds);
+  enable_update_button(update_install,installable);
+  enable_update_button(update_postpone,installable);
+ }
+ /* A countdown is visible over every view, not hidden in a small clock header. */
+ if(update_notice){
+  bool preparing=u.state==UPDATE_PREPARING;
+  if(preparing||(u.countdown_seconds&&!(view==VIEW_SETTINGS&&page==PAGE_UPDATES))){
+   snprintf(text,sizeof(text),preparing?"Preparing your update":"Installing in %u seconds",u.countdown_seconds);
+   set_label_if_changed(notice_title,text);
+   set_label_if_changed(notice_detail,preparing?"The screen will rest during installation.\nKeep Tempo powered on. Progress is on your phone.":"Tempo will restart after installing.\nInstall now, or postpone for 24 hours.");
+   enable_update_button(notice_install,!preparing);enable_update_button(notice_postpone,!preparing);
+   if(lv_obj_has_flag(update_notice,LV_OBJ_FLAG_HIDDEN)){lv_obj_remove_flag(update_notice,LV_OBJ_FLAG_HIDDEN);lv_obj_move_foreground(update_notice);}
+  }else lv_obj_add_flag(update_notice,LV_OBJ_FLAG_HIDDEN);
+ }
 }
 static void show_updates(lv_event_t *e)
 {
- (void)e;page_header("Software updates",PAGE_UPDATES);
- update_version=label(content,"",60,120,&station_text_24);
- update_label=label(content,"Loading update status…",60,190,&station_text_24);lv_obj_set_size(update_label,1080,180);
- update_progress=lv_bar_create(content);lv_obj_set_pos(update_progress,60,390);lv_obj_set_size(update_progress,1000,22);
- update_spinner=lv_spinner_create(content);lv_obj_set_pos(update_spinner,1100,380);lv_obj_set_size(update_spinner,50,50);lv_spinner_set_anim_params(update_spinner,1000,200);
- button(content,"Check for updates",60,470,330,update_action,"check");button(content,"Install update",420,470,300,update_action,"install");button(content,"Postpone",750,470,280,update_action,"postpone");
- label(content,"Release notes, schedule and transport key: open iPhone setup.",60,565,&station_text_18);
+ (void)e;page_header("Software updates",PAGE_UPDATES);update_feedback=NULL;
+ box(content,32,95,1216,420,CARD);
+ update_title=label(content,"",60,120,&station_text_32);lv_obj_set_width(update_title,1130);
+ update_version=label(content,"",60,180,&station_text_24);
+ update_label=label(content,"",60,235,&station_text_24);lv_obj_set_size(update_label,1120,110);
+ update_countdown=label(content,"",60,350,&station_text_32);lv_obj_set_width(update_countdown,1120);
+ update_progress=lv_bar_create(content);lv_obj_set_pos(update_progress,60,410);lv_obj_set_size(update_progress,1120,14);
+ lv_obj_set_style_bg_color(update_progress,lv_color_hex(ACCENT),LV_PART_INDICATOR);
+ update_check=button(content,"Check for updates",60,445,330,update_action,"check");
+ update_install=button(content,"Install now",420,445,300,update_action,"install_now");
+ update_postpone=button(content,"Postpone 24 hours",750,445,430,update_action,"postpone");
+ label(content,"Status syncs with your phone automatically. Keep Tempo powered during updates.",60,560,&station_text_18);
  render_updates();
 }
 static void settings_view(void)
@@ -1210,6 +1261,8 @@ static void show_view(station_view_t next)
 }
 static unsigned power_target(void)
 {
+    if(update_quiet)return 0;
+    if(update_snapshot.countdown_seconds||update_snapshot.state==UPDATE_PREPARING)return settings.brightness;
     if(power_now_ms<preview_until_ms)return preview_level;
     return station_power_brightness(&settings,power_now_ms,last_activity_ms);
 }
@@ -1235,8 +1288,17 @@ static void update_power(void)
             lv_label_set_text(settings_status,"Backlight change failed. Retrying…");
     }
 }
+bool station_ui_update_quiet(bool quiet)
+{
+    update_quiet=quiet;
+    if(!quiet){last_activity_ms=power_now_ms;preview_until_ms=0;show_view(VIEW_SETTINGS);show_updates(NULL);}
+    brightness_retry_ms=0;update_power();
+    return !brightness_failed&&applied_brightness==(quiet?0:settings.brightness);
+}
 bool station_ui_touch(bool pressed)
 {
+    if(update_quiet){consume_wake_touch=true;return true;}
+
     power_clock();
     if(pressed) {
         /* Check current policy before extending wake: the idle deadline can pass between ticks.
@@ -1294,7 +1356,7 @@ static void tick(lv_timer_t *timer)
 void station_ui_start(const station_settings_t *initial,station_ui_actions_t handlers)
 {
     station_text_fonts_init();
-    settings=*initial; actions=handlers;power_tick=lv_tick_get();power_now_ms=0;elapsed_ms=0;last_activity_ms=0;preview_until_ms=0;applied_brightness=requested_brightness=UINT32_MAX;brightness_failed=false;brightness_retry_ms=0;consume_wake_touch=false;
+    settings=*initial; actions=handlers;power_tick=lv_tick_get();power_now_ms=0;elapsed_ms=0;last_activity_ms=0;preview_until_ms=0;update_quiet=false;applied_brightness=requested_brightness=UINT32_MAX;brightness_failed=false;brightness_retry_ms=0;consume_wake_touch=false;
     lv_obj_t *screen=lv_screen_active(); lv_obj_remove_style_all(screen);
     lv_obj_set_style_bg_color(screen,lv_color_hex(BG),0); lv_obj_set_style_bg_opa(screen,LV_OPA_COVER,0);
     lv_obj_remove_flag(screen,LV_OBJ_FLAG_SCROLLABLE);
@@ -1306,6 +1368,15 @@ void station_ui_start(const station_settings_t *initial,station_ui_actions_t han
     lv_obj_set_width(welcome,580);lv_label_set_long_mode(welcome,LV_LABEL_LONG_DOT);
     const char *names[]={"Clock","Weather","Transport","Settings"};
     for(unsigned i=0;i<4;i++) nav[i]=button(screen,names[i],32+i*312,726,280,navigate_tab,(void *)(uintptr_t)i);
+    update_notice=box(screen,0,0,1280,800,0x080c12);
+    lv_obj_set_style_bg_opa(update_notice,LV_OPA_80,0);
+    lv_obj_t *notice_card=box(update_notice,220,210,840,350,0x17252b);
+    lv_obj_set_style_border_color(notice_card,lv_color_hex(ACCENT),0);lv_obj_set_style_border_width(notice_card,2,0);
+    notice_title=label(notice_card,"",35,35,&station_text_32);
+    notice_detail=label(notice_card,"",35,105,&station_text_24);lv_obj_set_width(notice_detail,770);
+    notice_install=button(notice_card,"Install now",35,240,340,update_action,"install_now");
+    notice_postpone=button(notice_card,"Postpone 24 hours",415,240,385,update_action,"postpone");
+    lv_obj_add_flag(update_notice,LV_OBJ_FLAG_HIDDEN);
     show_view(VIEW_CLOCK);
     /* show_view refreshes clock trust; apply policy before releasing the display lock. */
     update_power();
