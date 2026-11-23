@@ -1,25 +1,19 @@
-# Secure phone access implementation
+# Secure phone access delivery checklist
 
-Branch: feature/secure-phone-access, based on main 8d0c800.
+- [x] HTTPS-only phone server and physical pairing revocation.
+- [x] Device-generated identity/TLS keys; public-only manufacturing export.
+- [x] Signed CSR enrollment, renewal and address-update client.
+- [x] Independent certificate verification and atomic certificate replacement.
+- [x] Production Secure Boot/flash-encryption prerequisite checks.
+- [x] Remove laptop private-key/certificate import tooling.
+- [x] Companion Azure service, manufacturing admission and DNS-01 automation source.
+- [ ] Complete full regression suite and per-file coverage after integration.
+- [ ] Select Azure deployment subscription and approve deployment parameters.
+- [ ] Provision scoped DNS credentials directly to cloud Key Vault.
+- [ ] Bootstrap ACME service account in Azure after subscriber agreement approval.
+- [ ] Configure production enrollment endpoint in signed firmware.
+- [ ] Review and execute board-specific manufacturing/security migration.
+- [ ] Real-device/browser/router issuance, renewal, DHCP and outage acceptance.
 
-- [x] HTTPS-only control server; no HTTP fallback when identity is missing or invalid.
-- [x] Unique device identity provisioning, without modifying settings or OTA slots.
-- [x] Hostname, certificate/key matching and credential provisioning validation.
-- [x] Local certificate-authority test procedure; public-certificate import procedure.
-- [x] Revocable pairing without breaking ordinary refresh/restart reconnection.
-- [x] Negative-path tests, full coverage gates and ESP32-P4 build.
-- [x] Domain/DNS and certificate renewal deployment instructions.
-- [ ] Live certificate trust and browser checks on the physical device.
-
-The user owns tinyrobotcompany.io; tempo.tinyrobotcompany.io is the proposed
-namespace. DNS-provider access, public issuance and production backend deployment
-are not yet configured. Never share one private key among devices,
-commit private material, bypass certificate validation, or enable irreversible eFuse
-settings as part of this prototype change.
-
-Production follow-up (not implemented by the HTTPS prototype):
-
-- [ ] Device-generated private keys and authenticated CSR enrollment.
-- [ ] Automated DNS updates and certificate renewal service.
-- [ ] Per-phone credentials, expiring invitations and renewable short sessions.
-- [ ] Production Secure Boot/NVS encryption and controlled recovery validation.
+No shipping or merge claim should be inferred while live prerequisites remain.
+Per-phone expiring sessions are separate from device certificate enrollment.

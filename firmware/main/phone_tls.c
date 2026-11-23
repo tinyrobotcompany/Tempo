@@ -5,6 +5,11 @@
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/version.h"
 #include "esp_random.h"
+#include "sdkconfig.h"
+#if CONFIG_TEMPO_PRODUCTION_IDENTITY
+#include "esp_flash_encrypt.h"
+#include "esp_secure_boot.h"
+#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -65,6 +70,9 @@ static bool matches_identity(void)
 }
 esp_err_t station_phone_tls_start(httpd_handle_t *server,const httpd_config_t *config)
 {
+#if CONFIG_TEMPO_PRODUCTION_IDENTITY
+    if(!esp_flash_encryption_enabled()||!esp_secure_boot_enabled())return ESP_ERR_INVALID_STATE;
+#endif
     clear_identity();
     esp_err_t err=nvs_flash_init_partition("phone_tls");if(err!=ESP_OK)return err;
     nvs_handle_t h;err=nvs_open_from_partition("phone_tls","identity",NVS_READONLY,&h);if(err!=ESP_OK)return err;

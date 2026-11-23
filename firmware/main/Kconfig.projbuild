@@ -1,1 +1,18 @@
 # Phone positioning uses a locally distributed Apple Shortcut. No hosted URL is required.
+menu "Tempo device enrollment"
+config TEMPO_ENROLLMENT_URL
+    string "Production enrollment HTTPS endpoint"
+    default ""
+    help
+        Azure certificate API URL ending in /v1/device. Empty disables enrollment;
+        release manufacturing must set the deployed endpoint, never a laptop URL.
+config TEMPO_DEVICE_SUFFIX
+    string "Per-device DNS namespace"
+    default "tempo.tinyrobotcompany.io"
+config TEMPO_PRODUCTION_IDENTITY
+    bool "Require hardware protection before generating device identity"
+    default y
+    help
+        Fail closed unless Secure Boot and flash encryption are active. Factory
+        eFuse provisioning is a separate controlled process. Never disable for shipping.
+endmenu

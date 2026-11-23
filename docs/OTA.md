@@ -30,7 +30,7 @@ python3 scripts/provision-transport-key.py --env /absolute/path/to/private/.env
 
 The script prompts for the current QR URL without echo, requires HTTPS with certificate verification, rejects redirects and never prints the key or pairing token. The phone endpoint requires the current paired bearer token, accepts bounded JSON, commits before confirming, never returns the key, and clears the input after a successful save. Empty key via the provisioning API removes it. A successful save means persistence, not provider acceptance; the transport refresh tests provider access and shows missing/denied status.
 
-**Security boundary:** phone control now requires a unique provisioned HTTPS identity and trusted certificate. See [HTTPS migration and limitations](SECURE_PHONE_ACCESS.md). NVS is not claimed encrypted or physically extraction-resistant. A sales credential model (customer-owned PRIM account or a credential-holding backend) is required before shipping; never preinstall a shared company key across customers. No old flashed binary should be distributed: it may still contain the formerly compiled credential.
+**Security boundary:** phone control now requires a device-generated HTTPS identity and trusted certificate. See [HTTPS migration and limitations](SECURE_PHONE_ACCESS.md). Production HTTPS requires Secure Boot and flash encryption; the manufacturing migration must verify their physical state. A sales credential model (customer-owned PRIM account or a credential-holding backend) is required before shipping; never preinstall a shared company key across customers. No old flashed binary should be distributed: it may still contain the formerly compiled credential.
 
 ## Automated releases
 
