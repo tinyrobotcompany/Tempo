@@ -12,6 +12,8 @@ from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
 from tempo_certificates.issuer import verify_chain
 from tempo_certificates.protocol import Rejected
 from tempo_certificates.store import TableStore
+from tempo_certificates.runtime import CloudIssuer
+from tempo_certificates.worker import Worker
 from test_service import NOW, SUFFIX, csr, setup, signed
 
 
@@ -99,3 +101,16 @@ def test_distinct_dns_lane_remains_available_during_ca_backoff(setup):
     assert reply.status == 202 and accepted[0]["RowKey"] == "dns"
     assert accepted[0]["desired_address"] == "192.168.1.34"
     assert certificate_row["next_attempt"] == NOW + 10000
+
+
+def test_dns_worker_does_not_contact_ca_or_require_acme_secrets(setup):
+    _, store, _ = setup
+    store.row.update(RowKey="dns", operation="address", desired_address="192.168.1.34",
+                     state="pending", next_attempt=NOW, job_id="job", attempts=0)
+    vault, dns = Mock(), Mock()
+    vault.get_secret.side_effect = RuntimeError("CA unavailable")
+    issuer = CloudIssuer(vault, "production", dns)
+    Worker(store, issuer, dns, lambda: NOW).process(store.get(store.row["PartitionKey"]))
+    assert store.row["state"] == "ready" and store.row["address"] == "192.168.1.34"
+    vault.get_secret.assert_not_called()
+    dns.set_address.assert_called_once()
