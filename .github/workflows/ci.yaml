@@ -35,7 +35,7 @@ jobs:
         with:
           node-version: 22
       - name: Install host validation tools
-        run: brew install cmake actionlint
+        run: brew install cmake actionlint python@3.14
       - name: Validate release change notes
         run: python3 scripts/release.py check
       - name: Run complete test suite
