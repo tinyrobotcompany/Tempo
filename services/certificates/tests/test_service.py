@@ -240,7 +240,11 @@ def test_dns_only_changes_exact_device_record(setup):
 
     def call(method, **kwargs):
         calls.append((method, kwargs))
-        return {"items": records, "total": len(records)} if method == "GET" else None
+        if method == "PUT":
+            records.extend(kwargs["json"]["items"])
+        if method == "DELETE":
+            records[:] = [r for r in records if not any(all(r.get(k) == v for k, v in old.items()) for old in kwargs["json"])]
+        return {"items": list(records), "total": len(records)} if method == "GET" else None
 
     adapter.call = call
     adapter.set_address(store.row["hostname"], "192.168.1.34")
@@ -248,3 +252,30 @@ def test_dns_only_changes_exact_device_record(setup):
     assert calls[2][1]["json"] == [{"name": label, "type": "A", "address": "192.168.1.33"}]
     with pytest.raises(ValueError, match="outside device namespace"):
         adapter.set_address("www.tinyrobotcompany.io", "192.168.1.34")
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_dns_existing_address_does_not_add_duplicate(setup, stale):
+    _, store, _ = setup
+    adapter = Spaceship("tinyrobotcompany.io", SUFFIX, "test", "test")
+    label = adapter.label(store.row["hostname"])
+    desired = {"name": label, "type": "A", "address": "192.168.1.34"}
+    old = {"name": label, "type": "A", "address": "192.168.1.33"}
+    snapshots = iter([[desired, old] if stale else [desired], [desired]])
+    adapter.records = lambda _: next(snapshots)
+    calls = []
+    adapter.call = lambda method, **kwargs: calls.append((method, kwargs))
+    adapter.set_address(store.row["hostname"], desired["address"])
+    assert [method for method, _ in calls] == (["DELETE"] if stale else [])
+
+
+@pytest.mark.parametrize("addresses", [[], ["192.168.1.33"], ["192.168.1.34", "192.168.1.34"],
+                                      ["192.168.1.34", "192.168.1.33"]])
+def test_dns_does_not_report_success_before_convergence(setup, addresses):
+    _, store, _ = setup
+    adapter = Spaceship("tinyrobotcompany.io", SUFFIX, "test", "test")
+    snapshots = iter([[], [{"type": "A", "address": address} for address in addresses]])
+    adapter.records = lambda _: next(snapshots)
+    adapter.call = lambda *args, **kwargs: None
+    with pytest.raises(RuntimeError, match="dns_address_not_converged"):
+        adapter.set_address(store.row["hostname"], "192.168.1.34")

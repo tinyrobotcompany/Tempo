@@ -31,6 +31,9 @@ def test_registry_is_separate_and_never_writable_by_device_requests():
     assert store.accept(row, "a" * 64, NOW + 600)
     operations = state.submit_transaction.call_args.args[0]
     assert operations[0][0] == "create" and operations[1][0] == "create"
+    state.submit_transaction.assert_called_once()
+    assert operations[0][1]["PartitionKey"] == operations[1][1]["PartitionKey"] == "id"
+    assert operations[0][1]["RowKey"] != operations[1][1]["RowKey"]
     assert "public_key" not in operations[1][1] and "enabled" not in operations[1][1]
     registry.create_entity.assert_not_called()
     registry.update_entity.assert_not_called()

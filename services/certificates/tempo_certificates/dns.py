@@ -60,12 +60,17 @@ class Spaceship:
             raise RuntimeError("dns_record_conflict")
         # Add before deleting so a failed provider call retains the old endpoint.
         # Firmware suppresses the QR during the brief mixed-address transition.
-        self.call("PUT", json={"force": False, "items": [
-            {"type": "A", "name": label, "address": address, "ttl": 60}]})
+        if not any(r["type"] == "A" and r["address"] == address for r in records):
+            self.call("PUT", json={"force": False, "items": [
+                {"type": "A", "name": label, "address": address, "ttl": 60}]})
         old = [{"type": "A", "name": label, "address": r["address"]}
                for r in records if r["type"] == "A" and r["address"] != address]
         if old:
             self.call("DELETE", json=old)
+        current = self.records(label)
+        if (any(r["type"] not in ("A", "TXT") for r in current) or
+                [r["address"] for r in current if r["type"] == "A"] != [address]):
+            raise RuntimeError("dns_address_not_converged")
 
     def put_challenge(self, name, value):
         label = "_acme-challenge." + self.label(name)

@@ -33,6 +33,9 @@ class TableStore:
                      "match_condition": MatchConditions.IfNotModified}) if row["etag"] else ("create", self.entity(row)))
         operations = [("create", {"PartitionKey": row["PartitionKey"], "RowKey": "nonce-" + nonce, "expires": expires}), mutation]
         try:
+            # One entity-group change set, one table and PartitionKey: Azure commits
+            # BOTH writes or NEITHER. A failed ETag cannot consume the nonce.
+            # https://learn.microsoft.com/rest/api/storageservices/performing-entity-group-transactions
             self.table.submit_transaction(operations)
             return True
         except TableTransactionError as error:
