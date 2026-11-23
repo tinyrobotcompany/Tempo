@@ -54,12 +54,15 @@ static bool matches_identity(void)
 #endif
     }
     if(result==0){
-        uint32_t flags=0;
-        /* The provisioner verifies the issuer chain. Here pin the provisioned leaf,
-           check the name/key, and let the browser enforce validity dates even before SNTP. */
-        result=mbedtls_x509_crt_verify(&cert,&cert,NULL,hostname,&flags,NULL,NULL);
-        if(result==MBEDTLS_ERR_X509_CERT_VERIFY_FAILED &&
-           !(flags & ~(MBEDTLS_X509_BADCERT_EXPIRED|MBEDTLS_X509_BADCERT_FUTURE)))result=0;
+        /* Issuer trust is checked before installation. At startup require the
+           exact DNS SAN and key pair; a normal CA-issued leaf is not its own CA.
+           Validity dates are enforced by the browser, including before SNTP. */
+        const mbedtls_x509_sequence *san=&cert.subject_alt_names;
+        result=-1;
+        for(;san;san=san->next){
+            if(san->buf.tag==0x82 && san->buf.len==strlen(hostname) &&
+               !memcmp(san->buf.p,hostname,san->buf.len)){result=0;break;}
+        }
     }
     mbedtls_pk_free(&key);mbedtls_x509_crt_free(&cert);return result==0;
 }

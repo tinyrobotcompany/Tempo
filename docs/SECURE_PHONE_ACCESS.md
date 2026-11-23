@@ -171,3 +171,11 @@ checks, inactive-slot writing and trial rollback remain in place after migration
    recovery path. Confirm no automatic erasure of settings or downgrade to HTTP.
 
 Host tests and a passing ESP build do not establish these physical/browser results.
+
+The SDK-backed regression `scripts/test-phone-tls-real.sh` builds the pinned SDK
+Mbed TLS implementation on the host and calls the actual TLS startup function
+with a non-self-signed CA-issued leaf. It rejects a wrong SAN, wrong key and
+malformed certificate. Only ESP storage/server calls are substituted. Its
+ephemeral test CA is never a device provisioning path. CI runs this alongside
+the ESP32-P4 build. Startup checks the exact DNS SAN and key pair; issuer trust
+is validated before installation, and browsers enforce dates before SNTP.

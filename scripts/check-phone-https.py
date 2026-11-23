@@ -17,12 +17,14 @@ def check(hostname, address, ca=None, port=443):
     context.minimum_version=ssl.TLSVersion.TLSv1_2
     with socket.create_connection((address,port),timeout=10) as raw:
         with context.wrap_socket(raw,server_hostname=hostname) as tls:
+            version=tls.version()
+            if not version:raise ValueError("TLS version unavailable")
             tls.sendall(('GET /api/status HTTP/1.1\r\nHost: '+hostname+'\r\nConnection: close\r\n\r\n').encode('ascii'))
             response=http.client.HTTPResponse(tls)
             response.begin()
             if response.status!=401:
                 raise ValueError('Expected unauthenticated status to be rejected with 401.')
-            return tls.version()
+            return version
 
 
 def main():

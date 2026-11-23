@@ -1,8 +1,8 @@
 #include "../firmware/main/phone_tls.c"
 #include <assert.h>
 #include <stdio.h>
-static int init_error,open_error,read_error,parse_error,key_error,pair_error,verify_error,start_error;
-static unsigned starts,stops;static uint32_t verify_flags;
+static int init_error,open_error,read_error,parse_error,key_error,pair_error,start_error;
+static unsigned starts,stops;static bool wrong_san;
 static const char *name="device-a7f3.tempo.tinyrobotcompany.io";
 static size_t fake_size;
 int nvs_flash_init_partition(const char *p){assert(!strcmp(p,"phone_tls"));return init_error;}
@@ -11,10 +11,9 @@ void nvs_close(nvs_handle_t h){assert(h==1);}
 int nvs_get_str(nvs_handle_t h,const char *key,char *out,size_t *n){assert(h==1);if(read_error)return read_error;const char *value=!strcmp(key,"hostname")?name:!strcmp(key,"cert")?"certificate":"private key";size_t length=strlen(value)+1;if(!out){*n=fake_size?fake_size:length;return 0;}if(*n<length)return ESP_FAIL;memcpy(out,value,length);*n=length;return 0;}
 void mbedtls_pk_init(mbedtls_pk_context *p){(void)p;}void mbedtls_pk_free(mbedtls_pk_context *p){(void)p;}
 void mbedtls_x509_crt_init(mbedtls_x509_crt *p){(void)p;}void mbedtls_x509_crt_free(mbedtls_x509_crt *p){(void)p;}
-int mbedtls_x509_crt_parse(mbedtls_x509_crt *p,const unsigned char *s,size_t n){(void)p;assert(n==strlen((const char*)s)+1);return parse_error;}
+int mbedtls_x509_crt_parse(mbedtls_x509_crt *p,const unsigned char *s,size_t n){p->subject_alt_names=(mbedtls_x509_sequence){.buf={.tag=0x82,.len=strlen(name),.p=(unsigned char *)name}};if(wrong_san)p->subject_alt_names.buf.tag=0x81;assert(n==strlen((const char*)s)+1);return parse_error;}
 int mbedtls_pk_parse_key(mbedtls_pk_context *p,const unsigned char *s,size_t n,const unsigned char *pwd,size_t len){(void)p;assert(n==strlen((const char*)s)+1&&!pwd&&!len);return key_error;}
 int mbedtls_pk_check_pair(const mbedtls_pk_context *a,const mbedtls_pk_context *b){(void)a;(void)b;return pair_error;}
-int mbedtls_x509_crt_verify(mbedtls_x509_crt *c,mbedtls_x509_crt *ca,void *crl,const char *host,uint32_t *flags,void *cb,void *ctx){assert(c==ca&&!crl&&!strcmp(host,name)&&!cb&&!ctx);*flags=verify_flags;return verify_error;}
 int httpd_ssl_start(httpd_handle_t *server,const httpd_ssl_config_t *cfg){starts++;assert(cfg->transport_mode==HTTPD_SSL_TRANSPORT_SECURE&&cfg->port_secure==443);assert(cfg->servercert_len==strlen((const char*)cfg->servercert)+1&&cfg->prvtkey_len==strlen((const char*)cfg->prvtkey_pem)+1);*server=(void*)1;return start_error;}
 int httpd_ssl_stop(httpd_handle_t server){assert(server==(void*)1);stops++;return 0;}
 int main(void){httpd_handle_t server=NULL;httpd_config_t config=HTTPD_DEFAULT_CONFIG();
@@ -28,8 +27,7 @@ int main(void){httpd_handle_t server=NULL;httpd_config_t config=HTTPD_DEFAULT_CO
  parse_error=-1;assert(station_phone_tls_start(&server,&config)!=0);parse_error=0;
  key_error=-1;assert(station_phone_tls_start(&server,&config)!=0);key_error=0;
  pair_error=-1;assert(station_phone_tls_start(&server,&config)!=0);pair_error=0;
- verify_error=MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;verify_flags=4;assert(station_phone_tls_start(&server,&config)!=0);assert(!starts);
- verify_flags=MBEDTLS_X509_BADCERT_FUTURE;assert(station_phone_tls_start(&server,&config)==0);station_phone_tls_stop(server);
- verify_error=0;verify_flags=0;start_error=-1;assert(station_phone_tls_start(&server,&config)!=0&&!station_phone_tls_hostname()[0]);start_error=0;
- assert(station_phone_tls_start(&server,&config)==0&&!strcmp(station_phone_tls_hostname(),name));station_phone_tls_stop(server);assert(stops==2&&!private_key&&!certificate);
+ wrong_san=true;assert(station_phone_tls_start(&server,&config)!=0);assert(!starts);wrong_san=false;
+ start_error=-1;assert(station_phone_tls_start(&server,&config)!=0&&!station_phone_tls_hostname()[0]);start_error=0;
+ assert(station_phone_tls_start(&server,&config)==0&&!strcmp(station_phone_tls_hostname(),name));station_phone_tls_stop(server);assert(stops==1&&!private_key&&!certificate);
  puts("PASS: HTTPS identity failures fail closed; keys match, hostname checked, TLS-only startup");}

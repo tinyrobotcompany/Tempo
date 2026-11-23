@@ -78,6 +78,7 @@ jobs:
         run: |
           test ! -f .env
           source .artifacts/esp-idf/export.sh
+          bash scripts/test-phone-tls-real.sh
           TEMPO_CI_BUILD=1 idf.py -C firmware build
           python3 scripts/check-transport-memory.py
   changeset:
