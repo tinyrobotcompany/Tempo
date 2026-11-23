@@ -10,7 +10,7 @@ function create({token,fetch:send=root.fetch.bind(root),setTimer=setTimeout,clea
   if(body&&phase!=='connected')throw new Error('Waiting for the display. Your changes are still here; save when it reconnects.');
   const controller=new AbortController(),deadline=setTimer(()=>controller.abort(),6000);
   try{
-   const response=await send('/api/'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store',signal:controller.signal});
+   const response=await send('/api/'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store',redirect:'error',signal:controller.signal});
    if(!response.ok){const e=new Error(response.status===401?'Pairing expired. Scan the current QR code on the display.':response.status===409?'This location request expired or was replaced. Tap Use my iPhone location to start a new request.':response.status===503?'The display is busy. Please retry.':'The display could not accept this change.');e.status=response.status;throw e;}
    const result=await response.json();
    // Only a validated status response establishes that controls can be used.

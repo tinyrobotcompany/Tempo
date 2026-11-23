@@ -111,7 +111,7 @@ void app_main(void)
     lv_display_add_event_cb(lv_display_get_default(),frame_submitted,LV_EVENT_FLUSH_FINISH,NULL);
     station_ui_start(&settings, (station_ui_actions_t){
         .update_status=station_update_status,.update_request=station_update_request,
-        .phone_link=station_phone_link, .phone_take=station_phone_take, .phone_publish=station_phone_publish,
+        .phone_forget=station_phone_forget, .phone_link=station_phone_link, .phone_take=station_phone_take, .phone_publish=station_phone_publish,
         .transport_search=station_transport_search,.transport_search_status=station_transport_search_status,.transport_search_select=station_transport_search_select,
         .transport_line_map=station_transport_line_map,.transport_line_map_status=station_transport_line_map_status,.transport_line_stop_select=station_transport_line_stop_select,.transport_nearby_reset=station_transport_nearby_reset,
         .map_tile_acquire=station_map_tile_acquire,.map_tile_release=station_map_tile_release,.map_cancel_pending=station_map_cancel_pending,
@@ -134,6 +134,7 @@ void app_main(void)
     unsigned previous = 0, stalled = 0, health_ticks=0;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(5000));
+        station_phone_maintenance();
         if(phone_err!=ESP_OK){
             phone_err=station_phone_start(&settings);
             if(phone_err!=ESP_OK)ESP_LOGW(TAG,"Phone setup retry failed: %s",esp_err_to_name(phone_err));

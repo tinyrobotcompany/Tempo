@@ -23,6 +23,7 @@ typedef struct {
     bool (*map_tile_acquire)(unsigned zoom,int x,int y,station_map_tile_t *out);
     void (*map_tile_release)(unsigned handle);
     void (*map_cancel_pending)(void);
+    void (*phone_forget)(void);
     void (*phone_link)(station_phone_link_t *link);
     bool (*phone_take)(station_phone_command_t *command);
     void (*phone_publish)(const station_settings_t *settings, station_view_t view);

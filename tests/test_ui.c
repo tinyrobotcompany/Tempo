@@ -61,8 +61,10 @@ static bool tile_acquire(unsigned z,int x,int y,station_map_tile_t *out){if(!til
 static void tile_release(unsigned handle){assert(handle==1&&tile_leases);tile_leases--;}
 static station_phone_command_t phone_command;
 static bool phone_pending;
+static unsigned forgot;static int forget_state;
+static void phone_forget(void){forgot++;forget_state=1;}
 static char test_phone_url[160]="http://192.168.1.34/#token=0123456789abcdef0123456789abcdef";
-static void phone_link(station_phone_link_t *s){s->online=status.connected;snprintf(s->url,sizeof(s->url),"%s",test_phone_url);}
+static void phone_link(station_phone_link_t *s){s->forget_state=forget_state;s->online=status.connected;snprintf(s->url,sizeof(s->url),"%s",test_phone_url);}
 static bool phone_take(station_phone_command_t *c){if(!phone_pending)return false;*c=phone_command;phone_pending=false;return true;}
 static bool contains_text(lv_obj_t *obj,const char *text){
  if(lv_obj_check_type(obj,&lv_label_class)&&strstr(lv_label_get_text(obj),text))return true;
@@ -81,7 +83,7 @@ int main(int argc,char **argv){
   if(strcmp(argv[1],"--boot-day")==0)boot.tm_hour=12;
   test_now=mktime(&boot);boot_level=65;
  }
- station_ui_start(&initial,(station_ui_actions_t){.update_status=updates,.update_request=request_update,.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});
+ station_ui_start(&initial,(station_ui_actions_t){.update_status=updates,.update_request=request_update,.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_forget=phone_forget,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});
  if(argc>1){assert(brightness_calls==1&&backlight==boot_level);tick();assert(brightness_calls==1&&backlight==boot_level);printf("PASS: %s starts directly at %u%% with no normal-brightness flash\n",argv[1],boot_level);lv_deinit();free(buf);return 0;}
  tick();
  const lv_font_t *text_fonts[]={&station_text_18,&station_text_24,&station_text_32,&station_text_48};
@@ -208,7 +210,9 @@ int main(int argc,char **argv){
  lv_obj_t *qr=widget(&lv_qrcode_class,0);lv_qrcode_set_size(qr,1);strcpy(test_phone_url,"http://192.168.1.35/#token=0123456789abcdef0123456789abcdef");for(unsigned i=0;i<12;i++)tick();assert(lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));lv_qrcode_set_size(qr,290);for(unsigned i=0;i<12;i++)tick();assert(!lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
  status.connected=false;for(unsigned i=0;i<12;i++)tick();assert(lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
  status.connected=true;strcpy(test_phone_url,"http://172.20.10.2/#token=0123456789abcdef0123456789abcdef");for(unsigned i=0;i<12;i++)tick();assert(!lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
- click("Hotspot instructions");assert(find(lv_screen_active(),"1. iPhone: Settings > Personal Hotspot"));shot("hotspot-help-050");
+ click("Forget all phones");assert(!forgot);click("Confirm: forget all phones");assert(forgot==1);for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"Revoking access"));
+ forget_state=2;for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"access revoked"));
+ forget_state=3;for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"Could not revoke"));
  phone_command=(station_phone_command_t){.change_settings=true,.settings=station_defaults(),.change_view=true,.view=VIEW_CLOCK};
  strcpy(phone_command.settings.user_name,"Phone user");phone_command.settings.brightness=37;phone_pending=true;tick();
  assert(saved.brightness==37&&!strcmp(saved.user_name,"Phone user"));assert(find(lv_screen_active(),"Welcome Phone user"));

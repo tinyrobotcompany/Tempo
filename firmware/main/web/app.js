@@ -52,6 +52,7 @@ for(const kind of ['dim','off']){
 }
 function fill(s){for(const key of ['name','brightness','theme','font','dwell'])$(key).value=s[key];$('dimBrightness').value=s.dimBrightness??10;for(const kind of ['dim','off']){$(kind+'After').value=s[kind+'After']??0;syncIdlePreset(kind);}$('rotate').checked=s.rotate;$('color').value='#'+s.color.toString(16).padStart(6,'0');$('brightnessValue').textContent=s.brightness+'%';}
 function applyStatus(next){state=next;
+ if(globalThis.isSecureContext&&globalThis.navigator?.geolocation)$('shortcutHelp').hidden=true;
  if(next.update){const u=next.update;
   const titles={1:'Checking for updates…',2:u.countdown?'Your update is ready to install':'A new update is available',3:'Downloading update',4:'Verifying update',5:'Restarting Tempo — reconnecting automatically',6:'Update needs attention',7:'Preparing to install'};
   $('updateTitle').textContent=titles[u.state]||(u.upToDate?'No new updates — Tempo is up to date':'Ready to check for updates');
@@ -100,6 +101,12 @@ $('settingsForm').onsubmit=async e=>{e.preventDefault();if(savePending||!connect
 for(const b of document.querySelectorAll('[data-view]'))b.onclick=async()=>{if(!connection.connected()||viewPending)return;viewPending=true;const caption=b.textContent;b.textContent='Opening…';b.setAttribute('aria-busy','true');message('Changing the display view…');updateControls();try{await api('view',{view:Number(b.dataset.view)});message('Display view requested.');}catch(e){message(e.message,'message',true);}finally{viewPending=false;b.textContent=caption;b.setAttribute('aria-busy','false');updateControls();}};
 $('locate').onclick=async()=>{
  if(!connection.connected()||locatePending)return;
+ if(globalThis.isSecureContext&&globalThis.navigator?.geolocation){
+  try{locatePending=true;updateControls();await editor.locate();}
+  catch(e){message(e.message,'locationMessage',true);}
+  finally{locatePending=false;updateControls();}
+  return;
+ }
  if(!state?.shortcutAvailable){$('shortcutHelp').open=true;message('Automatic positioning is not ready in this firmware. Address search is available below.','locationMessage',true);return;}
  try{locatePending=true;$('locate').setAttribute('aria-busy','true');updateControls();message('Preparing iPhone location…','locationMessage');
  const request=await api('location-request',{action:'begin'});

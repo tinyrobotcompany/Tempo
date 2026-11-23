@@ -10,6 +10,24 @@ static bool valid(const char *token,size_t size)
         if(!((token[i]>='0'&&token[i]<='9')||(token[i]>='a'&&token[i]<='f')))return false;
     return true;
 }
+static void new_token(char token[33])
+{
+    unsigned char random[16];static const char hex[]="0123456789abcdef";
+    esp_fill_random(random,sizeof(random));
+    for(unsigned i=0;i<16;i++){token[i*2]=hex[random[i]>>4];token[i*2+1]=hex[random[i]&15];}
+    token[32]=0;
+}
+esp_err_t station_pairing_rotate(char token[33])
+{
+    token[0]=0;nvs_handle_t handle;
+    esp_err_t err=nvs_open("tempo_pair",NVS_READWRITE,&handle);
+    if(err!=ESP_OK)return err;
+    new_token(token);err=nvs_set_str(handle,"token",token);
+    if(err==ESP_OK)err=nvs_commit(handle);
+    nvs_close(handle);
+    if(err!=ESP_OK)memset(token,0,33);
+    return err;
+}
 esp_err_t station_pairing_load(char token[33])
 {
     nvs_handle_t handle;
@@ -19,10 +37,7 @@ esp_err_t station_pairing_load(char token[33])
     size_t size=33;
     err=nvs_get_str(handle,"token",token,&size);
     if(err==ESP_ERR_NVS_NOT_FOUND){
-        unsigned char random[16];static const char hex[]="0123456789abcdef";
-        esp_fill_random(random,sizeof(random));
-        for(unsigned i=0;i<16;i++){token[i*2]=hex[random[i]>>4];token[i*2+1]=hex[random[i]&15];}
-        token[32]=0;
+        new_token(token);
         err=nvs_set_str(handle,"token",token);
         if(err==ESP_OK)err=nvs_commit(handle);
     }else if(err==ESP_OK&&!valid(token,size))err=ESP_FAIL;
