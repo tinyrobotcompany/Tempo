@@ -210,7 +210,7 @@ int main(int argc,char **argv){
  lv_obj_t *qr=widget(&lv_qrcode_class,0);lv_qrcode_set_size(qr,1);strcpy(test_phone_url,"http://192.168.1.35/#token=0123456789abcdef0123456789abcdef");for(unsigned i=0;i<12;i++)tick();assert(lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));lv_qrcode_set_size(qr,290);for(unsigned i=0;i<12;i++)tick();assert(!lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
  status.connected=false;for(unsigned i=0;i<12;i++)tick();assert(lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
  status.connected=true;strcpy(test_phone_url,"http://172.20.10.2/#token=0123456789abcdef0123456789abcdef");for(unsigned i=0;i<12;i++)tick();assert(!lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
- dns_pending=true;for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"Check its DNS record"));assert(lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
+ dns_pending=true;for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"Waiting for this network to find Tempo"));assert(lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
  dns_pending=false;for(unsigned i=0;i<12;i++)tick();assert(!lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
  click("Forget all phones");assert(!forgot);click("Confirm: forget all phones");assert(forgot==1);for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"Revoking access"));
  forget_state=2;for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"access revoked"));
