@@ -20,6 +20,8 @@ bool station_update_request(const char *a){update_calls++;return !strcmp(a,"chec
 bool station_update_configure(unsigned h,bool a,unsigned s,unsigned e){(void)a;update_calls++;return (h==1||h==720)&&s!=e;}
 static httpd_uri_t routes[14];static unsigned route_count,location_calls;
 static station_network_status_t network;
+static bool dns_match=true;static uint32_t station_address=0xac140a02;
+bool station_phone_dns_matches(const char *host,uint32_t address){assert(host&&address==station_address);return dns_match;}
 static int64_t now_us=1000000;
 int64_t esp_timer_get_time(void){return now_us;}
 static char saved_coordinates[64],saved_name[64];
@@ -33,7 +35,7 @@ void station_network_status(station_network_status_t *s){*s=network;}
 int station_settings_save_state(void){return 2;}
 bool station_network_home(const char *c,const char *n){location_calls++;strcpy(saved_coordinates,c);strcpy(saved_name,n);return true;}
 esp_netif_t *esp_netif_get_handle_from_ifkey(const char *key){assert(!strcmp(key,"WIFI_STA_DEF"));return (void*)1;}
-esp_err_t esp_netif_get_ip_info(esp_netif_t *n,esp_netif_ip_info_t *i){(void)n;i->ip.addr=0xac140a02;return ESP_OK;}
+esp_err_t esp_netif_get_ip_info(esp_netif_t *n,esp_netif_ip_info_t *i){(void)n;i->ip.addr=station_address;return ESP_OK;}
 esp_err_t httpd_resp_set_hdr(httpd_req_t *r,const char *key,const char *value){if(!strcmp(key,"Content-Disposition"))r->download=!strcmp(value,"attachment; filename=\"Weather Station Location.shortcut\"");if(!strcmp(key,"Cache-Control"))r->no_store=!strcmp(value,"no-store");if(!strcmp(key,"Referrer-Policy"))r->no_referrer=!strcmp(value,"no-referrer");return ESP_OK;}
 esp_err_t httpd_resp_set_type(httpd_req_t *r,const char *t){(void)r;(void)t;return ESP_OK;}
 esp_err_t httpd_resp_set_status(httpd_req_t *r,const char *s){r->code=atoi(s);return ESP_OK;}
@@ -100,8 +102,12 @@ int main(void){station_settings_t initial=station_defaults();pairing_fail=true;a
  r=request("/api/location","{\"latitude\":48.81,\"longitude\":2.22,\"name\":\"Home suburb\"}",auth);assert(r.code==202&&location_calls==1&&!strcmp(saved_coordinates,"48.810000,2.220000")&&!strcmp(saved_name,"Home suburb"));
  r=request("/api/location","{\"latitude\":48,\"longitude\":2,\"name\":\"Other\"}",auth);assert(r.code==503&&location_calls==1);
  network.location_completion++;network.location_success=true;r=request("/api/status",NULL,auth);assert(strstr(r.response,"\"pending\":false"));
- station_phone_link_t link;station_phone_link(&link);assert(!link.online);network.connected=true;station_phone_link(&link);assert(link.online&&strstr(link.url,"https://device-a7f3.tempo.tinyrobotcompany.io/#token="));
- station_phone_maintenance();station_phone_forget();station_phone_forget();station_phone_link(&link);assert(link.forget_state==1);
+ station_phone_link_t link;station_phone_link(&link);assert(!link.online);network.connected=true;station_phone_maintenance();station_phone_link(&link);assert(link.online&&strstr(link.url,"https://device-a7f3.tempo.tinyrobotcompany.io/#token="));
+ dns_match=false;station_phone_maintenance();station_phone_link(&link);assert(!link.online&&link.dns_pending);
+ dns_match=true;station_phone_maintenance();station_phone_link(&link);assert(link.online);
+ station_address++;station_phone_link(&link);assert(!link.online);station_phone_maintenance();station_phone_link(&link);assert(link.online);
+ now_us+=10000000LL;station_phone_link(&link);assert(!link.online);station_phone_maintenance();
+ station_phone_forget();station_phone_forget();station_phone_link(&link);assert(link.forget_state==1);
  rotate_fail=true;station_phone_maintenance();station_phone_link(&link);assert(link.forget_state==3);r=request("/api/status",NULL,auth);assert(r.code==200);
  rotate_fail=false;station_phone_forget();station_phone_maintenance();station_phone_link(&link);assert(link.forget_state==2&&strstr(link.url,"cdcd"));
  r=request("/api/status",NULL,auth);assert(r.code==401);r=request("/api/status",NULL,"Bearer cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");assert(r.code==200);

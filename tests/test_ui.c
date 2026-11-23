@@ -61,10 +61,10 @@ static bool tile_acquire(unsigned z,int x,int y,station_map_tile_t *out){if(!til
 static void tile_release(unsigned handle){assert(handle==1&&tile_leases);tile_leases--;}
 static station_phone_command_t phone_command;
 static bool phone_pending;
-static unsigned forgot;static int forget_state;
+static unsigned forgot;static int forget_state;static bool dns_pending;
 static void phone_forget(void){forgot++;forget_state=1;}
 static char test_phone_url[160]="http://192.168.1.34/#token=0123456789abcdef0123456789abcdef";
-static void phone_link(station_phone_link_t *s){s->forget_state=forget_state;s->online=status.connected;snprintf(s->url,sizeof(s->url),"%s",test_phone_url);}
+static void phone_link(station_phone_link_t *s){s->dns_pending=dns_pending;s->forget_state=forget_state;s->online=status.connected&&!dns_pending;snprintf(s->url,sizeof(s->url),"%s",test_phone_url);}
 static bool phone_take(station_phone_command_t *c){if(!phone_pending)return false;*c=phone_command;phone_pending=false;return true;}
 static bool contains_text(lv_obj_t *obj,const char *text){
  if(lv_obj_check_type(obj,&lv_label_class)&&strstr(lv_label_get_text(obj),text))return true;
@@ -210,6 +210,8 @@ int main(int argc,char **argv){
  lv_obj_t *qr=widget(&lv_qrcode_class,0);lv_qrcode_set_size(qr,1);strcpy(test_phone_url,"http://192.168.1.35/#token=0123456789abcdef0123456789abcdef");for(unsigned i=0;i<12;i++)tick();assert(lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));lv_qrcode_set_size(qr,290);for(unsigned i=0;i<12;i++)tick();assert(!lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
  status.connected=false;for(unsigned i=0;i<12;i++)tick();assert(lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
  status.connected=true;strcpy(test_phone_url,"http://172.20.10.2/#token=0123456789abcdef0123456789abcdef");for(unsigned i=0;i<12;i++)tick();assert(!lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
+ dns_pending=true;for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"Check its DNS record"));assert(lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
+ dns_pending=false;for(unsigned i=0;i<12;i++)tick();assert(!lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));
  click("Forget all phones");assert(!forgot);click("Confirm: forget all phones");assert(forgot==1);for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"Revoking access"));
  forget_state=2;for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"access revoked"));
  forget_state=3;for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"Could not revoke"));

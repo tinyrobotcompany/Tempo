@@ -9,6 +9,10 @@ real-device acceptance below are complete. No physical eFuses are changed.
 
 - ESP-IDF HTTPS server, port 443 only. There is no HTTP server or downgrade fallback.
 - Bounded identity loading, hostname and certificate/private-key matching checks.
+- Pairing QR appears only after a background DNS check matches the current station
+  address; unresolved, stale, mixed-address and IPv6 answers hide the QR. The cache
+  expires after ten seconds and is invalidated immediately on IPv4 address change.
+  The phone may use a different DNS resolver, so browser acceptance is still required.
 - A dedicated 64 KiB `phone_tls` NVS partition at `0x1020000`. Existing settings,
   `otadata`, and both 8 MiB application slots retain their addresses and sizes.
 - USB provisioning tools that reject wrong keys/names, untrusted issuers, wildcard
@@ -43,8 +47,8 @@ changes, iPhone hotspots, encrypted DNS and offline DNS caching need validation.
 A static record suffices for the prototype; automated updates are not implemented.
 
 Public issuance uses DNS-01 proof of domain control. No port forwarding is needed.
-The DNS provider, scoped API credentials, public CA, issuer deployment and renewal
-policy have not been selected/configured. Do not put DNS-provider credentials or
+Public NS lookup identifies Spaceship as the DNS provider. Scoped API access, the
+public CA, issuer deployment and renewal policy are not yet configured. Do not put DNS-provider credentials or
 CA private keys on a Tempo. Do not change existing apex, MX or website records.
 
 ## Create a development identity
@@ -155,6 +159,8 @@ checks, inactive-slot writing and trial rollback remain in place after migration
    trust setup. Never bypass browser certificate warnings.
 4. Scan the HTTPS QR, refresh/reopen the page, restart Tempo and confirm reconnect.
    Test Safari and Chrome on iOS, Chrome on Android and Firefox/Edge on desktop.
+   Remove/change the A record, change the LAN address and test mixed answers; the
+   device must hide its QR until its resolver again finds only the current address.
 5. Verify native location permission success/denial, address search, API-key save,
    settings, countdown/Install now, display sleep/wake and weather/transport.
 6. Forget all phones on the display. Old phones must receive 401; a new QR scan

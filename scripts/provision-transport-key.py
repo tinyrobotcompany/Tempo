@@ -30,7 +30,9 @@ def main():
         target,token=destination(getpass.getpass('Current setup QR URL (hidden): '))
         key=key_from_env(args.env) if args.env else getpass.getpass('PRIM API key (hidden): ')
         request=urllib.request.Request(target,data=json.dumps({'key':key}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method='POST')
-        with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(), urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=str(args.ca) if args.ca else None))).open(request,timeout=10) as response:
+        context=ssl.create_default_context(cafile=str(args.ca) if args.ca else None)
+        context.minimum_version=ssl.TLSVersion.TLSv1_2
+        with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(), urllib.request.HTTPSHandler(context=context)).open(request,timeout=10) as response:
             result=json.loads(response.read(1024))
         if result.get('saved') is not True:raise ValueError('Save was not confirmed.')
         print('Transport credential saved on the device. No firmware key was generated.')

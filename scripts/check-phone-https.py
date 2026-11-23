@@ -14,6 +14,7 @@ import ssl
 def check(hostname, address, ca=None, port=443):
     ipaddress.ip_address(address)
     context=ssl.create_default_context(cafile=ca)
+    context.minimum_version=ssl.TLSVersion.TLSv1_2
     with socket.create_connection((address,port),timeout=10) as raw:
         with context.wrap_socket(raw,server_hostname=hostname) as tls:
             tls.sendall(('GET /api/status HTTP/1.1\r\nHost: '+hostname+'\r\nConnection: close\r\n\r\n').encode('ascii'))

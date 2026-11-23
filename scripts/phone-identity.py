@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 import sys
 
-OPENSSL = os.environ.get("TEMPO_OPENSSL", "/opt/homebrew/opt/openssl@3/bin/openssl" if Path("/opt/homebrew/opt/openssl@3/bin/openssl").is_file() else "openssl")
+OPENSSL = os.environ.get("TEMPO_OPENSSL") or next((str(p) for p in (Path("/opt/homebrew/opt/openssl@3/bin/openssl"), Path("/usr/local/opt/openssl@3/bin/openssl")) if p.is_file()), "openssl")
 
 
 def run(*args, data=None):
@@ -50,7 +50,7 @@ def create(directory, name):
     directory = private_directory(directory)
     if any(directory.iterdir()):
         raise ValueError('Use an empty directory; existing identities are never overwritten.')
-    run('openssl', 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', str(directory/'device.key'))
+    run('openssl', 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-pkeyopt', 'ec_param_enc:named_curve', '-out', str(directory/'device.key'))
     (directory/'device.key').chmod(0o600)
     run('openssl', 'req', '-new', '-sha256', '-key', str(directory/'device.key'), '-subj', '/CN='+name,
         '-addext', 'subjectAltName=DNS:'+name, '-out', str(directory/'device.csr'))
@@ -64,11 +64,11 @@ def development_certificate(directory):
         raise ValueError('Refusing to replace an existing CA or certificate.')
     run('openssl', 'req', '-x509', '-newkey', 'rsa:3072', '-nodes', '-sha256', '-days', '365',
         '-subj', '/CN=Tempo development trust ONLY', '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:0',
-        '-addext', 'keyUsage=critical,keyCertSign,cRLSign',
+        '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-addext', 'subjectKeyIdentifier=hash',
         '-keyout', str(directory/'ca.key'), '-out', str(directory/'ca.pem'))
     (directory/'ca.key').chmod(0o600)
     extensions = directory/'extensions.cnf'
-    extensions.write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:'+name+'\n')
+    extensions.write_text('subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:'+name+'\n')
     run('openssl', 'x509', '-req', '-in', str(directory/'device.csr'), '-CA', str(directory/'ca.pem'),
         '-CAkey', str(directory/'ca.key'), '-CAcreateserial', '-days', '30', '-sha256',
         '-extfile', str(extensions), '-out', str(directory/'fullchain.pem'))

@@ -1,6 +1,7 @@
 #include "phone_setup.h"
 #include "pairing.h"
 #include "phone_tls.h"
+#include "phone_dns.h"
 #include "phone_protocol.h"
 #include "network_time.h"
 #include "settings.h"
@@ -28,6 +29,18 @@ static bool server_ready;
 static char token[33];
 /* UI requests; main worker performs durable writes without holding the display lock. */
 static atomic_int forget_state;
+static uint32_t dns_address;
+static int64_t dns_verified_until;
+static void check_phone_dns(void)
+{
+    portENTER_CRITICAL(&mux);bool ready=server_ready;portEXIT_CRITICAL(&mux);
+    station_network_status_t net;station_network_status(&net);
+    esp_netif_t *iface=esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");esp_netif_ip_info_t info;
+    uint32_t address=0;
+    if(ready&&net.connected&&iface&&esp_netif_get_ip_info(iface,&info)==ESP_OK&&info.ip.addr&&
+       station_phone_dns_matches(station_phone_tls_hostname(),info.ip.addr))address=info.ip.addr;
+    portENTER_CRITICAL(&mux);dns_address=address;dns_verified_until=esp_timer_get_time()+10000000LL;portEXIT_CRITICAL(&mux);
+}
 void station_phone_forget(void)
 {
     int current=atomic_load(&forget_state);
@@ -35,6 +48,7 @@ void station_phone_forget(void)
 }
 void station_phone_maintenance(void)
 {
+    check_phone_dns();
     if(atomic_load(&forget_state)!=1)return;
     char replacement[33];
     if(station_pairing_rotate(replacement)!=ESP_OK){atomic_store(&forget_state,3);return;}
@@ -74,10 +88,14 @@ void station_phone_link(station_phone_link_t *link)
     esp_netif_t *iface=esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");esp_netif_ip_info_t info;
     portENTER_CRITICAL(&mux);bool ready=server_ready;portEXIT_CRITICAL(&mux);
     bool ip_ready=iface&&esp_netif_get_ip_info(iface,&info)==ESP_OK&&info.ip.addr;
-    int reason=!net.connected?1:!ready?2:!ip_ready?3:0;
+    portENTER_CRITICAL(&mux);
+    bool dns_ready=ip_ready&&dns_address==info.ip.addr&&esp_timer_get_time()<dns_verified_until;
+    portEXIT_CRITICAL(&mux);
+    link->dns_pending=ready&&net.connected&&ip_ready&&!dns_ready;
+    int reason=!net.connected?1:!ready?2:!ip_ready?3:!dns_ready?4:0;
     static int previous=-1;
-    if(reason!=previous){ESP_LOGI("phone","Setup availability: %s",reason==1?"waiting for Wi-Fi":reason==2?"waiting for HTTPS identity/server":reason==3?"waiting for IP address":"ready");previous=reason;}
-    if(ready&&net.connected&&ip_ready) {
+    if(reason!=previous){ESP_LOGI("phone","Setup availability: %s",reason==1?"waiting for Wi-Fi":reason==2?"waiting for HTTPS identity/server":reason==3?"waiting for IP address":reason==4?"waiting for matching DNS":"ready");previous=reason;}
+    if(ready&&net.connected&&ip_ready&&dns_ready) {
         link->online=true;
         portENTER_CRITICAL(&mux);
         snprintf(link->url,sizeof(link->url),"https://%s/#token=%s",station_phone_tls_hostname(),token);
