@@ -178,6 +178,24 @@ class DeliveryTests(unittest.TestCase):
         with patch.object(migrate, 'az', return_value=[actual]):
             migrate.verify_roles(expected)
 
+    def test_real_plan_records_runtime_and_destination_delivery_identities(self):
+        groups = {migrate.OLD + 'security': [], migrate.NEW + 'security': []}
+        expected = {}
+        for name in migrate.PRESERVED_IDENTITIES:
+            group = (migrate.NEW if name == 'tempo-infrastructure-delivery' else migrate.OLD) + 'security'
+            groups[group].append({'type': 'Microsoft.ManagedIdentity/userAssignedIdentities', 'name': name, 'id': name})
+            expected[name] = name + '-principal'
+        roles = [{'scope': '/resourcegroups/' + migrate.OLD + 'data/providers/type/' + str(i), 'principalId': 'principal', 'roleDefinitionId': '/role'} for i in range(11)]
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            with patch.object(migrate, 'DIRECTORY', directory), patch.object(migrate, 'guard', return_value='same'), patch.object(migrate, 'inventory', return_value=groups), patch.object(migrate, 'resource_roles', return_value=roles), patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(directory / 'summary')}), patch.object(migrate, 'az', side_effect=lambda *args: {'properties': {'principalId': args[-1] + '-principal'}}):
+                migrate.plan()
+                manifest = json.loads((directory / 'migration.json').read_text())
+                self.assertEqual(manifest['identities'], expected)
+                groups[migrate.NEW + 'security'].clear()
+                with self.assertRaisesRegex(ValueError, 'destination delivery identity'):
+                    migrate.plan()
+
     def test_migration_deletes_groups_only_after_successful_reconciliation(self):
         for reconcile_succeeds in (False, True):
             with self.subTest(reconcile_succeeds=reconcile_succeeds), tempfile.TemporaryDirectory() as name:

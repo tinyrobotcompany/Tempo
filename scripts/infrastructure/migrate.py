@@ -34,6 +34,9 @@ EXPECTED = {
     'compute': set(),
 }
 ENDPOINTS = {'tempo-table-endpoint', 'tempo-vault-endpoint'}
+PRESERVED_IDENTITIES = {'tempo-infrastructure-delivery'} | {
+    name for kind, name in EXPECTED['security'] if kind == 'Microsoft.ManagedIdentity/userAssignedIdentities'
+}
 
 
 def known(resource, concern):
@@ -112,6 +115,8 @@ def plan():
         for r in rows:
             if r['type'] == 'Microsoft.ManagedIdentity/userAssignedIdentities':
                 identities[r['name']] = az('resource', 'show', '--ids', r['id'])['properties']['principalId']
+    if set(identities) != PRESERVED_IDENTITIES:
+        raise ValueError('Preview requires all four runtime identities and the destination delivery identity')
     roles = resource_roles()
     # This migration is scoped to the inspected foundation, not a running fleet.
     if len(expected_destination_roles(roles)) != 11:
@@ -160,6 +165,8 @@ def apply():
     sha = guard()
     approved = json.loads((DIRECTORY / 'migration.json').read_text())
     items = inventory()
+    if set(approved['identities']) != PRESERVED_IDENTITIES:
+        raise ValueError('Migration identity manifest is incomplete')
     if approved['sha'] != sha or approved['layout'] != layout(items) or approved['roles'] != resource_roles():
         raise ValueError('Migration changed since preview: start a fresh run')
     detach_endpoints(items)
