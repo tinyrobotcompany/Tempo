@@ -9,9 +9,9 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
 def module(name,file):
-    spec=importlib.util.spec_from_file_location(name,ROOT/'scripts'/file)
+    spec=importlib.util.spec_from_file_location(name,ROOT/file)
     result=importlib.util.module_from_spec(spec);spec.loader.exec_module(result);return result
-identity=module('identity','phone-identity.py');probe=module('probe','check-phone-https.py')
+identity=module('identity','tests/https_fixture.py');probe=module('probe','scripts/check-phone-https.py')
 
 class HTTPSProof(unittest.TestCase):
     def test_certificate_trust_hostname_and_authentication(self):

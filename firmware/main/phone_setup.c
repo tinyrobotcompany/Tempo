@@ -2,6 +2,7 @@
 #include "pairing.h"
 #include "phone_tls.h"
 #include "phone_dns.h"
+#include "device_identity.h"
 #include "phone_protocol.h"
 #include "network_time.h"
 #include "settings.h"
@@ -48,6 +49,19 @@ void station_phone_forget(void)
 }
 void station_phone_maintenance(void)
 {
+    if(station_identity_changed()&&server){
+        portENTER_CRITICAL(&mux);server_ready=false;dns_verified_until=0;portEXIT_CRITICAL(&mux);
+        station_phone_tls_stop(server);server=NULL;
+        station_settings_t snapshot;
+        portENTER_CRITICAL(&mux);snapshot=current_settings;portEXIT_CRITICAL(&mux);
+        /* Existing phone fetch/reconnect logic retries after this brief TLS restart. */
+        station_phone_start(&snapshot);
+    }
+    if(!server&&queue){
+        station_settings_t snapshot;
+        portENTER_CRITICAL(&mux);snapshot=current_settings;portEXIT_CRITICAL(&mux);
+        station_phone_start(&snapshot);
+    }
     check_phone_dns();
     if(atomic_load(&forget_state)!=1)return;
     char replacement[33];

@@ -1,0 +1,84 @@
+#include <assert.h>
+#include <setjmp.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+static time_t current_time=1800000000;
+static time_t fake_time(time_t *out){if(out)*out=current_time;return current_time;}
+#define time fake_time
+#include "../firmware/main/device_enrollment.c"
+#undef time
+const char *test_enrollment_url="https://tempo.example.com/v1/device";
+static station_network_status_t network={.connected=true};
+static unsigned address=0xc0a80122,requests,cert_requests,installs;
+static int init_error,sign_error,csr_error,install_error,http_error,http_status=200;
+static bool fail_client,complete=true,iface_present=true,pending,have_certificate;
+static int64_t renew_time;
+static char response[13000],request_body[7000];static size_t response_offset;
+static void (*task)(void *);static int task_result=pdPASS;
+static jmp_buf loop_exit;static unsigned delays;
+void station_network_status(station_network_status_t *out){*out=network;}
+esp_netif_t *esp_netif_get_handle_from_ifkey(const char *key){assert(!strcmp(key,"WIFI_STA_DEF"));return iface_present?(void*)1:NULL;}
+int esp_netif_get_ip_info(esp_netif_t *iface,esp_netif_ip_info_t *out){assert(iface);out->ip.addr=address;return 0;}
+void esp_fill_random(void *out,size_t length){memset(out,0x12,length);}
+uint32_t esp_random(void){return 4;}
+int station_identity_init(void){return init_error;}
+const char *station_identity_id(void){return "abababababababababababababababab";}
+int64_t station_identity_renew_after(void){return renew_time;}
+int station_identity_csr(char *out,size_t size){assert(size>=4);strcpy(out,"csr");return csr_error;}
+int station_identity_sign(const char *body,char *out,size_t size){
+ cJSON *j=cJSON_Parse(body);assert(j&&size>=10);assert(strlen(cJSON_GetObjectItem(j,"nonce")->valuestring)==64);
+ assert(cJSON_GetObjectItem(j,"issued_at")->valuedouble==current_time);cJSON_Delete(j);strcpy(out,"signature");return sign_error;
+}
+int station_identity_install(const char *chain,int64_t *out){assert(!strcmp(chain,"chain"));installs++;if(install_error)return install_error;*out=renew_time=current_time+10000;return 0;}
+void esp_crt_bundle_attach(void){}
+void *esp_http_client_init(esp_http_client_config_t *config){
+ assert(!strcmp(config->url,test_enrollment_url)&&config->crt_bundle_attach==esp_crt_bundle_attach&&config->disable_auto_redirect);
+ requests++;response_offset=0;request_body[0]=0;return fail_client?NULL:(void*)1;
+}
+int esp_http_client_set_method(void *h,int method){assert(h&&method==HTTP_METHOD_POST);return 0;}
+int esp_http_client_set_header(void *h,const char *name,const char *value){assert(h&&name&&value);return 0;}
+int esp_http_client_open(void *h,int length){assert(h&&length>0);return http_error;}
+int esp_http_client_write(void *h,const char *data,int length){assert(h);if(http_error)return -1;memcpy(request_body,data,length);request_body[length]=0;return length;}
+int64_t esp_http_client_fetch_headers(void *h){
+ assert(h);cJSON *j=cJSON_Parse(request_body);assert(j);const char *action=cJSON_GetObjectItem(j,"action")->valuestring;
+ if(!strcmp(action,"certificate"))cert_requests++;
+ snprintf(response,sizeof(response),"{\"state\":\"%s\",\"address\":\"192.168.1.34\",\"certificate\":\"%s\"}",pending?"pending":"ready",have_certificate?"chain":"");
+ cJSON_Delete(j);return http_error?-1:(int64_t)strlen(response);
+}
+int esp_http_client_get_status_code(void *h){assert(h);return http_status;}
+int esp_http_client_read(void *h,char *out,int capacity){assert(h);if(http_error)return -1;size_t length=strlen(response)-response_offset;if(length>(size_t)capacity)length=(size_t)capacity;memcpy(out,response+response_offset,length);response_offset+=length;return (int)length;}
+bool esp_http_client_is_complete_data_received(void *h){assert(h);return complete;}
+void esp_http_client_close(void *h){assert(h);}
+void esp_http_client_cleanup(void *h){assert(h);}
+int xTaskCreate(void (*fn)(void *),const char *name,unsigned stack,void *arg,unsigned priority,void *handle){assert(!strcmp(name,"enrollment")&&stack==12288&&!arg&&priority==3&&!handle);task=fn;return task_result;}
+void vTaskDelay(unsigned ticks){assert(ticks>=30000);if(++delays>=2)longjmp(loop_exit,1);}
+int main(void){
+ test_enrollment_url="http://tempo.example.com/v1/device";assert(station_enrollment_start()!=0);
+ test_enrollment_url="https://tempo.example.com/wrong";assert(station_enrollment_start()!=0);
+ test_enrollment_url="https://tempo.example.com/v1/device?bad";assert(station_enrollment_start()!=0);
+ test_enrollment_url="https://tempo.example.com/v1/device";
+ init_error=-1;assert(station_enrollment_start()!=0);init_error=0;
+ task_result=0;assert(station_enrollment_start()!=0);task_result=pdPASS;
+ assert(station_enrollment_start()==0&&task);assert(station_enrollment_start()==0);
+ network.connected=false;assert(!tick()&&!requests);network.connected=true;
+ current_time=1;assert(!tick()&&!requests);current_time=1800000000;
+ iface_present=false;assert(!tick()&&!requests);iface_present=true;
+ address=0;assert(!tick()&&!requests);address=0xc0a80122;
+ sign_error=-1;assert(!tick());sign_error=0;
+ fail_client=true;assert(!tick());fail_client=false;
+ http_error=-1;assert(!tick());http_error=0;
+ http_status=302;assert(!tick());http_status=401;assert(!tick());http_status=200;
+ complete=false;assert(!tick());complete=true;
+ assert(tick()&&waiting_certificate&&cert_requests==1&&!strcmp(last_address,"192.168.1.34"));
+ pending=true;assert(tick()&&installs==0&&cert_requests==1);pending=false;have_certificate=true;
+ install_error=-1;assert(!tick());install_error=0;
+ assert(tick()&&!waiting_certificate&&installs==2);
+ renew_time=current_time-1;csr_error=-1;assert(!tick());csr_error=0;
+ assert(tick()&&cert_requests==2);
+ if(!setjmp(loop_exit))task(NULL);
+ assert(delays==2);delays=0;network.connected=false;
+ if(!setjmp(loop_exit))task(NULL);
+ assert(failures==2);
+ puts("PASS: signed HTTPS enrollment, clock/network gating, renewal, redirects denied and retry backoff");
+}

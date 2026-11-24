@@ -1316,6 +1316,17 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
+# Tempo device enrollment
+#
+# default:
+CONFIG_TEMPO_ENROLLMENT_URL=""
+# default:
+CONFIG_TEMPO_DEVICE_SUFFIX="tempo.tinyrobotcompany.io"
+# default:
+CONFIG_TEMPO_PRODUCTION_IDENTITY=y
+# end of Tempo device enrollment
+
+#
 # Compiler options
 #
 # default:
@@ -3607,8 +3618,10 @@ CONFIG_MBEDTLS_X509_CRL_PARSE_C=y
 CONFIG_MBEDTLS_X509_CRT_PARSE_C=y
 # default:
 CONFIG_MBEDTLS_X509_CSR_PARSE_C=y
+CONFIG_MBEDTLS_X509_CREATE_C=y
 # default:
-# CONFIG_MBEDTLS_X509_CREATE_C is not set
+CONFIG_MBEDTLS_X509_CRT_WRITE_C=y
+CONFIG_MBEDTLS_X509_CSR_WRITE_C=y
 # default:
 CONFIG_MBEDTLS_X509_RSASSA_PSS_SUPPORT=y
 # default:
