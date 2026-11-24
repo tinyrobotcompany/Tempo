@@ -1,5 +1,6 @@
 """Ephemeral CA fixtures for the real firmware installer test; never device provisioning."""
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -10,6 +11,7 @@ def run(*args):
     result = subprocess.run(['openssl', *args], cwd=root, capture_output=True, text=True)
     if result.returncode:
         raise RuntimeError(result.stderr)
+    return result.stdout
 
 def request(name):
     run('req', '-new', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-pkeyopt', 'ec_param_enc:named_curve', '-sha256',
@@ -33,6 +35,17 @@ if sys.argv[2] == 'prepare':
     section = '.section __TEXT,__const' if sys.platform == 'darwin' else '.section .rodata'
     path = str(root/'root.pem').replace('\\', '\\\\').replace('"', '\\"')
     (root/'roots.S').write_text(f'{section}\n.globl _binary_device_roots_pem_start\n_binary_device_roots_pem_start:\n.incbin "{path}"\n.byte 0\n.globl _binary_device_roots_pem_end\n_binary_device_roots_pem_end:\n')
+elif sys.argv[2] == 'check-csr':
+    name = (root/'hostname.txt').read_text()
+    if len(sys.argv) > 3:
+        assert len(name) == int(sys.argv[3]), (len(name), name)
+    # Independent OpenSSL parsing plus signature verification of the actual CSR.
+    text = run('req', '-in', 'device.csr', '-verify', '-noout', '-text')
+    subject = run('req', '-in', 'device.csr', '-noout', '-subject', '-nameopt', 'RFC2253').strip()
+    assert subject.removeprefix('subject=').strip() == 'CN='+name, subject
+    sans = re.findall(r'X509v3 Subject Alternative Name:\s*([^\n]+)', text)
+    assert sans == ['DNS:'+name], sans
+    print(f'PASS: OpenSSL verifies CSR signature and exact CN/single DNS SAN ({len(name)} bytes)')
 elif sys.argv[2] == 'issue':
     name = (root/'hostname.txt').read_text()
     common = 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n'
