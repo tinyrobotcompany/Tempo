@@ -83,11 +83,25 @@ class DeliveryTests(unittest.TestCase):
             manifest = {'sha': 'same', 'template': delivery.digest(directory / 'template.json'),
                         'parameters': delivery.digest(directory / 'parameters.json'), 'changes': []}
             (directory / 'manifest.json').write_text(json.dumps(manifest))
-            with patch.object(delivery, 'guard', return_value='same'), patch.object(delivery, 'az', return_value={'status': 'Succeeded', 'changes': [{'resourceId': '/new', 'changeType': 'Modify'}]}) as azure:
+            with patch.object(delivery, 'require_migrated'), patch.object(delivery, 'guard', return_value='same'), patch.object(delivery, 'az', return_value={'status': 'Succeeded', 'changes': [{'resourceId': '/new', 'changeType': 'Modify'}]}) as azure:
                 with self.assertRaises(ValueError):
                     delivery.apply(directory)
                 self.assertEqual(azure.call_count, 1)
                 self.assertIn('what-if', azure.call_args.args)
+
+    def test_old_group_blocks_apply_before_what_if(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            for file in ('template.json', 'parameters.json'):
+                (directory / file).write_text('{}')
+            manifest = {'sha': 'same', 'template': delivery.digest(directory / 'template.json'),
+                        'parameters': delivery.digest(directory / 'parameters.json'), 'changes': []}
+            (directory / 'manifest.json').write_text(json.dumps(manifest))
+            with patch.object(delivery, 'guard', return_value='same'), patch.object(delivery, 'az', return_value=True) as azure:
+                with self.assertRaisesRegex(ValueError, 'group migration'):
+                    delivery.apply(directory)
+                self.assertEqual(azure.call_count, 1)
+                self.assertEqual(azure.call_args.args[:2], ('group', 'exists'))
 
     def test_sensitive_preview_values_are_not_published(self):
         value = {'properties': {'sharedKey': 'secret-value', 'secrets': [{'value': 'another-secret'}]}}

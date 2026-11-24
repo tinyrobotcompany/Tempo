@@ -113,6 +113,7 @@ def apply(directory):
     if (manifest['sha'] != head or manifest['template'] != digest(directory / 'template.json') or
             manifest['parameters'] != digest(directory / 'parameters.json')):
         raise ValueError('Approved plan integrity check failed')
+    require_migrated()
     preview = az(*command('what-if', directory), '--result-format', 'FullResourcePayloads')
     if changes(preview) != manifest['changes']:
         raise ValueError('Azure changed since preview: review a fresh plan')
