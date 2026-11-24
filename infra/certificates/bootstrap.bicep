@@ -12,7 +12,9 @@ resource groups 'Microsoft.Resources/resourceGroups@2024-03-01' = [for concern i
 }]
 module identity 'delivery-identity.bicep' = {
   name: 'tempo-delivery-identity'
-  scope: groups[2]
+  // Explicit scope avoids a loop index leaking into identity output references.
+  scope: resourceGroup('rg-tempo-${location}-security')
+  dependsOn: [groups[2]]
   params: { location: location }
 }
 // Deployment records at subscription scope; no subscription-wide resource writer/Owner grant.

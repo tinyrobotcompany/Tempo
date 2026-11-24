@@ -18,6 +18,23 @@ jobs:
           mkdir -p build-host/infrastructure
           az bicep build --file infra/certificates/main.bicep --outfile build-host/infrastructure/template.json
           az bicep build --file infra/certificates/bootstrap.bicep --outfile build-host/infrastructure/bootstrap.json
+      - name: Verify compiled bootstrap identity references
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          template = json.loads(Path('build-host/infrastructure/bootstrap.json').read_text())
+          references = [template['outputs']['clientId']['value']]
+          for resource in template['resources']:
+              if resource['type'] == 'Microsoft.Authorization/roleAssignments':
+                  references.append(resource['properties']['principalId'])
+              if resource['type'] == 'Microsoft.Resources/deployments' and 'copy' in resource:
+                  references.append(resource['properties']['parameters']['principalId']['value'])
+          assert len(references) == 4
+          for reference in references:
+              assert 'copyIndex' not in reference, reference
+              assert '-security' in reference, reference
+          PYCODE
       - name: Test deployment and migration guards
         run: python3 tests/test_infrastructure_delivery.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
