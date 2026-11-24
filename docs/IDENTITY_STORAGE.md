@@ -52,3 +52,5 @@ of process timezone. Tests cover leap/century boundaries and repeated installati
 under US Eastern and Japan timezones. The signing API rejects null input/output or
 zero capacity. The manufacturing public identity is logged once per boot, rather
 than on every successful initialization.
+
+CSR SAN encoding deliberately uses short-form DER: the maximum hostname is 96 bytes and a compile-time assertion limits it to 125 bytes (127-byte SEQUENCE contents including the dNSName tag/length). The runtime guard enforces the same bound. The real SDK CI test builds with a 61-byte suffix to generate a 96-byte hostname, then OpenSSL independently verifies the CSR signature and checks that its CN and sole DNS SAN exactly equal the generated hostname. It also checks the normal configured test hostname.

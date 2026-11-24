@@ -1,6 +1,8 @@
 /* Production install implementation, real SDK crypto; only NVS/HW are host seams. */
 #define ESP_ERR_INVALID_STATE 4
+#ifndef CONFIG_TEMPO_DEVICE_SUFFIX
 #define CONFIG_TEMPO_DEVICE_SUFFIX "tempo.test"
+#endif
 #include "../firmware/main/device_identity.c"
 #include <assert.h>
 static char stored[8192],pending[8192];

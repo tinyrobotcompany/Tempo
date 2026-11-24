@@ -17,7 +17,11 @@
 #include <stdlib.h>
 #include <time.h>
 
-static char identifier[33], device_hostname[97];
+enum { DEVICE_HOSTNAME_MAX = 96, SAN_SHORT_FORM_NAME_MAX = 125 };
+/* One dNSName uses two bytes inside a SEQUENCE whose length must be <128. */
+_Static_assert(DEVICE_HOSTNAME_MAX <= SAN_SHORT_FORM_NAME_MAX,
+               "CSR SAN encoder requires short-form DER lengths");
+static char identifier[33], device_hostname[DEVICE_HOSTNAME_MAX+1];
 static atomic_bool changed;
 static int64_t renewal;
 static bool public_identity_logged;
@@ -119,7 +123,7 @@ esp_err_t station_identity_csr(char *output,size_t capacity)
 {
     size_t n=strlen(device_hostname);
     unsigned char san[sizeof(device_hostname)+4];
-    if(!output||!capacity||!n||n>sizeof(device_hostname)-1||n+4>sizeof(san)||n+2>=128)
+    if(!output||!capacity||!n||n>sizeof(device_hostname)-1||n+4>sizeof(san)||n>SAN_SHORT_FORM_NAME_MAX)
         return ESP_ERR_INVALID_ARG;
     mbedtls_pk_context key;mbedtls_pk_init(&key);
     esp_err_t err=key_open("identity",&key);
