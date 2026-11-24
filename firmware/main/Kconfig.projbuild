@@ -4,7 +4,8 @@ config TEMPO_ENROLLMENT_URL
     string "Production enrollment HTTPS endpoint"
     default ""
     help
-        Azure certificate API URL ending in /v1/device. Empty disables enrollment;
+        Azure certificate API URL ending in /v1/device. Empty disables the network
+        worker but still initializes the device identity under the hardware guards;
         release manufacturing must set the deployed endpoint, never a laptop URL.
 config TEMPO_DEVICE_SUFFIX
     string "Per-device DNS namespace"

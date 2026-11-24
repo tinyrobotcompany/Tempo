@@ -10,6 +10,8 @@ static time_t fake_time(time_t *out){if(out)*out=current_time;return current_tim
 #undef time
 const char *test_enrollment_url="https://tempo.example.com/v1/device";
 static station_network_status_t network={.connected=true};
+static unsigned init_calls;
+static bool install_notification;
 static unsigned address=0xc0a80122,requests,cert_requests,installs;
 static int init_error,sign_error,csr_error,install_error,http_error,http_status=200;
 static bool fail_client,complete=true,iface_present=true,pending,have_certificate;
@@ -22,7 +24,8 @@ esp_netif_t *esp_netif_get_handle_from_ifkey(const char *key){assert(!strcmp(key
 int esp_netif_get_ip_info(esp_netif_t *iface,esp_netif_ip_info_t *out){assert(iface);out->ip.addr=address;return 0;}
 void esp_fill_random(void *out,size_t length){memset(out,0x12,length);}
 uint32_t esp_random(void){return 4;}
-int station_identity_init(void){return init_error;}
+int station_identity_init(void){init_calls++;return init_error;}
+bool station_identity_changed(void){assert(!"enrollment must not consume the phone reload notification");return false;}
 const char *station_identity_id(void){return "abababababababababababababababab";}
 int64_t station_identity_renew_after(void){return renew_time;}
 int station_identity_csr(char *out,size_t size){assert(size>=4);strcpy(out,"csr");return csr_error;}
@@ -30,7 +33,7 @@ int station_identity_sign(const char *body,char *out,size_t size){
  cJSON *j=cJSON_Parse(body);assert(j&&size>=10);assert(strlen(cJSON_GetObjectItem(j,"nonce")->valuestring)==64);
  assert(cJSON_GetObjectItem(j,"issued_at")->valuedouble==current_time);cJSON_Delete(j);strcpy(out,"signature");return sign_error;
 }
-int station_identity_install(const char *chain,int64_t *out){assert(!strcmp(chain,"chain"));installs++;if(install_error)return install_error;*out=renew_time=current_time+10000;return 0;}
+int station_identity_install(const char *chain,int64_t *out){assert(!strcmp(chain,"chain"));installs++;if(install_error)return install_error;*out=renew_time=current_time+10000;install_notification=true;return 0;}
 void esp_crt_bundle_attach(void){}
 void *esp_http_client_init(esp_http_client_config_t *config){
  assert(!strcmp(config->url,test_enrollment_url)&&config->crt_bundle_attach==esp_crt_bundle_attach&&config->disable_auto_redirect);
@@ -54,6 +57,11 @@ void esp_http_client_cleanup(void *h){assert(h);}
 int xTaskCreate(void (*fn)(void *),const char *name,unsigned stack,void *arg,unsigned priority,void *handle){assert(!strcmp(name,"enrollment")&&stack==12288&&!arg&&priority==3&&!handle);task=fn;return task_result;}
 void vTaskDelay(unsigned ticks){assert(ticks>=30000);if(++delays>=2)longjmp(loop_exit,1);}
 int main(void){
+ test_enrollment_url="";
+ init_error=-1;assert(station_enrollment_start()==init_error&&init_calls==1&&!task&&!requests);init_error=0;
+ assert(station_enrollment_start()==0&&init_calls==2&&!task&&!started&&!requests);
+ assert(station_enrollment_start()==0&&init_calls==3&&!task&&!started&&!requests);
+
  test_enrollment_url="http://tempo.example.com/v1/device";assert(station_enrollment_start()!=0);
  test_enrollment_url="https://tempo.example.com/wrong";assert(station_enrollment_start()!=0);
  test_enrollment_url="https://tempo.example.com/v1/device?bad";assert(station_enrollment_start()!=0);
@@ -72,8 +80,9 @@ int main(void){
  complete=false;assert(!tick());complete=true;
  assert(tick()&&waiting_certificate&&cert_requests==1&&!strcmp(last_address,"192.168.1.34"));
  pending=true;assert(tick()&&installs==0&&cert_requests==1);pending=false;have_certificate=true;
- install_error=-1;assert(!tick());install_error=0;
- assert(tick()&&!waiting_certificate&&installs==2);
+ install_error=-1;assert(!tick()&&!install_notification);install_error=0;
+ assert(tick()&&!waiting_certificate&&installs==2&&install_notification);
+ assert(tick()&&install_notification); /* Further polls leave notification for phone maintenance. */
  renew_time=current_time-1;csr_error=-1;assert(!tick());csr_error=0;
  assert(tick()&&cert_requests==2);
  if(!setjmp(loop_exit))task(NULL);

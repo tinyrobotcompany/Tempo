@@ -82,6 +82,7 @@ int main(void){
  parse_error=-1;assert(station_identity_install("chain",&renewed)!=0);parse_error=0;
  commit_error=-1;assert(station_identity_install("chain",&renewed)!=0&&!station_identity_changed());commit_error=0;
  assert(station_identity_install("chain",&renewed)==0&&renewed>0&&station_identity_renew_after()==renewed);
+ assert(station_identity_install("chain",&renewed)==0); /* Duplicate delivery must preserve pending reload. */
  assert(station_identity_changed()&&!station_identity_changed());assert(station_identity_init()==0&&station_identity_renew_after()==renewed);
  assert(station_identity_install("chain",&renewed)==0&&!station_identity_changed());
  puts("PASS: on-device identity persistence, hardware guard, CSR/signing flow and verified certificate install");

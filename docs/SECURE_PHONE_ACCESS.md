@@ -9,7 +9,10 @@ has no production provisioning role.
 
 1. Configure the signed factory firmware with `CONFIG_TEMPO_ENROLLMENT_URL`, the
    deployed Azure HTTPS URL ending in `/v1/device`. The DNS suffix defaults to
-   `tempo.tinyrobotcompany.io`.
+   `tempo.tinyrobotcompany.io`. An empty endpoint initializes the protected device
+   identity for manufacturing admission but starts no enrollment worker. HTTPS
+   remains unavailable until a valid certificate is installed. A non-empty invalid
+   endpoint returns an error and starts no worker.
 2. Complete the board-specific Secure Boot and flash-encryption manufacturing
    procedure. `CONFIG_TEMPO_PRODUCTION_IDENTITY=y` refuses identity generation and
    HTTPS startup unless both protections are active. Code does not burn eFuses.
