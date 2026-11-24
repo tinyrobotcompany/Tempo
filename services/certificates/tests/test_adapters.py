@@ -260,3 +260,33 @@ def test_nonce_cleanup_preserves_live_records_and_expiry_boundary():
         table.rows[("device", row["RowKey"])] = row
     assert TableStore(table, Mock()).expire_nonces(NOW, "device", limit=32) == 1
     assert set(table.rows) == {("device", "nonce-boundary"), ("device", "nonce-live")}
+
+
+def test_authentication_precedes_nonce_admission_and_status_retries_are_fresh(setup):
+    from tempo_certificates.service import DeviceService
+    key, memory, _ = setup
+    registry, table = Mock(), TableFake()
+    registry.get_entity.return_value = Entity(memory.row)
+    store = TableStore(table, registry)
+    service = DeviceService(store, SUFFIX, clock=lambda: NOW)
+    forged = ec.generate_private_key(ec.SECP256R1())
+    with pytest.raises(Rejected, match="invalid_signature"):
+        service.handle(*signed(forged, memory))
+    assert not table.rows  # Authentication failed before any admission write.
+
+    submit = table.submit_transaction
+    attempts = []
+    def contend_once(operations):
+        attempts.append(operations)
+        if len(attempts) == 1:
+            raise transaction_error(412, 1)  # Entire batch rolled back, nonce included.
+        return submit(operations)
+    table.submit_transaction = contend_once
+    request = signed(key, memory)
+    assert service.handle(*request).status == 200
+    assert len(attempts) == 2
+    assert len([row for _, row in table.rows if row.startswith("nonce-")]) == 1
+    # Simulate losing that HTTP response: replay is rejected, a newly signed retry succeeds.
+    with pytest.raises(Rejected, match="replayed_request"):
+        service.handle(*request)
+    assert service.handle(*signed(key, memory)).status == 200

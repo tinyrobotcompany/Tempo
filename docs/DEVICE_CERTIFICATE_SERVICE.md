@@ -130,6 +130,13 @@ manufacturing operations and browser/router compatibility require live acceptanc
 
 ### Replay cleanup and lane isolation
 
+Every signed request, including status, uses a single-use nonce. After a lost HTTP
+response, the device signs a fresh request with a fresh nonce; resending identical
+signed bytes is intentionally rejected as a replay. Authentication and request
+validation precede admission. ETag contention rolls back the entire Table batch,
+including the nonce, and is retried internally. Do not disable replay protection
+for status or treat an HTTP delivery failure as permission to reuse a nonce.
+
 Authenticated API requests delete up to 32 expired nonces from their own partition
 before admitting one new request. Cleanup failure rejects admission. This bounds
 ongoing growth during CA/DNS worker outages; idle devices create no further rows.
