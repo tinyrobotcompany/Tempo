@@ -92,6 +92,18 @@ class DeliveryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 migrate.inventory()
 
+    def test_source_roles_cannot_satisfy_destination_verification(self):
+        source = {'scope': '/subscriptions/id/resourceGroups/RG-TEMPO-STAGING-WESTEUROPE-DATA/providers/type/name',
+                  'principalId': 'principal', 'roleDefinitionId': '/role'}
+        expected = migrate.expected_destination_roles([source])
+        self.assertIn('/resourcegroups/rg-tempo-westeurope-data/', expected[0]['scope'])
+        with patch.object(migrate, 'resource_roles', return_value=[]) as roles:
+            with self.assertRaises(ValueError):
+                migrate.verify_roles(expected)
+            roles.assert_called_once_with(destination_only=True)
+        with patch.object(migrate, 'resource_roles', return_value=expected):
+            migrate.verify_roles(expected)
+
     def test_migration_deletes_groups_only_after_successful_reconciliation(self):
         for reconcile_succeeds in (False, True):
             with self.subTest(reconcile_succeeds=reconcile_succeeds), tempfile.TemporaryDirectory() as name:
@@ -102,7 +114,7 @@ class DeliveryTests(unittest.TestCase):
                         group = migrate.OLD + concern
                         groups[group].append({'type': kind, 'name': resource_name, 'resourceGroup': group,
                                               'id': '/subscriptions/id/resourceGroups/' + group + '/providers/' + kind + '/' + resource_name})
-                snapshot = {'sha': 'same', 'layout': migrate.layout(groups), 'roles': [], 'identities': {}}
+                snapshot = {'sha': 'same', 'layout': migrate.layout(groups), 'roles': [], 'destination_roles': [], 'identities': {}}
                 (directory / 'migration.json').write_text(json.dumps(snapshot))
                 events = []
 
@@ -161,6 +173,7 @@ class DeliveryTests(unittest.TestCase):
         self.assertIn('environment: tempo-infrastructure', workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn('cancel-in-progress: false', workflow)
+        self.assertIn("needs.preview.result == 'success'", workflow)
         import re
         for action in re.findall(r'uses: ([^\s]+)', workflow):
             self.assertRegex(action, r'@[0-9a-f]{40}$')

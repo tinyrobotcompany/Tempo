@@ -61,7 +61,7 @@ jobs:
           if-no-files-found: error
   apply:
     needs: preview
-    if: inputs.operation != 'preview'
+    if: github.ref == 'refs/heads/main' && github.repository == 'tinyrobotcompany/Tempo' && inputs.operation != 'preview' && needs.preview.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     # Separate approval AFTER the preview artifact exists, on the same live environment.

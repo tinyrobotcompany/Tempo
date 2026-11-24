@@ -73,15 +73,31 @@ def inventory():
     return result
 
 
-def resource_roles():
+def resource_roles(destination_only=False):
     roles = az('role', 'assignment', 'list', '--subscription', SUBSCRIPTION, '--all')
     # Resource-scoped assignments only. Bootstrap group grants deliberately stay
     # with their groups and disappear when the empty source groups are deleted.
-    return sorted([{'scope': r['scope'].lower().replace(OLD, NEW),
+    return sorted([{'scope': r['scope'].lower(),
                     'principalId': r['principalId'], 'roleDefinitionId': r['roleDefinitionId'].lower()}
                    for r in roles if '/providers/' in r['scope'].lower()
-                   and any('/resourcegroups/' + prefix in r['scope'].lower() for prefix in (OLD, NEW))],
+                   and any('/resourcegroups/' + prefix in r['scope'].lower() for prefix in ((NEW,) if destination_only else (OLD, NEW)))],
                   key=lambda r: (r['scope'], r['principalId'], r['roleDefinitionId']))
+
+
+def expected_destination_roles(roles):
+    expected = set()
+    for role in roles:
+        scope = role['scope'].lower()
+        # Translate only the resource-group path segment, never a substring of a resource name.
+        scope = scope.replace('/resourcegroups/' + OLD.lower(), '/resourcegroups/' + NEW.lower(), 1)
+        expected.add((scope, role['principalId'], role['roleDefinitionId'].lower()))
+    return [dict(scope=scope, principalId=principal, roleDefinitionId=definition)
+            for scope, principal, definition in sorted(expected)]
+
+
+def verify_roles(expected):
+    if resource_roles(destination_only=True) != expected:
+        raise ValueError('Destination runtime permissions differ; retain source groups')
 
 
 def layout(items):
@@ -98,10 +114,10 @@ def plan():
                 identities[r['name']] = az('resource', 'show', '--ids', r['id'])['properties']['principalId']
     roles = resource_roles()
     # This migration is scoped to the inspected foundation, not a running fleet.
-    if len({(r['scope'], r['principalId'], r['roleDefinitionId']) for r in roles}) != 11:
+    if len(expected_destination_roles(roles)) != 11:
         raise ValueError('Runtime role inventory differs from reviewed foundation')
     DIRECTORY.mkdir(parents=True, exist_ok=True)
-    manifest = {'sha': sha, 'layout': layout(items), 'identities': identities, 'roles': roles}
+    manifest = {'sha': sha, 'layout': layout(items), 'identities': identities, 'roles': roles, 'destination_roles': expected_destination_roles(roles)}
     (DIRECTORY / 'migration.json').write_text(json.dumps(manifest, indent=2))
     with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as out:
         out.write('## Resource-group migration\n\n')
@@ -154,9 +170,7 @@ def apply():
     if result['properties']['provisioningState'] != 'Succeeded':
         raise ValueError('Foundation reconciliation failed; retain source groups')
     verify()
-    actual = resource_roles()
-    if any(role not in actual for role in approved['roles']):
-        raise ValueError('Runtime permissions not restored; retain source groups')
+    verify_roles(approved['destination_roles'])
     for name, principal in approved['identities'].items():
         identity = az('identity', 'show', '--subscription', SUBSCRIPTION,
                       '--resource-group', NEW + 'security', '--name', name)
