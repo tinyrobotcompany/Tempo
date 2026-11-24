@@ -251,3 +251,12 @@ def test_worker_cleans_nonces_even_when_vault_is_unavailable():
         run_cycle(store, vault, {})
     store.expire_nonces.assert_called_once()
     store.candidates.assert_not_called()
+
+
+def test_nonce_cleanup_preserves_live_records_and_expiry_boundary():
+    table = TableFake()
+    for name, expires in (("old", NOW-1), ("boundary", NOW), ("live", NOW+600)):
+        row = Entity(PartitionKey="device", RowKey="nonce-"+name, expires=expires)
+        table.rows[("device", row["RowKey"])] = row
+    assert TableStore(table, Mock()).expire_nonces(NOW, "device", limit=32) == 1
+    assert set(table.rows) == {("device", "nonce-boundary"), ("device", "nonce-live")}
