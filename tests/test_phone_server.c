@@ -10,7 +10,8 @@
 #include "credentials.h"
 static char test_key[513];
 static bool pairing_fail,rotate_fail;
-esp_err_t station_pairing_rotate(char token[33]){if(rotate_fail)return ESP_FAIL;strcpy(token,"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");return ESP_OK;}
+static unsigned rotations;
+esp_err_t station_pairing_rotate(char token[33]){rotations++;if(rotate_fail)return ESP_FAIL;strcpy(token,"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");return ESP_OK;}
 esp_err_t station_pairing_load(char token[33]){if(pairing_fail)return ESP_FAIL;strcpy(token,"abababababababababababababababab");return ESP_OK;}
 esp_err_t station_credential_set(const char *key){if(strlen(key)>512)return ESP_ERR_INVALID_ARG;snprintf(test_key,sizeof(test_key),"%s",key);return ESP_OK;}
 bool station_transport_refresh(void){return true;}
@@ -109,6 +110,7 @@ int main(void){station_settings_t initial=station_defaults();pairing_fail=true;a
  now_us+=10000000LL;station_phone_link(&link);assert(!link.online);station_phone_maintenance();
  station_phone_forget();station_phone_forget();station_phone_link(&link);assert(link.forget_state==1);
  rotate_fail=true;station_phone_maintenance();station_phone_link(&link);assert(link.forget_state==3);r=request("/api/status",NULL,auth);assert(r.code==200);
- rotate_fail=false;station_phone_forget();station_phone_maintenance();station_phone_link(&link);assert(link.forget_state==2&&strstr(link.url,"cdcd"));
+ rotate_fail=false;station_phone_forget();station_phone_link(&link);assert(link.forget_state==1);station_phone_forget();station_phone_maintenance();station_phone_link(&link);assert(link.forget_state==2&&strstr(link.url,"cdcd"));
+ assert(rotations==2);station_phone_maintenance();assert(rotations==2);
  r=request("/api/status",NULL,auth);assert(r.code==401);r=request("/api/status",NULL,"Bearer cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");assert(r.code==200);
  puts("PASS: real HTTP handlers: auth, bounds, queued commands, busy location, cache headers and hotspot QR URL");}

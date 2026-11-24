@@ -179,3 +179,12 @@ malformed certificate. Only ESP storage/server calls are substituted. Its
 ephemeral test CA is never a device provisioning path. CI runs this alongside
 the ESP32-P4 build. Startup checks the exact DNS SAN and key pair; issuer trust
 is validated before installation, and browsers enforce dates before SNTP.
+
+### Revocation feedback
+
+A failed revocation can be retried without restarting Tempo; it requires a new
+confirmation and immediately replaces the error with progress. While pending and
+after success, the button is disabled for that page visit. Reopening Phone setup
+clears old success/error feedback and permits another explicitly confirmed
+revocation. Pending work remains visible across navigation. Host tests exercise
+these transitions and verify duplicate pending requests do not repeat key rotation.
