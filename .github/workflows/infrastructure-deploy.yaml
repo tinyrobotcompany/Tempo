@@ -1,0 +1,102 @@
+name: Infrastructure deployment
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Preview only, deploy reviewed infrastructure, or migrate existing resource groups
+        type: choice
+        options: [preview, deploy, migrate]
+        default: preview
+      image:
+        description: Existing Tempo ACR image@sha256 digest; empty deploys foundation only
+        type: string
+        default: ''
+      acme:
+        description: Certificate authority test/live mode (one Azure environment)
+        type: choice
+        options: [staging, production]
+        default: staging
+permissions:
+  contents: read
+concurrency:
+  group: tempo-infrastructure-live
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.ref == 'refs/heads/main' && github.repository == 'tinyrobotcompany/Tempo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: tempo-infrastructure
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Test reviewed delivery code
+        run: python3 tests/test_infrastructure_delivery.py
+      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Prepare immutable preview
+        env:
+          OPERATION: ${{ inputs.operation }}
+          IMAGE: ${{ inputs.image }}
+          ACME: ${{ inputs.acme }}
+        run: |
+          if [[ "$OPERATION" == migrate ]]; then
+            python3 scripts/infrastructure/migrate.py plan
+          else
+            python3 scripts/infrastructure/delivery.py plan --image "$IMAGE" --acme "$ACME"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: infrastructure-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-host/infrastructure/
+          retention-days: 14
+          if-no-files-found: error
+  apply:
+    needs: preview
+    if: inputs.operation != 'preview'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    # Separate approval AFTER the preview artifact exists, on the same live environment.
+    environment: tempo-infrastructure
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: infrastructure-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-host/infrastructure
+      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Apply the approved plan
+        env:
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          if [[ "$OPERATION" == migrate ]]; then
+            python3 scripts/infrastructure/migrate.py apply
+          else
+            python3 scripts/infrastructure/delivery.py apply
+          fi
+      - name: Retain deployment and recovery evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: infrastructure-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-host/infrastructure/
+          retention-days: 14
+          if-no-files-found: warn

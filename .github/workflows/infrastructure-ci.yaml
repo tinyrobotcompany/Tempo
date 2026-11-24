@@ -1,0 +1,28 @@
+name: Infrastructure validation
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: Infrastructure Required
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # PR code runs without Azure login, OIDC permission or deployment secrets.
+      - name: Compile infrastructure templates
+        run: |
+          mkdir -p build-host/infrastructure
+          az bicep build --file infra/certificates/main.bicep --outfile build-host/infrastructure/template.json
+          az bicep build --file infra/certificates/bootstrap.bicep --outfile build-host/infrastructure/bootstrap.json
+      - name: Test deployment and migration guards
+        run: python3 tests/test_infrastructure_delivery.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: infrastructure-validation-${{ github.sha }}
+          path: build-host/infrastructure/*.json
+          retention-days: 14
+          if-no-files-found: error
