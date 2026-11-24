@@ -10,41 +10,49 @@ const char device_roots_start[]="roots";
 const char device_roots_end[]="";
 static bool encrypted=true,secure=true;
 static int storage_error,crypto_error,commit_error,parse_error,verify_error;
-static char factory_key[512],tls_key[512],stored_cert[8192];
+static char stored_cert[8192];
+static psa_key_attributes_t saved_keys[2];
 static unsigned generated,commits;
 bool esp_flash_encryption_enabled(void){return encrypted;}
 bool esp_secure_boot_enabled(void){return secure;}
 void test_log(const char *tag,const char *format,...){(void)tag;(void)format;}
-int nvs_flash_init_partition(const char *p){assert(!strcmp(p,"phone_tls"));return storage_error;}
+int station_identity_store_init(void){return storage_error;}
 int nvs_open_from_partition(const char *p,const char *space,int mode,nvs_handle_t *out){(void)mode;assert(!strcmp(p,"phone_tls"));*out=!strcmp(space,"factory")?1:2;return storage_error;}
 int nvs_get_str(nvs_handle_t h,const char *name,char *out,size_t *size){
- const char *value=!strcmp(name,"cert")?stored_cert:h==1?factory_key:tls_key;
+ (void)h;assert(!strcmp(name,"cert"));const char *value=stored_cert;
  if(!value[0])return ESP_ERR_NVS_NOT_FOUND;
  size_t n=strlen(value)+1;if(*size<n)return ESP_FAIL;memcpy(out,value,n);*size=n;return 0;
 }
 int nvs_set_str(nvs_handle_t h,const char *name,const char *value){
  if(commit_error)return commit_error;
- if(!strcmp(name,"key"))strcpy(h==1?factory_key:tls_key,value);
+ (void)h;assert(strcmp(name,"key"));
  if(!strcmp(name,"cert"))strcpy(stored_cert,value);
  return 0;
 }
 int nvs_commit(nvs_handle_t h){(void)h;commits++;return commit_error;}
 void nvs_close(nvs_handle_t h){(void)h;}
-void psa_set_key_type(psa_key_attributes_t *a,int v){(void)a;assert(v==1);}
-void psa_set_key_bits(psa_key_attributes_t *a,int v){(void)a;assert(v==256);}
-void psa_set_key_usage_flags(psa_key_attributes_t *a,int v){(void)a;assert(v==7);}
-void psa_set_key_algorithm(psa_key_attributes_t *a,int v){(void)a;assert(v==1);}
-void psa_reset_key_attributes(psa_key_attributes_t *a){(void)a;}
+void psa_set_key_id(psa_key_attributes_t *a,unsigned id){a->id=id;a->lifetime=1;}
+void psa_set_key_type(psa_key_attributes_t *a,int v){a->type=v;}
+void psa_set_key_bits(psa_key_attributes_t *a,int v){a->bits=v;}
+void psa_set_key_usage_flags(psa_key_attributes_t *a,int v){assert(v==3);a->usage=v|24;}
+void psa_set_key_algorithm(psa_key_attributes_t *a,int v){a->alg=v;}
+void psa_reset_key_attributes(psa_key_attributes_t *a){memset(a,0,sizeof(*a));}
 int psa_crypto_init(void){return crypto_error;}
-int psa_generate_key(psa_key_attributes_t *a,mbedtls_svc_key_id_t *out){(void)a;generated++;*out=1;return crypto_error;}
-int psa_destroy_key(mbedtls_svc_key_id_t key){assert(key==1);return 0;}
+static unsigned key_index(unsigned id){assert(id==STATION_FACTORY_KEY_ID||id==STATION_TLS_KEY_ID);return id-STATION_FACTORY_KEY_ID;}
+int psa_get_key_attributes(unsigned id,psa_key_attributes_t *a){*a=saved_keys[key_index(id)];return parse_error?parse_error:a->id?0:PSA_ERROR_INVALID_HANDLE;}
+unsigned psa_get_key_type(const psa_key_attributes_t *a){return a->type;}
+unsigned psa_get_key_bits(const psa_key_attributes_t *a){return a->bits;}
+unsigned psa_get_key_lifetime(const psa_key_attributes_t *a){return a->lifetime;}
+unsigned psa_get_key_algorithm(const psa_key_attributes_t *a){return a->alg;}
+unsigned psa_get_key_usage_flags(const psa_key_attributes_t *a){return a->usage;}
+int psa_generate_key(psa_key_attributes_t *a,mbedtls_svc_key_id_t *id){assert(a->usage==27&&a->bits==256&&a->lifetime==1);if(crypto_error)return crypto_error;saved_keys[key_index(a->id)]=*a;*id=a->id;generated++;return 0;}
 int psa_hash_compute(int alg,const unsigned char *data,size_t length,unsigned char *out,size_t capacity,size_t *written){
  assert(alg==1&&data&&length&&capacity==32);memset(out,0xab,32);*written=32;return crypto_error;
 }
 void mbedtls_pk_init(mbedtls_pk_context *p){memset(p,0,sizeof(*p));}
 void mbedtls_pk_free(mbedtls_pk_context *p){(void)p;}
 int mbedtls_pk_parse_key(mbedtls_pk_context *p,const unsigned char *s,size_t n,const unsigned char *pw,size_t pwlen){(void)p;assert(n==strlen((const char*)s)+1&&!pw&&!pwlen);return parse_error;}
-int mbedtls_pk_copy_from_psa(int key,mbedtls_pk_context *out){(void)out;assert(key==1);return crypto_error;}
+int mbedtls_pk_wrap_psa(mbedtls_pk_context *out,unsigned key){(void)out;assert(saved_keys[key_index(key)].id==key);return crypto_error;}
 int mbedtls_pk_write_key_pem(mbedtls_pk_context *key,unsigned char *out,size_t size){(void)key;assert(size>=8);strcpy((char*)out,"private");return crypto_error;}
 int mbedtls_pk_write_pubkey_pem(mbedtls_pk_context *key,unsigned char *out,size_t size){(void)key;assert(size>=7);strcpy((char*)out,"public");return crypto_error;}
 int mbedtls_pk_write_pubkey_der(mbedtls_pk_context *key,unsigned char *out,size_t size){(void)key;out[size-1]=1;return crypto_error?-1:1;}
@@ -70,6 +78,7 @@ int main(void){
  crypto_error=-1;assert(station_identity_init()!=0&&!generated);crypto_error=0;
  assert(station_identity_init()==0&&generated==2);assert(strlen(station_identity_id())==32);assert(!strncmp(station_identity_hostname(),"d-abab",6));
  assert(station_identity_init()==0&&generated==2); /* reboot does not replace keys */
+ saved_keys[0].usage|=PSA_KEY_USAGE_EXPORT;assert(station_identity_init()!=0&&generated==2);saved_keys[0].usage&=~PSA_KEY_USAGE_EXPORT;
  parse_error=-1;assert(station_identity_init()!=0&&generated==2);parse_error=0;
  char output[2048];assert(station_identity_csr(output,sizeof(output))==0&&!strcmp(output,"csr"));
  crypto_error=-1;assert(station_identity_csr(output,sizeof(output))!=0);crypto_error=0;

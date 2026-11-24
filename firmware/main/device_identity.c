@@ -1,4 +1,5 @@
 #include "device_identity.h"
+#include "identity_store.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
@@ -21,43 +22,34 @@ static atomic_bool changed;
 static int64_t renewal;
 extern const char device_roots_start[] __asm__("_binary_device_roots_pem_start");
 extern const char device_roots_end[] __asm__("_binary_device_roots_pem_end");
-static void wipe(void *buffer,size_t length){volatile unsigned char *p=buffer;while(length--)*p++=0;}
-
 static esp_err_t key_open(const char *space,mbedtls_pk_context *key)
 {
-    nvs_handle_t handle;esp_err_t err=nvs_open_from_partition("phone_tls",space,NVS_READONLY,&handle);
-    if(err!=ESP_OK)return err;
-    char pem[512];size_t length=sizeof(pem);
-    err=nvs_get_str(handle,"key",pem,&length);nvs_close(handle);
-    if(err==ESP_OK&&mbedtls_pk_parse_key(key,(unsigned char *)pem,length,NULL,0)!=0)err=ESP_ERR_INVALID_STATE;
-    wipe(pem,sizeof(pem));return err;
+    uint32_t id=!strcmp(space,"factory")?STATION_FACTORY_KEY_ID:STATION_TLS_KEY_ID;
+    return mbedtls_pk_wrap_psa(key,id)==0?ESP_OK:ESP_ERR_INVALID_STATE;
 }
-
-static esp_err_t ensure_key(const char *space)
+static esp_err_t ensure_key(uint32_t id)
 {
-    mbedtls_pk_context existing;mbedtls_pk_init(&existing);
-    esp_err_t err=key_open(space,&existing);mbedtls_pk_free(&existing);
-    if(err==ESP_OK)return ESP_OK;
-    if(err!=ESP_ERR_NVS_NOT_FOUND)return err; /* Never replace a corrupt identity. */
     psa_key_attributes_t attributes=PSA_KEY_ATTRIBUTES_INIT;
+    psa_status_t result=psa_get_key_attributes(id,&attributes);
+    if(result==PSA_SUCCESS){
+        bool valid=psa_get_key_type(&attributes)==PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1)&&
+            psa_get_key_bits(&attributes)==256&&psa_get_key_lifetime(&attributes)==PSA_KEY_LIFETIME_PERSISTENT&&
+            psa_get_key_algorithm(&attributes)==PSA_ALG_ECDSA(PSA_ALG_SHA_256)&&
+            psa_get_key_usage_flags(&attributes)==(PSA_KEY_USAGE_SIGN_HASH|PSA_KEY_USAGE_VERIFY_HASH|PSA_KEY_USAGE_SIGN_MESSAGE|PSA_KEY_USAGE_VERIFY_MESSAGE);
+        psa_reset_key_attributes(&attributes);return valid?ESP_OK:ESP_ERR_INVALID_STATE;
+    }
+    psa_reset_key_attributes(&attributes);
+    /* get_key_attributes maps an absent persistent key to INVALID_HANDLE.
+       These two IDs are fixed valid user IDs; storage/corruption errors stay fatal. */
+    if(result!=PSA_ERROR_INVALID_HANDLE)return ESP_ERR_INVALID_STATE;
+    psa_set_key_id(&attributes,id);
     psa_set_key_type(&attributes,PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
     psa_set_key_bits(&attributes,256);
-    psa_set_key_usage_flags(&attributes,PSA_KEY_USAGE_SIGN_HASH|PSA_KEY_USAGE_VERIFY_HASH|PSA_KEY_USAGE_EXPORT);
+    psa_set_key_usage_flags(&attributes,PSA_KEY_USAGE_SIGN_HASH|PSA_KEY_USAGE_VERIFY_HASH);
     psa_set_key_algorithm(&attributes,PSA_ALG_ECDSA(PSA_ALG_SHA_256));
     mbedtls_svc_key_id_t generated=0;
-    psa_status_t status=psa_generate_key(&attributes,&generated);psa_reset_key_attributes(&attributes);
-    if(status!=PSA_SUCCESS)return ESP_FAIL;
-    mbedtls_pk_context key;mbedtls_pk_init(&key);
-    char pem[512];
-    int result=mbedtls_pk_copy_from_psa(generated,&key);
-    if(result==0)result=mbedtls_pk_write_key_pem(&key,(unsigned char *)pem,sizeof(pem));
-    mbedtls_pk_free(&key);psa_destroy_key(generated);
-    err=ESP_FAIL;
-    if(result==0){
-        nvs_handle_t handle;err=nvs_open_from_partition("phone_tls",space,NVS_READWRITE,&handle);
-        if(err==ESP_OK){err=nvs_set_str(handle,"key",pem);if(err==ESP_OK)err=nvs_commit(handle);nvs_close(handle);}
-    }
-    wipe(pem,sizeof(pem));return err;
+    result=psa_generate_key(&attributes,&generated);psa_reset_key_attributes(&attributes);
+    return result==PSA_SUCCESS&&generated==id?ESP_OK:ESP_FAIL;
 }
 
 static int64_t epoch(const mbedtls_x509_time *value)
@@ -73,9 +65,9 @@ esp_err_t station_identity_init(void)
 #if CONFIG_TEMPO_PRODUCTION_IDENTITY
     if(!esp_flash_encryption_enabled()||!esp_secure_boot_enabled())return ESP_ERR_INVALID_STATE;
 #endif
-    esp_err_t err=nvs_flash_init_partition("phone_tls");if(err!=ESP_OK)return err;
+    esp_err_t err=station_identity_store_init();if(err!=ESP_OK)return err;
     if(psa_crypto_init()!=PSA_SUCCESS)return ESP_FAIL;
-    if((err=ensure_key("factory"))!=ESP_OK||(err=ensure_key("identity"))!=ESP_OK)return err;
+    if((err=ensure_key(STATION_FACTORY_KEY_ID))!=ESP_OK||(err=ensure_key(STATION_TLS_KEY_ID))!=ESP_OK)return err;
     mbedtls_pk_context key;mbedtls_pk_init(&key);
     err=key_open("factory",&key);
     unsigned char der[256],digest[32];size_t digest_len=0;

@@ -11,3 +11,5 @@ int mbedtls_pk_write_key_pem(mbedtls_pk_context *,unsigned char *,size_t);
 int mbedtls_pk_write_pubkey_pem(mbedtls_pk_context *,unsigned char *,size_t);
 int mbedtls_pk_write_pubkey_der(mbedtls_pk_context *,unsigned char *,size_t);
 int mbedtls_pk_sign(mbedtls_pk_context *,int,const unsigned char *,size_t,unsigned char *,size_t,size_t *);
+
+int mbedtls_pk_wrap_psa(mbedtls_pk_context *,unsigned);

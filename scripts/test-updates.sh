@@ -6,6 +6,8 @@ if [[ -z "${CJSON_SOURCE_DIR:-}" ]]; then
   source build-host/test-env.sh
 fi
 mkdir -p build-host
+cc -std=c11 -Wall -Wextra -Werror -Itests/identity_store_stubs -Itests/tls_stubs -Itests/network_stubs -Ifirmware/main tests/test_identity_store.c -o build-host/test_identity_store
+./build-host/test_identity_store
 cc -std=c11 -Wall -Wextra -Werror -Itests/enrollment_stubs -Itests/tls_stubs -Itests/phone_stubs -Itests/network_stubs -Ifirmware/main tests/test_device_identity.c -o build-host/test_device_identity
 ./build-host/test_device_identity
 cc -std=c11 -Wall -Wextra -Werror -Itests/enrollment_stubs -Itests/phone_stubs -Itests/network_stubs -Ifirmware/main -Ifirmware/components/station_core/include -I"$CJSON_SOURCE_DIR" tests/test_device_enrollment.c "$CJSON_SOURCE_DIR/cJSON.c" -o build-host/test_device_enrollment

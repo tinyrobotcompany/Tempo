@@ -27,6 +27,7 @@ static station_view_t current_view;
 static QueueHandle_t queue;
 static httpd_handle_t server;
 static bool server_ready;
+static bool tls_reload_pending;
 static char token[33];
 /* UI requests; main worker performs durable writes without holding the display lock. */
 static atomic_int forget_state;
@@ -49,9 +50,11 @@ void station_phone_forget(void)
 }
 void station_phone_maintenance(void)
 {
-    if(station_identity_changed()&&server){
+    if(station_identity_changed())tls_reload_pending=true;
+    if(tls_reload_pending&&server){
         portENTER_CRITICAL(&mux);server_ready=false;dns_verified_until=0;portEXIT_CRITICAL(&mux);
-        station_phone_tls_stop(server);server=NULL;
+        if(station_phone_tls_stop(server)!=ESP_OK)return;
+        server=NULL;tls_reload_pending=false;
         station_settings_t snapshot;
         portENTER_CRITICAL(&mux);snapshot=current_settings;portEXIT_CRITICAL(&mux);
         /* Existing phone fetch/reconnect logic retries after this brief TLS restart. */
@@ -277,6 +280,7 @@ static esp_err_t shortcut_download(httpd_req_t *r)
 esp_err_t station_phone_start(const station_settings_t *settings)
 {
     if(server_ready)return ESP_OK;
+    if(server)return ESP_FAIL; /* Failed shutdown still owns its TLS state. */
     if(!queue){
         station_phone_publish(settings,VIEW_CLOCK);
         esp_err_t pairing=station_pairing_load(token);if(pairing!=ESP_OK)return pairing;
@@ -294,7 +298,8 @@ esp_err_t station_phone_start(const station_settings_t *settings)
         {.uri="/style.css",.method=HTTP_GET,.handler=asset},{.uri="/location.js",.method=HTTP_GET,.handler=asset},
         {.uri="/api/status",.method=HTTP_GET,.handler=status_get},{.uri="/api/settings",.method=HTTP_POST,.handler=post},
         {.uri="/api/location",.method=HTTP_POST,.handler=post},{.uri="/api/view",.method=HTTP_POST,.handler=post}};
-    for(unsigned i=0;i<sizeof(routes)/sizeof(routes[0]);i++)if((err=httpd_register_uri_handler(server,&routes[i]))!=ESP_OK){station_phone_tls_stop(server);server=NULL;return err;}
+    for(unsigned i=0;i<sizeof(routes)/sizeof(routes[0]);i++)if((err=httpd_register_uri_handler(server,&routes[i]))!=ESP_OK){if(station_phone_tls_stop(server)==ESP_OK)server=NULL;else tls_reload_pending=true;return err;}
+    tls_reload_pending=false;
     portENTER_CRITICAL(&mux);server_ready=true;portEXIT_CRITICAL(&mux);
     ESP_LOGI("phone","Local phone control ready");return ESP_OK;
 }

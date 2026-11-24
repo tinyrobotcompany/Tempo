@@ -14,10 +14,15 @@ has no production provisioning role.
    remains unavailable until a valid certificate is installed. A non-empty invalid
    endpoint returns an error and starts no worker.
 2. Complete the board-specific Secure Boot and flash-encryption manufacturing
-   procedure. `CONFIG_TEMPO_PRODUCTION_IDENTITY=y` refuses identity generation and
-   HTTPS startup unless both protections are active. Code does not burn eFuses.
+   procedure, including a dedicated HMAC_UP key with read, write and purpose locks.
+   Set `CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID` to that reviewed factory slot (default
+   -1 refuses identity storage). All builds require these protections for persistent
+   identity storage; disabling `CONFIG_TEMPO_PRODUCTION_IDENTITY` cannot bypass them.
+   Firmware only reads security state and derives storage keys; it never burns eFuses.
 3. The ESP generates separate P-256 manufacturing-identity and TLS keys in its
-   dedicated `phone_tls` partition. Only the PUBLIC identity PEM is printed for
+   dedicated, encrypted `phone_tls` partition through a reserved PSA storage backend.
+   Private-key export/copy permissions are not granted. CSR, signatures and HTTPS
+   use opaque key IDs; application code never serializes private PEMs. Only the PUBLIC identity PEM is printed for
    the trusted manufacturing station. Admission of that public key is performed
    by the separately authorized Azure factory job, never a public device endpoint.
 4. Once connected and time-synchronized, the device signs versioned, timestamped,
@@ -90,9 +95,24 @@ have been programmed merely by building this branch.
 - Validate signed OTA and rollback after manufacturing migration; do not weaken the
   existing health or signing gates to make enrollment appear successful.
 
-The dedicated identity partition still uses plain NVS initialization. Hardware
-Secure Boot/flash-encryption checks alone do not establish encrypted NVS key
-storage; secure NVS initialization and its validation remain release blockers.
+Identity storage uses `nvs_flash_secure_init_partition` with two domain-separated
+HMAC-derived XTS keys. The HMAC input labels and PSA IDs are stable storage formats;
+changing either requires a reviewed migration. The PSA IDs are 0x30000001 (factory)
+and 0x30000002 (TLS); they never use the SDK default NVS backend. Missing/corrupt
+storage is not erased automatically. Old plaintext PEM partitions are not imported;
+existing prototypes require controlled re-enrollment and old-identity revocation.
+
+This is encrypted software key storage with PSA-enforced export restrictions, not
+an isolated secure element: trusted crypto/storage code handles key bytes in RAM.
+An attacker executing privileged firmware can still abuse keys. Secure Boot, flash
+encryption and factory-protected HMAC material remain necessary. Physical encrypted
+flash extraction, interrupted writes and browser TLS acceptance are release gates.
+
+Development without provisioned hardware uses host fixtures; it cannot generate
+persistent device identities or enable HTTPS by disabling a build flag. Normal
+boot initializes enrollment/identity before phone startup. Missing protections are
+reported and phone access stays unavailable; local display/settings remain usable.
+No automatic security downgrade, eFuse programming or flash migration occurs.
 
 Source compilation/host tests are development evidence. Cloud deployment, physical
 key protection, browser trust and network compatibility require live acceptance.
