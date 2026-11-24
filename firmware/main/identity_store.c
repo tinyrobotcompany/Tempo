@@ -40,6 +40,18 @@ static psa_status_t store_set(void *ctx,psa_storage_uid_t uid,uint32_t size,cons
     if(flags||!data||!size||size>MAX_KEY_RECORD)return PSA_ERROR_INVALID_ARGUMENT;
     nvs_handle_t h;esp_err_t err=nvs_open_from_partition("phone_tls","psa_keys",NVS_READWRITE,&h);
     if(err!=ESP_OK)return status(err);
+    /* These reserved identities are write-once, like the deletion policy below.
+       PSA serializes persistent-key operations. Never replace an existing key,
+       and do not assume nvs_commit provides rollback: NVS writes during set. */
+    unsigned char previous[MAX_KEY_RECORD];size_t previous_size=sizeof(previous);
+    err=nvs_get_blob(h,name,previous,&previous_size);
+    if(err==ESP_OK){
+        bool same=previous_size==size&&!memcmp(previous,data,size);
+        wipe(previous,sizeof(previous));nvs_close(h);
+        return same?PSA_SUCCESS:PSA_ERROR_NOT_PERMITTED;
+    }
+    wipe(previous,sizeof(previous));
+    if(err!=ESP_ERR_NVS_NOT_FOUND){nvs_close(h);return status(err);}
     err=nvs_set_blob(h,name,data,size);if(err==ESP_OK)err=nvs_commit(h);nvs_close(h);return status(err);
 }
 static psa_status_t store_get(void *ctx,psa_storage_uid_t uid,uint32_t offset,uint32_t size,void *out,size_t *written)
