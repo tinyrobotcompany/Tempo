@@ -30,3 +30,25 @@ release prerequisites. Host tests validate API selection and errors, not actual
 flash confidentiality. No hardware or cloud activation is part of this PR.
 
 Reference: [ESP-IDF NVS encryption](https://docs.espressif.com/projects/esp-idf/en/stable/esp32p4/api-reference/storage/nvs_encryption.html).
+
+## Certificate installer regression evidence
+
+`bash scripts/test-identity-real.sh` (with the CI-pinned `IDF_PATH`) compiles the
+production `station_identity_install()` with real mbedTLS/PSA. Ephemeral fixtures
+supply a leaf and intermediate while only the root is embedded in the test binary.
+Valid installation and replacement succeed; a missing intermediate, wrong name,
+wrong key, unrelated issuer, expired certificate and malformed input fail. NVS
+seams verify that a commit failure does not signal a successful replacement.
+These seams do not prove physical flash power-loss behaviour.
+
+mbedTLS parses the supplied chain into `cert` and `cert.next`; its verifier follows
+that linked list as untrusted issuer candidates. Only the separately supplied roots
+are trust anchors. The review's leaf-only interpretation is incorrect; no supplied
+intermediate is promoted to trusted status. This regression runs in the required
+ESP32-P4 CI job, alongside the existing real TLS checks.
+
+Certificate epoch conversion now uses explicit UTC calendar arithmetic, independent
+of process timezone. Tests cover leap/century boundaries and repeated installation
+under US Eastern and Japan timezones. The signing API rejects null input/output or
+zero capacity. The manufacturing public identity is logged once per boot, rather
+than on every successful initialization.
