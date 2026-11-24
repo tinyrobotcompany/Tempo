@@ -19,6 +19,7 @@ DIRECTORIES = {
 
 
 def verify_chain(pem, csr_pem, name, now, roots=None):
+    # Includes all intermediates; leave room for NUL in the device's 8192-byte buffer.
     if not 0 < len(pem.encode()) < 8192:
         raise ValueError("certificate_size")
     chain = x509.load_pem_x509_certificates(pem.encode())

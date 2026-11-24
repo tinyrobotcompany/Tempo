@@ -59,32 +59,53 @@ def test_conflict_and_replay_have_distinct_atomic_outcomes():
         store.accept(row, "a" * 64, NOW)
 
 
-def test_real_certificate_chain_key_name_and_expiry_validation():
+@pytest.mark.parametrize("intermediate", [False, True])
+def test_real_certificate_chain_key_name_and_expiry_validation(intermediate):
     now = datetime.datetime.fromtimestamp(NOW, datetime.timezone.utc)
     root_key = ec.generate_private_key(ec.SECP256R1())
     root_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test root")])
     root = (x509.CertificateBuilder().subject_name(root_name).issuer_name(root_name)
             .public_key(root_key.public_key()).serial_number(1)
             .not_valid_before(now - datetime.timedelta(days=1)).not_valid_after(now + datetime.timedelta(days=100))
-            .add_extension(x509.BasicConstraints(ca=True, path_length=0), True)
+            .add_extension(x509.BasicConstraints(ca=True, path_length=1), True)
             .add_extension(x509.KeyUsage(False, False, False, False, False, True, True, False, False), True)
             .add_extension(x509.SubjectKeyIdentifier.from_public_key(root_key.public_key()), False)
             .sign(root_key, hashes.SHA256()))
+    issuer_key, issuer_name, suffix = root_key, root_name, ""
+    if intermediate:
+        issuer_key = ec.generate_private_key(ec.SECP256R1())
+        issuer_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test intermediate")])
+        issuer = (x509.CertificateBuilder().subject_name(issuer_name).issuer_name(root_name)
+                  .public_key(issuer_key.public_key()).serial_number(3)
+                  .not_valid_before(now-datetime.timedelta(days=1)).not_valid_after(now+datetime.timedelta(days=60))
+                  .add_extension(x509.BasicConstraints(ca=True, path_length=0), True)
+                  .add_extension(x509.KeyUsage(False, False, False, False, False, True, True, False, False), True)
+                  .add_extension(x509.SubjectKeyIdentifier.from_public_key(issuer_key.public_key()), False)
+                  .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(root_key.public_key()), False)
+                  .sign(root_key, hashes.SHA256()))
+        suffix = issuer.public_bytes(serialization.Encoding.PEM).decode()
     name = "d-" + "a" * 32 + "." + SUFFIX
     leaf_key = ec.generate_private_key(ec.SECP256R1())
     request = csr(name, leaf_key)
     leaf = (x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)]))
-            .issuer_name(root_name).public_key(leaf_key.public_key()).serial_number(2)
+            .issuer_name(issuer_name).public_key(leaf_key.public_key()).serial_number(2)
             .not_valid_before(now - datetime.timedelta(minutes=1)).not_valid_after(now + datetime.timedelta(days=30))
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), True)
             .add_extension(x509.KeyUsage(True, False, False, False, False, False, False, False, False), True)
             .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), False)
-            .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(root_key.public_key()), False)
+            .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()), False)
             .add_extension(x509.SubjectAlternativeName([x509.DNSName(name)]), False)
-            .sign(root_key, hashes.SHA256()))
-    chain = leaf.public_bytes(serialization.Encoding.PEM).decode()
+            .sign(issuer_key, hashes.SHA256()))
+    chain = leaf.public_bytes(serialization.Encoding.PEM).decode()+suffix
+    assert len(chain.encode()) < 8192
     result = verify_chain(chain, request, name, NOW, [root])
     assert NOW < result["renew_after"] < result["expires_at"]
+    assert result["certificate"] == chain
+    if intermediate:
+        with pytest.raises(Exception):
+            verify_chain(leaf.public_bytes(serialization.Encoding.PEM).decode(), request, name, NOW, [root])
+    with pytest.raises(ValueError, match="certificate_size"):
+        verify_chain("x"*8192, request, name, NOW, [root])
     with pytest.raises(ValueError, match="certificate_key_mismatch"):
         verify_chain(chain, csr(name), name, NOW, [root])
     with pytest.raises(Exception):
