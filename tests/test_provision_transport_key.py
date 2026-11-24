@@ -5,9 +5,9 @@ spec=importlib.util.spec_from_file_location('provision',ROOT/'scripts/provision-
 class ProvisionTests(unittest.TestCase):
  def test_provision_local_pairing_and_key_validation(self):
   token='a'*32
-  self.assertEqual(provision.destination('https://192.168.1.2/#token='+token),('https://192.168.1.2/api/credential',token))
-  self.assertEqual(provision.destination('https://192.168.1.2#token='+token),('https://192.168.1.2/api/credential',token))
-  for bad in ['http://tempo.local/#token='+token,'http://192.168.1.2/#token='+token,'https://example.com:444/#token='+token,'http://8.8.8.8/#token='+token,'http://user@192.168.1.2/#token='+token,'https://192.168.1.2/#token=x']:
+  self.assertEqual(provision.destination('https://device.tempo.example.com/#token='+token),('https://device.tempo.example.com/api/credential',token))
+  self.assertEqual(provision.destination('https://device.tempo.example.com#token='+token),('https://device.tempo.example.com/api/credential',token))
+  for bad in ['https://192.168.1.2/#token='+token,'https://[::1]/#token='+token,'http://tempo.local/#token='+token,'http://192.168.1.2/#token='+token,'https://example.com:444/#token='+token,'http://8.8.8.8/#token='+token,'http://user@192.168.1.2/#token='+token,'https://192.168.1.2/#token=x']:
    with self.assertRaises(ValueError):provision.destination(bad)
   with tempfile.TemporaryDirectory() as folder:
    env=Path(folder)/'.env';env.write_text('IDFM_PRIM_API_KEY=fixture')

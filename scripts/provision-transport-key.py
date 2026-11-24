@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One-time paired LAN provisioning. Read the key privately; never compile it into firmware."""
-import argparse, getpass, json, urllib.parse, urllib.request, urllib.error, ssl
+import argparse, getpass, json, urllib.parse, urllib.request, urllib.error, ssl, ipaddress
 from pathlib import Path
 
 def key_from_env(path):
@@ -18,6 +18,12 @@ def destination(qr):
         raise ValueError('Use the HTTPS setup QR URL on your display.')
     if not url.hostname or url.path not in ('','/') or url.port not in (None,443):
         raise ValueError('Use the HTTPS setup QR URL on your display.')
+    try:
+        ipaddress.ip_address(url.hostname)
+    except ValueError:
+        pass
+    else:
+        raise ValueError('Use the DNS hostname from the HTTPS setup QR, not an IP address.')
     token=urllib.parse.parse_qs(url.fragment).get('token',[''])[0]
     if len(token)!=32 or any(c not in '0123456789abcdef' for c in token):raise ValueError('Invalid pairing token.')
     return urllib.parse.urlunsplit((url.scheme,url.netloc,'/api/credential','','')),token
