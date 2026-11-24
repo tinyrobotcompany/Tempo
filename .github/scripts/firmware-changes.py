@@ -13,7 +13,7 @@ def affects_firmware(path):
 
 
 def gate(results):
-    for name in ('changes','host-tests','changeset'):
+    for name in ('changes','host-tests','changeset','certificates'):
         if results.get(name,{}).get('result') != 'success':
             return False
     changed = results['changes'].get('outputs',{}).get('firmware')

@@ -35,10 +35,12 @@ jobs:
         with:
           node-version: 22
       - name: Install host validation tools
-        run: brew install cmake actionlint
+        run: brew install cmake actionlint python@3.14
       - name: Validate release change notes
         run: python3 scripts/release.py check
       - name: Run complete test suite
+        env:
+          TEMPO_CERTIFICATES_SEPARATE_JOB: '1'
         run: bash scripts/test-all.sh
       - name: Retain test logs and coverage reports
         if: always()
@@ -53,6 +55,20 @@ jobs:
             build-host/coverage/unit.json
             build-host/coverage/browser.txt
             build-host/coverage/html/
+  certificates:
+    name: Certificate Service Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14'
+      - run: bash scripts/test-certificates.sh
+      - name: Audit locked service dependencies
+        run: build-host/dependencies/certificate-service-python314/bin/pip-audit --no-deps --disable-pip -r services/certificates/requirements-test.txt
   firmware:
     name: ESP32-P4 Build
     needs: changes
@@ -93,7 +109,7 @@ jobs:
   required:
     name: CI Required
     runs-on: ubuntu-24.04
-    needs: [changes, host-tests, firmware, changeset]
+    needs: [changes, host-tests, firmware, changeset, certificates]
     if: always()
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

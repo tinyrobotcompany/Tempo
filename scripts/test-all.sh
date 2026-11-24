@@ -13,6 +13,7 @@ done
 python3 scripts/release.py check
 python3 scripts/prepare-tests.py
 source build-host/test-env.sh
+if [[ "${TEMPO_CERTIFICATES_SEPARATE_JOB:-0}" != 1 ]]; then bash scripts/test-certificates.sh; fi
 bash scripts/test-coverage.sh
 LLVM_PROFILE_FILE="$PWD/build-host/coverage/asan-%p.profraw" bash scripts/test-map-asan.sh
 for suite in tests/test_*.py; do python3 "$suite"; done

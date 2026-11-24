@@ -9,10 +9,12 @@ class FirmwareChangesTests(unittest.TestCase):
   for p in ['README.md','docs/BOM.md','tests/test_core.c','.github/workflows/ci.yaml','.changeset/fix.md','firmware/README.md']:
    self.assertFalse(changes.affects_firmware(p),p)
  def test_only_intentional_firmware_skip_can_pass(self):
-  result={name:{'result':'success'} for name in ['changes','host-tests','changeset','firmware']}
+  result={name:{'result':'success'} for name in ['changes','host-tests','changeset','firmware','certificates']}
   result['changes']['outputs']={'firmware':'true'};self.assertTrue(changes.gate(result))
   result['firmware']['result']='skipped';self.assertFalse(changes.gate(result))
   result['changes']['outputs']['firmware']='false';self.assertTrue(changes.gate(result))
+  result['certificates']['result']='failure';self.assertFalse(changes.gate(result))
+  result['certificates']['result']='success'
   result['host-tests']['result']='skipped';self.assertFalse(changes.gate(result))
   result['host-tests']['result']='success';result['changes']['result']='failure';self.assertFalse(changes.gate(result))
 if __name__=='__main__':unittest.main()
