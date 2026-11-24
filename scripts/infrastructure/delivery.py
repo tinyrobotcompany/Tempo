@@ -72,7 +72,15 @@ def safe_preview(value):
 def changes(result):
     if result.get('status') != 'Succeeded':
         raise ValueError('Azure what-if did not succeed')
-    return sorted(safe_preview(result.get('changes', [])), key=lambda c: c['resourceId'].lower())
+    entries = result.get('changes')
+    if not isinstance(entries, list):
+        raise ValueError('Azure what-if changes are missing or malformed')
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get('resourceId'), str) or not entry['resourceId'] or not isinstance(entry.get('changeType'), str):
+            raise ValueError('Malformed Azure what-if change')
+        if entry['changeType'].lower() == 'delete':
+            raise ValueError('Normal deployment cannot delete resources; use reviewed migration')
+    return sorted(safe_preview(entries), key=lambda c: c['resourceId'].lower())
 
 
 def require_migrated():
@@ -92,8 +100,6 @@ def plan(directory, image, acme):
     preview = az(*command('what-if', directory), '--result-format', 'FullResourcePayloads')
     (directory / 'what-if.json').write_text(json.dumps(safe_preview(preview), indent=2))
     normalized = changes(preview)
-    if any(c['changeType'] == 'Delete' for c in normalized):
-        raise ValueError('Normal deployment cannot delete resources; use reviewed migration')
     # ARM may not resolve role assignment IDs from newly created identity outputs.
     # Surface diagnostics; never pretend that What-If fully validated these resources.
     manifest = {'sha': head, 'template': digest(directory / 'template.json'),

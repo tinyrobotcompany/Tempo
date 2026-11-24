@@ -103,6 +103,14 @@ class DeliveryTests(unittest.TestCase):
                 self.assertEqual(azure.call_count, 1)
                 self.assertEqual(azure.call_args.args[:2], ('group', 'exists'))
 
+    def test_delete_and_malformed_azure_previews_are_rejected(self):
+        for kind in ('Delete', 'delete', 'DELETE'):
+            with self.assertRaisesRegex(ValueError, 'cannot delete'):
+                delivery.changes({'status': 'Succeeded', 'changes': [{'resourceId': '/resource', 'changeType': kind}]})
+        for entries in (None, {}, [None], [{}], [{'resourceId': '/resource'}]):
+            with self.assertRaises(ValueError):
+                delivery.changes({'status': 'Succeeded', 'changes': entries})
+
     def test_sensitive_preview_values_are_not_published(self):
         value = {'properties': {'sharedKey': 'secret-value', 'secrets': [{'value': 'another-secret'}]}}
         value['delta'] = [{'path': 'properties.logAnalyticsConfiguration.sharedKey', 'before': 'secret-value', 'after': 'another-secret'}]
@@ -180,7 +188,9 @@ class DeliveryTests(unittest.TestCase):
                         group = migrate.OLD + concern
                         groups[group].append({'type': kind, 'name': resource_name, 'resourceGroup': group,
                                               'id': '/subscriptions/id/resourceGroups/' + group + '/providers/' + kind + '/' + resource_name})
-                snapshot = {'sha': 'same', 'layout': migrate.layout(groups), 'roles': [], 'destination_roles': [], 'identities': {}}
+                snapshot = {'sha': 'same', 'layout': migrate.layout(groups), 'roles': [], 'destination_roles': [], 'identities': {name: name + '-principal' for name in ['tempo-staging-api', 'tempo-staging-worker', 'tempo-staging-factory', 'tempo-staging-bootstrap', 'tempo-infrastructure-delivery']}}
+                groups[migrate.NEW + 'security'].append({'type': 'Microsoft.ManagedIdentity/userAssignedIdentities', 'name': 'tempo-infrastructure-delivery', 'id': '/delivery'})
+                snapshot['layout'] = migrate.layout(groups)
                 (directory / 'migration.json').write_text(json.dumps(snapshot))
                 events = []
 
@@ -211,6 +221,10 @@ class DeliveryTests(unittest.TestCase):
                         return {'provisioningState': 'Succeeded', 'privateLinkServiceConnections': [{'privateLinkServiceConnectionState': {'status': 'Approved'}}]}
                     if args[:4] == ('network', 'private-endpoint', 'dns-zone-group', 'list'):
                         return [{'id': '/resourceGroups/' + migrate.NEW + 'security/dns'}]
+                    if verb == ('identity', 'show'):
+                        self.assertEqual(value('--resource-group'), migrate.NEW + 'security')
+                        events.append('identity:' + value('--name'))
+                        return {'principalId': value('--name') + '-principal'}
                     if verb == ('group', 'delete'):
                         group = value('--name')
                         self.assertFalse(groups[group])
@@ -226,6 +240,8 @@ class DeliveryTests(unittest.TestCase):
                     if reconcile_succeeds:
                         migrate.apply()
                         self.assertEqual(sum(e.startswith('delete:') for e in events), 5)
+                        self.assertEqual(sum(e.startswith('identity:') for e in events), 5)
+                        self.assertIn('identity:tempo-infrastructure-delivery', events)
                         self.assertTrue((directory / 'migration-complete.json').exists())
                     else:
                         with self.assertRaises(ValueError):

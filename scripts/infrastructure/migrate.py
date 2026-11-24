@@ -185,6 +185,8 @@ def apply():
         raise ValueError('Foundation reconciliation failed; retain source groups')
     verify()
     verify_roles(approved['destination_roles'])
+    # Runtime identities move; the delivery identity already lives at destination.
+    # Preserve both: losing the latter would also break the pipeline's access.
     for name, principal in approved['identities'].items():
         identity = az('identity', 'show', '--subscription', SUBSCRIPTION,
                       '--resource-group', NEW + 'security', '--name', name)
