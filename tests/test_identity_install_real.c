@@ -50,6 +50,13 @@ int main(int argc,char **argv){
  assert(station_identity_init()==ESP_OK&&station_identity_renew_after()==expected&&public_logs==1);
  reject("leaf.pem",chain);reject("wrong-host.pem",chain);reject("wrong-key.pem",chain);
  reject("untrusted.pem",chain);reject("expired.pem",chain);reject("malformed.pem",chain);
+ /* Even a byte-identical stored invalid certificate must be rejected. */
+ const char *invalid[]={"malformed.pem","expired.pem","wrong-host.pem"};
+ for(size_t i=0;i<sizeof(invalid)/sizeof(invalid[0]);i++){
+  char *corrupt=read_file(invalid[i]);strcpy(stored,corrupt);
+  reject(invalid[i],corrupt);assert(station_identity_renew_after()==expected);free(corrupt);
+ }
+ strcpy(stored,chain);
  char *replacement=read_file("replacement.pem");assert(strcmp(replacement,chain));
  fail_commit=true;assert(station_identity_install(replacement,&renewal)!=ESP_OK);
  assert(!strcmp(stored,chain)&&!station_identity_changed());fail_commit=false;
