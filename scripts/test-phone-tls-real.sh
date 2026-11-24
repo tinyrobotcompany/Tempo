@@ -24,4 +24,7 @@ openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:na
 printf 'subjectAltName=DNS:device-test.tempo.tinyrobotcompany.io\nbasicConstraints=CA:FALSE\n' > "$build/fixtures/extensions"
 openssl x509 -sha256 -req -in "$build/fixtures/device.csr" -CA "$build/fixtures/ca.pem" -CAkey "$build/fixtures/ca.key" -CAcreateserial -days 1 -extfile "$build/fixtures/extensions" -out "$build/fixtures/leaf.pem" >> "$build/fixtures.log" 2>&1
 printf 'malformed' > "$build/fixtures/invalid.pem"
-"$build/host/tempo_tls_test" "$build/fixtures/leaf.pem" "$build/fixtures/device.key" "$build/fixtures/ca.key" "$build/fixtures/invalid.pem"
+cat "$build/fixtures/leaf.pem" "$build/fixtures/ca.pem" > "$build/fixtures/fullchain.pem"
+for cert in leaf fullchain; do
+"$build/host/tempo_tls_test" "$build/fixtures/$cert.pem" "$build/fixtures/device.key" "$build/fixtures/ca.key" "$build/fixtures/invalid.pem"
+done

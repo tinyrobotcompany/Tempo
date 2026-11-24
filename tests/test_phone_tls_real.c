@@ -12,7 +12,7 @@ int nvs_get_str(nvs_handle_t h,const char *key,char *out,size_t *n){
  (void)h;const char *value=!strcmp(key,"hostname")?dns:!strcmp(key,"cert")?chain:secret;
  size_t length=strlen(value)+1;if(out){assert(*n>=length);memcpy(out,value,length);}*n=length;return 0;
 }
-int httpd_ssl_start(httpd_handle_t *server,const httpd_ssl_config_t *cfg){(void)cfg;*server=(void *)1;return 0;}
+int httpd_ssl_start(httpd_handle_t *server,const httpd_ssl_config_t *cfg){assert(cfg->servercert_len==strlen(chain)+1&&!memcmp(cfg->servercert,chain,cfg->servercert_len));*server=(void *)1;return 0;}
 int httpd_ssl_stop(httpd_handle_t server){(void)server;return 0;}
 static char *read_file(const char *path){
  FILE *file=fopen(path,"rb");assert(file);assert(!fseek(file,0,SEEK_END));long n=ftell(file);assert(n>0);

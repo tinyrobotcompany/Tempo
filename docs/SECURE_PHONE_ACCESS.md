@@ -27,10 +27,9 @@ real-device acceptance below are complete. No physical eFuses are changed.
 - A read-only TLS probe that verifies trust and hostname before checking that an
   unauthenticated API call receives 401.
 
-The existing shared bearer is still persistent. Per-phone enrollment, temporary
-pairing invitations, renewable short sessions and individual-device revocation are
-separate work still required for the full production pairing design. This change
-adds an immediate physical revocation mechanism; it does not claim those features.
+Pairing still uses one persistent shared bearer. Production requires per-phone
+enrollment, temporary invitations, renewable sessions and individual revocation;
+this prototype only adds physical revocation.
 
 ## Domain and certificate ownership
 
@@ -105,13 +104,12 @@ over USB and restart. Do this before expiry. Expired/untrusted certificates are
 rejected by clients; there is no HTTP fallback. The firmware can load a certificate
 before SNTP has established the date, but browsers enforce certificate dates.
 
-Production still needs authenticated enrollment, CA/DNS automation, per-device
-issuance quotas, renewal before expiry with retry/monitoring, key rotation and a
-recovery procedure. A CA/DNS service could run on Azure but is not deployed here.
-It must verify device ownership of each requested name, accept CSRs rather than
-private keys, prevent clients selecting another device's DNS name or arbitrary
-public addresses, and keep issuer/DNS secrets out of firmware. A per-device name
-will be public in certificate-transparency logs. No customer account is required.
+Production requires authenticated enrollment, CA/DNS automation, per-device quotas,
+renewal retries/monitoring, key rotation and recovery. No issuer service is deployed
+here. It must accept device CSRs, enforce ownership of requested names, reject other
+devices' names and arbitrary public addresses, and keep issuer/DNS secrets off the
+device. Device names appear in certificate-transparency logs; no customer account
+is required.
 
 ## Controlled USB migration — do not use normal OTA
 
@@ -172,10 +170,9 @@ checks, inactive-slot writing and trial rollback remain in place after migration
 
 Host tests and a passing ESP build do not establish these physical/browser results.
 
-The SDK-backed regression `scripts/test-phone-tls-real.sh` builds the pinned SDK
-Mbed TLS implementation on the host and calls the actual TLS startup function
-with a non-self-signed CA-issued leaf. It rejects a wrong SAN, wrong key and
-malformed certificate. Only ESP storage/server calls are substituted. Its
-ephemeral test CA is never a device provisioning path. CI runs this alongside
-the ESP32-P4 build. Startup checks the exact DNS SAN and key pair; issuer trust
-is validated before installation, and browsers enforce dates before SNTP.
+`scripts/test-phone-tls-real.sh` uses pinned SDK Mbed TLS and actual TLS startup
+with a CA-issued leaf and a PEM bundle. It checks the full buffer reaches the server
+and rejects wrong SAN/key and malformed certificates. Only ESP storage/server calls
+are substituted; test keys are ephemeral. CI runs it with the ESP32-P4 build.
+Startup checks exact DNS SAN/key; provisioning checks issuer trust and browsers
+check validity dates, including before SNTP.

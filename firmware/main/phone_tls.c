@@ -80,6 +80,8 @@ esp_err_t station_phone_tls_start(httpd_handle_t *server,const httpd_config_t *c
     if(err!=ESP_OK){clear_identity();return err;}
     httpd_ssl_config_t ssl=HTTPD_SSL_CONFIG_DEFAULT();ssl.httpd=*config;
     ssl.transport_mode=HTTPD_SSL_TRANSPORT_SECURE;ssl.port_secure=443;
+    /* ESP-IDF passes this entire PEM chain to ssl_conf_own_cert.
+       cacert_pem is for client authentication, not server intermediates. */
     ssl.servercert=(const unsigned char *)certificate;ssl.servercert_len=strlen(certificate)+1;
     ssl.prvtkey_pem=(const unsigned char *)private_key;ssl.prvtkey_len=strlen(private_key)+1;
     err=httpd_ssl_start(server,&ssl);
