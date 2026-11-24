@@ -78,7 +78,7 @@ def resource_roles(destination_only=False):
     # Resource-scoped assignments only. Bootstrap group grants deliberately stay
     # with their groups and disappear when the empty source groups are deleted.
     return sorted([{'scope': r['scope'].lower(),
-                    'principalId': r['principalId'], 'roleDefinitionId': r['roleDefinitionId'].lower()}
+                    'principalId': r['principalId'].lower(), 'roleDefinitionId': r['roleDefinitionId'].lower()}
                    for r in roles if '/providers/' in r['scope'].lower()
                    and any('/resourcegroups/' + prefix in r['scope'].lower() for prefix in ((NEW,) if destination_only else (OLD, NEW)))],
                   key=lambda r: (r['scope'], r['principalId'], r['roleDefinitionId']))
@@ -90,7 +90,7 @@ def expected_destination_roles(roles):
         scope = role['scope'].lower()
         # Translate only the resource-group path segment, never a substring of a resource name.
         scope = scope.replace('/resourcegroups/' + OLD.lower(), '/resourcegroups/' + NEW.lower(), 1)
-        expected.add((scope, role['principalId'], role['roleDefinitionId'].lower()))
+        expected.add((scope, role['principalId'].lower(), role['roleDefinitionId'].lower()))
     return [dict(scope=scope, principalId=principal, roleDefinitionId=definition)
             for scope, principal, definition in sorted(expected)]
 

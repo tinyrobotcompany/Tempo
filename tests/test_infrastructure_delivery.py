@@ -160,6 +160,16 @@ class DeliveryTests(unittest.TestCase):
         with patch.object(migrate, 'resource_roles', return_value=expected):
             migrate.verify_roles(expected)
 
+    def test_mixed_case_roles_match_actual_destination_inventory(self):
+        source = {'scope': '/SUBSCRIPTIONS/ID/RESOURCEGROUPS/RG-TEMPO-STAGING-WESTEUROPE-DATA/PROVIDERS/TYPE/NAME',
+                  'principalId': 'ABC-DEF', 'roleDefinitionId': '/SUBSCRIPTIONS/ID/PROVIDERS/MICROSOFT.AUTHORIZATION/ROLEDEFINITIONS/ABC'}
+        expected = migrate.expected_destination_roles([source])
+        actual = {key: value.lower() for key, value in source.items()}
+        actual['scope'] = '/subscriptions/id/resourcegroups/rg-tempo-westeurope-data/providers/type/name'
+        self.assertEqual(expected, [actual])
+        with patch.object(migrate, 'az', return_value=[actual]):
+            migrate.verify_roles(expected)
+
     def test_migration_deletes_groups_only_after_successful_reconciliation(self):
         for reconcile_succeeds in (False, True):
             with self.subTest(reconcile_succeeds=reconcile_succeeds), tempfile.TemporaryDirectory() as name:
