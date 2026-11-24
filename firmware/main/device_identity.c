@@ -107,6 +107,10 @@ int64_t station_identity_renew_after(void){return renewal;}
 
 esp_err_t station_identity_csr(char *output,size_t capacity)
 {
+    size_t n=strlen(device_hostname);
+    unsigned char san[sizeof(device_hostname)+4];
+    if(!output||!capacity||!n||n>sizeof(device_hostname)-1||n+4>sizeof(san)||n+2>=128)
+        return ESP_ERR_INVALID_ARG;
     mbedtls_pk_context key;mbedtls_pk_init(&key);
     esp_err_t err=key_open("identity",&key);
     mbedtls_x509write_csr csr;mbedtls_x509write_csr_init(&csr);
@@ -115,7 +119,6 @@ esp_err_t station_identity_csr(char *output,size_t capacity)
         mbedtls_x509write_csr_set_key(&csr,&key);mbedtls_x509write_csr_set_md_alg(&csr,MBEDTLS_MD_SHA256);
         int result=mbedtls_x509write_csr_set_subject_name(&csr,subject);
         /* DER SEQUENCE containing exactly one dNSName (all names fit short lengths). */
-        unsigned char san[101];size_t n=strlen(device_hostname);
         san[0]=0x30;san[1]=(unsigned char)(n+2);san[2]=0x82;san[3]=(unsigned char)n;memcpy(san+4,device_hostname,n);
         if(result==0)result=mbedtls_x509write_csr_set_extension(&csr,"\x55\x1d\x11",3,0,san,n+4);
         if(result==0)result=mbedtls_x509write_csr_pem(&csr,(unsigned char *)output,capacity);
@@ -142,6 +145,7 @@ esp_err_t station_identity_sign(const char *body,char *signature,size_t capacity
 
 esp_err_t station_identity_install(const char *chain,int64_t *renew_after)
 {
+    if(!chain||!renew_after)return ESP_ERR_INVALID_ARG;
     size_t length=strlen(chain)+1;if(length>8192||length<2)return ESP_ERR_INVALID_ARG;
     mbedtls_x509_crt cert,roots;mbedtls_x509_crt_init(&cert);mbedtls_x509_crt_init(&roots);
     mbedtls_pk_context key;mbedtls_pk_init(&key);
