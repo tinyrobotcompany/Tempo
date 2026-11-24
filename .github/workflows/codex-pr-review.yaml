@@ -1,7 +1,7 @@
 name: Codex PR Review
 on:
   pull_request_target:
-    branches: [main, feature/secure-phone-access]
+    branches: [main, feature/secure-phone-access, feature/encrypted-identity-storage]
     types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
