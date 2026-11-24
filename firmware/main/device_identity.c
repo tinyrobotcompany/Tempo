@@ -27,6 +27,24 @@ static int64_t renewal;
 static bool public_identity_logged;
 extern const char device_roots_start[] __asm__("_binary_device_roots_pem_start");
 extern const char device_roots_end[] __asm__("_binary_device_roots_pem_end");
+static bool dns_name_valid(const char *name)
+{
+    size_t total=strlen(name),label=0;
+    if(!total||total>DEVICE_HOSTNAME_MAX)return false;
+    for(size_t i=0;i<total;i++){
+        unsigned char c=(unsigned char)name[i];
+        if(c=='.'){
+            if(!label||name[i-1]=='-')return false;
+            label=0;continue;
+        }
+        bool alnum=(c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9');
+        if(!alnum&&c!='-')return false;
+        if(!label&&c=='-')return false;
+        if(++label>63)return false;
+    }
+    return label&&name[total-1]!='-';
+}
+
 static esp_err_t key_open(const char *space,mbedtls_pk_context *key)
 {
     uint32_t id=!strcmp(space,"factory")?STATION_FACTORY_KEY_ID:STATION_TLS_KEY_ID;
@@ -76,6 +94,9 @@ static int64_t epoch(const mbedtls_x509_time *value)
 
 esp_err_t station_identity_init(void)
 {
+    /* Reject DN metacharacters and invalid DNS labels before generating keys. */
+    if(!dns_name_valid(CONFIG_TEMPO_DEVICE_SUFFIX)||
+       strlen(CONFIG_TEMPO_DEVICE_SUFFIX)>DEVICE_HOSTNAME_MAX-35)return ESP_ERR_INVALID_ARG;
 #if CONFIG_TEMPO_PRODUCTION_IDENTITY
     if(!esp_flash_encryption_enabled()||!esp_secure_boot_enabled())return ESP_ERR_INVALID_STATE;
 #endif
@@ -123,7 +144,7 @@ esp_err_t station_identity_csr(char *output,size_t capacity)
 {
     size_t n=strlen(device_hostname);
     unsigned char san[sizeof(device_hostname)+4];
-    if(!output||!capacity||!n||n>sizeof(device_hostname)-1||n+4>sizeof(san)||n>SAN_SHORT_FORM_NAME_MAX)
+    if(!output||!capacity||!dns_name_valid(device_hostname)||!n||n>sizeof(device_hostname)-1||n+4>sizeof(san)||n>SAN_SHORT_FORM_NAME_MAX)
         return ESP_ERR_INVALID_ARG;
     mbedtls_pk_context key;mbedtls_pk_init(&key);
     esp_err_t err=key_open("identity",&key);

@@ -71,6 +71,13 @@ int mbedtls_x509_crt_parse(mbedtls_x509_crt *c,const unsigned char *input,size_t
 int mbedtls_pk_check_pair(const mbedtls_pk_context *a,const mbedtls_pk_context *b){(void)a;(void)b;return crypto_error;}
 int mbedtls_x509_crt_verify(mbedtls_x509_crt *c,mbedtls_x509_crt *roots,void *crl,const char *name,uint32_t *flags,void *cb,void *ctx){assert(c!=roots&&!crl&&!strcmp(name,station_identity_hostname())&&!cb&&!ctx);*flags=verify_error?1:0;return verify_error;}
 int main(void){
+ const char *bad_dns[]={"",".test","test.","a..test","-a.test","a-.test",
+   "a,b.test","a+b.test","a;test","a=bad.test","a\\b.test","a\"b.test","a b.test","a_b.test"};
+ for(size_t i=0;i<sizeof(bad_dns)/sizeof(bad_dns[0]);i++)assert(!dns_name_valid(bad_dns[i]));
+ assert(dns_name_valid("A-z0.tempo.test"));
+ char label[70];memset(label,'a',63);strcpy(label+63,".test");assert(dns_name_valid(label));
+ memset(label,'a',64);strcpy(label+64,".test");assert(!dns_name_valid(label));
+
  setenv("TZ","EST5EDT",1);tzset();
  assert(epoch(&(mbedtls_x509_time){1970,1,1,0,0,0})==0);
  assert(epoch(&(mbedtls_x509_time){1969,12,31,0,0,0})==-86400);
