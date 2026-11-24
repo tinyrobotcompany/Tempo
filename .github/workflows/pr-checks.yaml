@@ -2,7 +2,7 @@ name: PR Checks
 
 on:
   pull_request:
-    branches: [main, feature/secure-phone-access]
+    branches: [main, feature/secure-phone-access, feature/encrypted-identity-storage]
     types: [opened, edited, synchronize, reopened]
 
 concurrency:

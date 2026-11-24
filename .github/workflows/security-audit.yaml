@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feature/secure-phone-access]
+    branches: [main, feature/secure-phone-access, feature/encrypted-identity-storage]
 permissions:
   contents: read
 concurrency:
