@@ -56,6 +56,11 @@ int main(int argc,char **argv){
  assert(psa_export_key(STATION_TLS_KEY_ID,raw,sizeof(raw),&raw_size)==PSA_ERROR_NOT_PERMITTED);
  char request[2048];assert(station_identity_csr(request,sizeof(request))==ESP_OK);
  FILE *csr_file=fopen("generated.csr","wb");assert(csr_file);fputs(request,csr_file);fclose(csr_file);
+ char saved_name[sizeof(device_hostname)];strcpy(saved_name,device_hostname);
+ memset(device_hostname,'a',96);device_hostname[0]='d';device_hostname[1]='-';device_hostname[34]='.';device_hostname[96]=0;
+ assert(station_identity_csr(request,sizeof(request))==ESP_OK);
+ csr_file=fopen("generated-max.csr","wb");assert(csr_file);fputs(request,csr_file);fclose(csr_file);
+ strcpy(device_hostname,saved_name);
  char signature[112];assert(station_identity_sign("{}",signature,sizeof(signature))==ESP_OK);
  psa_destroy_key(STATION_FACTORY_KEY_ID);psa_destroy_key(STATION_TLS_KEY_ID);
  chain=read_file(argv[1]);secret=read_file(argv[2]);dns="device-test.tempo.tinyrobotcompany.io";

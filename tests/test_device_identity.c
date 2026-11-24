@@ -83,9 +83,16 @@ int main(void){
  char output[2048];assert(station_identity_csr(output,sizeof(output))==0&&!strcmp(output,"csr"));
  crypto_error=-1;assert(station_identity_csr(output,sizeof(output))!=0);crypto_error=0;
  assert(station_identity_csr(output,1)!=0);
+ assert(station_identity_csr(NULL,32)==ESP_ERR_INVALID_ARG);
+ char original[sizeof(device_hostname)];strcpy(original,device_hostname);
+ memset(device_hostname,'a',sizeof(device_hostname)-1);device_hostname[0]='d';device_hostname[1]='-';device_hostname[34]='.';device_hostname[96]=0;
+ assert(station_identity_csr(output,sizeof(output))==ESP_OK);
+ device_hostname[0]=0;assert(station_identity_csr(output,sizeof(output))==ESP_ERR_INVALID_ARG);strcpy(device_hostname,original);
  assert(station_identity_sign("{}",output,sizeof(output))==0&&!strcmp(output,"signature"));
  assert(station_identity_sign("{}",output,1)!=0);
  crypto_error=-1;assert(station_identity_sign("{}",output,sizeof(output))!=0);crypto_error=0;
+ assert(station_identity_install(NULL,NULL)==ESP_ERR_INVALID_ARG);
+ assert(station_identity_install("chain",NULL)==ESP_ERR_INVALID_ARG&&!stored_cert[0]);
  int64_t renewed=0;assert(station_identity_install("",&renewed)!=0);
  verify_error=-1;assert(station_identity_install("chain",&renewed)!=0&&!stored_cert[0]);verify_error=0;
  parse_error=-1;assert(station_identity_install("chain",&renewed)!=0);parse_error=0;

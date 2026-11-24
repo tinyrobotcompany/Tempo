@@ -29,4 +29,5 @@ cd "$build/fixtures" # Keep temporary PSA test key files within ignored test art
 for cert in leaf fullchain; do
 "$build/host/tempo_tls_test" "$build/fixtures/$cert.pem" "$build/fixtures/device.key" "$build/fixtures/ca.key" "$build/fixtures/invalid.pem"
 openssl req -in generated.csr -verify -noout
+openssl req -in generated-max.csr -verify -noout
 done
