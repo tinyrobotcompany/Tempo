@@ -89,3 +89,15 @@ setImmediate(async()=>{
  assert.match(field('settingsMessage').textContent,/SAVED/);assert(!field('saveSettings').disabled);
  console.log('PASS: idle presets/custom minutes, conflicting timer rejection and persisted save feedback');
 });
+
+setImmediate(async()=>{
+ let secureOptions,located=0,deny=false;
+ const secure={...context,isSecureContext:true,navigator:{geolocation:{}},
+  StationLocation:{editor:()=>({get:()=>null,choose(){},async locate(){located++;if(deny)throw Error('Location permission denied');}})},
+  StationConnection:{create:config=>{secureOptions=config;return{connected:()=>true,start(){},wake(){},request(){throw Error('HTTPS geolocation must not hand credentials to a shortcut');}};}}};
+ vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),secure,{filename:require('node:path').resolve('firmware/main/web/app.js')});
+ secureOptions.onState({phase:'connected',failures:0});secureOptions.onStatus({...status,shortcutAvailable:false});
+ assert(element('shortcutHelp').hidden);await element('locate').onclick();assert.equal(located,1);
+ deny=true;await element('locate').onclick();assert.equal(element('locationMessage').textContent,'Location permission denied');assert(!element('locate').disabled);
+ console.log('PASS: HTTPS uses native browser geolocation without transmitting credentials to a callback');
+});

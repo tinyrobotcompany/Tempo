@@ -5,6 +5,7 @@ const status={settings:{name:'Saved name'},location:{valid:false}};
 function harness(){
  let nextId=0,active=0,maximum=0;const timers=new Map(),calls=[],states=[],results=[];
  const client=StationConnection.create({token:'a'.repeat(32),setTimer:(fn,delay)=>{const id=++nextId;timers.set(id,{fn,delay});return id;},clearTimer:id=>timers.delete(id),onState:s=>states.push(s),onStatus:s=>results.push(s),fetch:(path,options)=>new Promise((resolve,reject)=>{
+  assert.equal(options.redirect,'error');
   active++;maximum=Math.max(maximum,active);let done=false;
   const finish=fn=>value=>{if(done)return;done=true;active--;fn(value);};
   calls.push({path,options,resolve:finish(resolve),reject:finish(reject)});

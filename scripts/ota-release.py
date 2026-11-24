@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = spec_from_file_location('release', ROOT/'scripts/release.py')
 release = module_from_spec(spec); spec.loader.exec_module(release)
 TARGET = 'waveshare-p4-10.1-rev3-32mb'
-LAYOUT = 'ab-8mb-v1'
+LAYOUT = 'ab-8mb-https-v1'
 def git(*args):
     return subprocess.check_output(['git', *args], cwd=ROOT, text=True).strip()
 def plan(destination):

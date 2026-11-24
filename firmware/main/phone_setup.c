@@ -1,5 +1,7 @@
 #include "phone_setup.h"
 #include "pairing.h"
+#include "phone_tls.h"
+#include "phone_dns.h"
 #include "phone_protocol.h"
 #include "network_time.h"
 #include "settings.h"
@@ -16,6 +18,7 @@
 #include "sdkconfig.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <math.h> /* floor/isfinite validate numeric settings before conversion. */
 static portMUX_TYPE mux=portMUX_INITIALIZER_UNLOCKED;
 static station_settings_t current_settings;
@@ -24,6 +27,34 @@ static QueueHandle_t queue;
 static httpd_handle_t server;
 static bool server_ready;
 static char token[33];
+/* UI requests; main worker performs durable writes without holding the display lock. */
+static atomic_int forget_state;
+static uint32_t dns_address;
+static int64_t dns_verified_until;
+static void check_phone_dns(void)
+{
+    portENTER_CRITICAL(&mux);bool ready=server_ready;portEXIT_CRITICAL(&mux);
+    station_network_status_t net;station_network_status(&net);
+    esp_netif_t *iface=esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");esp_netif_ip_info_t info;
+    uint32_t address=0;
+    if(ready&&net.connected&&iface&&esp_netif_get_ip_info(iface,&info)==ESP_OK&&info.ip.addr&&
+       station_phone_dns_matches(station_phone_tls_hostname(),info.ip.addr))address=info.ip.addr;
+    portENTER_CRITICAL(&mux);dns_address=address;dns_verified_until=esp_timer_get_time()+10000000LL;portEXIT_CRITICAL(&mux);
+}
+void station_phone_forget(void)
+{
+    int current=atomic_load(&forget_state);
+    if(current!=1)atomic_compare_exchange_strong(&forget_state,&current,1);
+}
+void station_phone_maintenance(void)
+{
+    check_phone_dns();
+    if(atomic_load(&forget_state)!=1)return;
+    char replacement[33];
+    if(station_pairing_rotate(replacement)!=ESP_OK){atomic_store(&forget_state,3);return;}
+    portENTER_CRITICAL(&mux);memcpy(token,replacement,sizeof(token));portEXIT_CRITICAL(&mux);
+    memset(replacement,0,sizeof(replacement));atomic_store(&forget_state,2);
+}
 /* HTTP handlers execute serially. Location handoff is device-owned, not tab-owned. */
 static char location_request[33];
 static int64_t location_request_until;
@@ -52,21 +83,28 @@ void station_phone_publish(const station_settings_t *settings,station_view_t vie
 bool station_phone_take(station_phone_command_t *command) {return queue&&xQueueReceive(queue,command,0)==pdTRUE;}
 void station_phone_link(station_phone_link_t *link)
 {
-    memset(link,0,sizeof(*link));
+    memset(link,0,sizeof(*link));link->forget_state=atomic_load(&forget_state);
     station_network_status_t net;station_network_status(&net);
     esp_netif_t *iface=esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");esp_netif_ip_info_t info;
     portENTER_CRITICAL(&mux);bool ready=server_ready;portEXIT_CRITICAL(&mux);
     bool ip_ready=iface&&esp_netif_get_ip_info(iface,&info)==ESP_OK&&info.ip.addr;
-    int reason=!net.connected?1:!ready?2:!ip_ready?3:0;
+    portENTER_CRITICAL(&mux);
+    bool dns_ready=ip_ready&&dns_address==info.ip.addr&&esp_timer_get_time()<dns_verified_until;
+    portEXIT_CRITICAL(&mux);
+    link->dns_pending=ready&&net.connected&&ip_ready&&!dns_ready;
+    int reason=!net.connected?1:!ready?2:!ip_ready?3:!dns_ready?4:0;
     static int previous=-1;
-    if(reason!=previous){ESP_LOGI("phone","Setup availability: %s",reason==1?"waiting for Wi-Fi":reason==2?"waiting for HTTP server":reason==3?"waiting for IP address":"ready");previous=reason;}
-    if(ready&&net.connected&&ip_ready) {
+    if(reason!=previous){ESP_LOGI("phone","Setup availability: %s",reason==1?"waiting for Wi-Fi":reason==2?"waiting for HTTPS identity/server":reason==3?"waiting for IP address":reason==4?"waiting for matching DNS":"ready");previous=reason;}
+    if(ready&&net.connected&&ip_ready&&dns_ready) {
         link->online=true;
-        snprintf(link->url,sizeof(link->url),"http://" IPSTR "/#token=%s",IP2STR(&info.ip),token);
+        portENTER_CRITICAL(&mux);
+        snprintf(link->url,sizeof(link->url),"https://%s/#token=%s",station_phone_tls_hostname(),token);
+        portEXIT_CRITICAL(&mux);
     }
 }
 static void headers(httpd_req_t *r)
 {
+    httpd_resp_set_hdr(r,"Strict-Transport-Security","max-age=31536000");
     httpd_resp_set_hdr(r,"Cache-Control","no-store");
     httpd_resp_set_hdr(r,"Referrer-Policy","no-referrer");
     httpd_resp_set_hdr(r,"X-Content-Type-Options","nosniff");
@@ -81,7 +119,7 @@ static esp_err_t json_reply(httpd_req_t *r,cJSON *j)
 }
 static bool authorised(httpd_req_t *r)
 {
-    char bearer[48],expected[48];snprintf(expected,sizeof(expected),"Bearer %s",token);
+    char bearer[48],expected[48];portENTER_CRITICAL(&mux);snprintf(expected,sizeof(expected),"Bearer %s",token);portEXIT_CRITICAL(&mux);
     if(httpd_req_get_hdr_value_str(r,"Authorization",bearer,sizeof(bearer))!=ESP_OK)return false;
     if(strlen(bearer)!=strlen(expected))return false;
     unsigned diff=0;for(size_t i=0;i<strlen(expected);i++)diff|=(unsigned char)bearer[i]^(unsigned char)expected[i];
@@ -230,9 +268,9 @@ esp_err_t station_phone_start(const station_settings_t *settings)
         esp_err_t pairing=station_pairing_load(token);if(pairing!=ESP_OK)return pairing;
         queue=xQueueCreate(2,sizeof(station_phone_command_t));if(!queue)return ESP_ERR_NO_MEM;
     }
-    httpd_config_t config=HTTPD_DEFAULT_CONFIG();config.stack_size=8192;config.max_open_sockets=3;
+    httpd_config_t config=HTTPD_DEFAULT_CONFIG();config.stack_size=10240;config.max_open_sockets=3;
     config.lru_purge_enable=true;config.recv_wait_timeout=3;config.send_wait_timeout=3;config.max_uri_handlers=14;
-    esp_err_t err=httpd_start(&server,&config);if(err!=ESP_OK){server=NULL;return err;}
+    esp_err_t err=station_phone_tls_start(&server,&config);if(err!=ESP_OK){server=NULL;return err;}
     const httpd_uri_t routes[]={
         {.uri="/api/credential",.method=HTTP_POST,.handler=post},{.uri="/api/update",.method=HTTP_POST,.handler=post},
         {.uri="/api/location-request",.method=HTTP_POST,.handler=post},
@@ -242,7 +280,7 @@ esp_err_t station_phone_start(const station_settings_t *settings)
         {.uri="/style.css",.method=HTTP_GET,.handler=asset},{.uri="/location.js",.method=HTTP_GET,.handler=asset},
         {.uri="/api/status",.method=HTTP_GET,.handler=status_get},{.uri="/api/settings",.method=HTTP_POST,.handler=post},
         {.uri="/api/location",.method=HTTP_POST,.handler=post},{.uri="/api/view",.method=HTTP_POST,.handler=post}};
-    for(unsigned i=0;i<sizeof(routes)/sizeof(routes[0]);i++)if((err=httpd_register_uri_handler(server,&routes[i]))!=ESP_OK){httpd_stop(server);server=NULL;return err;}
+    for(unsigned i=0;i<sizeof(routes)/sizeof(routes[0]);i++)if((err=httpd_register_uri_handler(server,&routes[i]))!=ESP_OK){station_phone_tls_stop(server);server=NULL;return err;}
     portENTER_CRITICAL(&mux);server_ready=true;portEXIT_CRITICAL(&mux);
     ESP_LOGI("phone","Local phone control ready");return ESP_OK;
 }

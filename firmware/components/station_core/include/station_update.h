@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #define TEMPO_UPDATE_TARGET "waveshare-p4-10.1-rev3-32mb"
-#define TEMPO_UPDATE_LAYOUT "ab-8mb-v1"
+#define TEMPO_UPDATE_LAYOUT "ab-8mb-https-v1"
 #define TEMPO_UPDATE_BASE "https://github.com/tinyrobotcompany/Tempo/releases/download/"
 typedef enum { UPDATE_IDLE, UPDATE_CHECKING, UPDATE_AVAILABLE, UPDATE_DOWNLOADING,
  UPDATE_VERIFYING, UPDATE_RESTARTING, UPDATE_ERROR, UPDATE_PREPARING } station_update_state_t;

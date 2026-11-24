@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One-time paired LAN provisioning. Read the key privately; never compile it into firmware."""
-import argparse, getpass, ipaddress, json, urllib.parse, urllib.request, urllib.error
+import argparse, getpass, json, urllib.parse, urllib.request, urllib.error, ssl, ipaddress
 from pathlib import Path
 
 def key_from_env(path):
@@ -14,11 +14,16 @@ def key_from_env(path):
 
 def destination(qr):
     url=urllib.parse.urlsplit(qr)
-    if url.scheme != 'http' or url.username or url.password or url.query:
-        raise ValueError('Use the current HTTP setup QR URL on your trusted LAN.')
-    address=ipaddress.ip_address(url.hostname or '')
-    if not address.is_private or address.is_multicast or address.is_unspecified:
-        raise ValueError('Provision only on the trusted local network.')
+    if url.scheme != 'https' or url.username or url.password or url.query:
+        raise ValueError('Use the HTTPS setup QR URL on your display.')
+    if not url.hostname or url.path not in ('','/') or url.port not in (None,443):
+        raise ValueError('Use the HTTPS setup QR URL on your display.')
+    try:
+        ipaddress.ip_address(url.hostname)
+    except ValueError:
+        pass
+    else:
+        raise ValueError('Use the DNS hostname from the HTTPS setup QR, not an IP address.')
     token=urllib.parse.parse_qs(url.fragment).get('token',[''])[0]
     if len(token)!=32 or any(c not in '0123456789abcdef' for c in token):raise ValueError('Invalid pairing token.')
     return urllib.parse.urlunsplit((url.scheme,url.netloc,'/api/credential','','')),token
@@ -26,12 +31,14 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args):return None
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--env',type=Path,help='Existing private .env, read locally only');args=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--ca',type=Path,help='Explicit development CA PEM; otherwise use system trust');p.add_argument('--env',type=Path,help='Existing private .env, read locally only');args=p.parse_args()
     try:
         target,token=destination(getpass.getpass('Current setup QR URL (hidden): '))
         key=key_from_env(args.env) if args.env else getpass.getpass('PRIM API key (hidden): ')
         request=urllib.request.Request(target,data=json.dumps({'key':key}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method='POST')
-        with urllib.request.build_opener(NoRedirect()).open(request,timeout=10) as response:
+        context=ssl.create_default_context(cafile=str(args.ca) if args.ca else None)
+        context.minimum_version=ssl.TLSVersion.TLSv1_2
+        with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(), urllib.request.HTTPSHandler(context=context)).open(request,timeout=10) as response:
             result=json.loads(response.read(1024))
         if result.get('saved') is not True:raise ValueError('Save was not confirmed.')
         print('Transport credential saved on the device. No firmware key was generated.')
