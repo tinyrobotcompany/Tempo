@@ -169,7 +169,11 @@ esp_err_t station_identity_install(const char *chain,int64_t *renew_after)
     uint32_t flags=0;
     if(result==0)result=mbedtls_x509_crt_verify(&cert,&roots,NULL,device_hostname,&flags,NULL,NULL);
     int64_t start=epoch(&cert.valid_from),end=epoch(&cert.valid_to),now=time(NULL);
-    if(err==ESP_OK&&(result!=0||flags||end-now<86400||start>now))err=ESP_ERR_INVALID_ARG;
+    if(err==ESP_OK&&(result!=0||flags||start<0||end<=start||end-now<86400||start>now))err=ESP_ERR_INVALID_ARG;
+    /* Reject before consulting stored bytes: equality cannot validate a cert. */
+    if(err!=ESP_OK){
+        mbedtls_pk_free(&key);mbedtls_x509_crt_free(&cert);mbedtls_x509_crt_free(&roots);return err;
+    }
     if(err==ESP_OK){
         nvs_handle_t handle;err=nvs_open_from_partition("phone_tls","identity",NVS_READWRITE,&handle);
         if(err==ESP_OK){
