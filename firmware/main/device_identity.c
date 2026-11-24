@@ -20,6 +20,7 @@
 static char identifier[33], device_hostname[97];
 static atomic_bool changed;
 static int64_t renewal;
+static bool public_identity_logged;
 extern const char device_roots_start[] __asm__("_binary_device_roots_pem_start");
 extern const char device_roots_end[] __asm__("_binary_device_roots_pem_end");
 static esp_err_t key_open(const char *space,mbedtls_pk_context *key)
@@ -54,10 +55,19 @@ static esp_err_t ensure_key(uint32_t id)
 
 static int64_t epoch(const mbedtls_x509_time *value)
 {
-    struct tm date={.tm_year=value->year-1900,.tm_mon=value->mon-1,.tm_mday=value->day,
-                   .tm_hour=value->hour,.tm_min=value->min,.tm_sec=value->sec,.tm_isdst=0};
-    /* Firmware sets TZ=UTC0 before identity initialization. */
-    return (int64_t)mktime(&date);
+    /* X.509 dates are UTC. Convert directly; never consult process TZ or
+       mutate it while other firmware tasks are running. */
+    static const int before_month[]={0,31,59,90,120,151,181,212,243,273,304,334};
+    static const int month_days[]={31,28,31,30,31,30,31,31,30,31,30,31};
+    int y=value->year,m=value->mon;
+    bool leap=y%4==0&&(y%100!=0||y%400==0);
+    if(y<1||y>9999||m<1||m>12||value->day<1||
+       value->day>month_days[m-1]+(m==2&&leap)||value->hour<0||value->hour>23||
+       value->min<0||value->min>59||value->sec<0||value->sec>59)return -1;
+    int previous=y-1;
+    int64_t days=365LL*(y-1970)+(previous/4-1969/4)-(previous/100-1969/100)+
+        (previous/400-1969/400)+before_month[m-1]+(m>2&&leap)+value->day-1;
+    return ((days*24+value->hour)*60+value->min)*60+value->sec;
 }
 
 esp_err_t station_identity_init(void)
@@ -78,10 +88,10 @@ esp_err_t station_identity_init(void)
         int written=snprintf(device_hostname,sizeof(device_hostname),"d-%s.%s",identifier,CONFIG_TEMPO_DEVICE_SUFFIX);
         if(written<0||(size_t)written>=sizeof(device_hostname))err=ESP_ERR_INVALID_ARG;
     }
-    if(err==ESP_OK){
+    if(err==ESP_OK&&!public_identity_logged){
         char public_pem[256];
         if(mbedtls_pk_write_pubkey_pem(&key,(unsigned char *)public_pem,sizeof(public_pem))!=0)err=ESP_FAIL;
-        else ESP_LOGI("identity","Manufacturing PUBLIC identity for %s:\n%s",identifier,public_pem);
+        else {ESP_LOGI("identity","Manufacturing PUBLIC identity for %s:\n%s",identifier,public_pem);public_identity_logged=true;}
     }
     mbedtls_pk_free(&key);
     if(err!=ESP_OK)return err;
@@ -129,6 +139,7 @@ esp_err_t station_identity_csr(char *output,size_t capacity)
 
 esp_err_t station_identity_sign(const char *body,char *signature,size_t capacity)
 {
+    if(!body||!signature||!capacity)return ESP_ERR_INVALID_ARG;
     static const char context[]="TEMPO-DEVICE-V1\nPOST\n/v1/device\n";
     size_t length=strlen(body);if(length>6144)return ESP_ERR_INVALID_ARG;
     unsigned char *message=malloc(sizeof(context)-1+length);if(!message)return ESP_ERR_NO_MEM;
@@ -150,6 +161,8 @@ esp_err_t station_identity_install(const char *chain,int64_t *renew_after)
     mbedtls_x509_crt cert,roots;mbedtls_x509_crt_init(&cert);mbedtls_x509_crt_init(&roots);
     mbedtls_pk_context key;mbedtls_pk_init(&key);
     esp_err_t err=key_open("identity",&key);
+    /* parse keeps the delivered intermediates in cert.next. verify walks that
+       untrusted chain; only the separately embedded roots are trust anchors. */
     int result=mbedtls_x509_crt_parse(&cert,(const unsigned char *)chain,length);
     if(result==0)result=mbedtls_x509_crt_parse(&roots,(const unsigned char *)device_roots_start,device_roots_end-device_roots_start);
     if(result==0&&err==ESP_OK)result=mbedtls_pk_check_pair(&cert.pk,&key);
