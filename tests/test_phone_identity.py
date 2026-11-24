@@ -54,6 +54,31 @@ class IdentityTests(unittest.TestCase):
                          '-extfile',str(target/'extensions.cnf'),'-out',str(target/'fullchain.pem'))
             with self.assertRaises(ValueError):identity.validate(target,target/'ca.pem')
 
+    def test_leaf_and_intermediate_bundle(self):
+        with tempfile.TemporaryDirectory() as root:
+            d=self.copy(root)
+            # Reissue the test root with room for one intermediate CA.
+            identity.run('openssl','req','-x509','-key',str(d/'ca.key'),'-days','7',
+                         '-subj','/CN=Test root','-addext','basicConstraints=critical,CA:TRUE,pathlen:1','-out',str(d/'ca.pem'))
+            issuer=Path(root)/'issuer';identity.create(issuer,'issuer.example.com')
+            (issuer/'extensions').write_text('basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\n')
+            def sign(csr,ca,key,extensions,out):
+                identity.run('openssl','x509','-req','-in',str(csr),'-CA',str(ca),'-CAkey',str(key),
+                             '-CAcreateserial','-days','3','-sha256','-extfile',str(extensions),'-out',str(out))
+            sign(issuer/'device.csr',d/'ca.pem',d/'ca.key',issuer/'extensions',issuer/'ca.pem')
+            sign(d/'device.csr',issuer/'ca.pem',issuer/'device.key',d/'extensions.cnf',d/'fullchain.pem')
+            leaf=(d/'fullchain.pem').read_bytes()
+            (d/'fullchain.pem').write_bytes(leaf+(issuer/'ca.pem').read_bytes())
+            self.assertEqual(identity.validate(d,d/'ca.pem'),'device-a7f3.tempo.tinyrobotcompany.io')
+            (d/'identity.json').write_text('{"hostname":"wrong.example.com"}')
+            with self.assertRaises(ValueError):identity.validate(d,d/'ca.pem')
+            (d/'identity.json').write_bytes((self.directory/'identity.json').read_bytes())
+            (d/'device.key').write_bytes((issuer/'device.key').read_bytes())
+            with self.assertRaises(ValueError):identity.validate(d,d/'ca.pem')
+            (d/'device.key').write_bytes((self.directory/'device.key').read_bytes())
+            (d/'fullchain.pem').write_bytes(leaf)
+            with self.assertRaises(ValueError):identity.validate(d,d/'ca.pem')
+
     def test_bounds_permissions_and_names(self):
         for name in ['','localhost','192.168.1.2','*.example.com','a..example.com','-a.example.com','a-.example.com','UPPER.example.com','a'*64+'.com','a.com/other','a'*97]:
             with self.assertRaises(ValueError):identity.hostname(name)
