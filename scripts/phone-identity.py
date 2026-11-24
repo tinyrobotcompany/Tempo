@@ -82,17 +82,27 @@ def validate(directory, trust):
         raise ValueError('Private key must have permissions 0600.')
     if not 0 < chain.stat().st_size < 8192 or not 0 < key.stat().st_size < 4096:
         raise ValueError('Identity exceeds firmware limits.')
-    cert_public = run('openssl', 'x509', '-in', str(chain), '-pubkey', '-noout')
-    key_public = run('openssl', 'pkey', '-in', str(key), '-pubout')
-    if cert_public != key_public:
-        raise ValueError('Certificate does not match this device private key.')
-    sans = run('openssl', 'x509', '-in', str(chain), '-noout', '-ext', 'subjectAltName').decode()
-    names = re.findall(r'DNS:([^,\s]+)', sans)
-    if names != [name]:
-        raise ValueError('Require exactly one DNS identity; shared/wildcard certificates are rejected.')
-    run('openssl', 'x509', '-in', str(chain), '-checkend', '86400', '-noout')
-    run('openssl', 'verify', '-purpose', 'sslserver', '-verify_hostname', name,
-        '-CAfile', str(trust), '-untrusted', str(chain), str(chain))
+    with tempfile.TemporaryDirectory(dir=directory) as tmp:
+        pem = chain.read_bytes()
+        pattern = rb'-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----'
+        blocks = re.findall(pattern, pem)
+        if not blocks or re.sub(pattern, b'', pem).strip():
+            raise ValueError('Expected a leaf-first PEM certificate bundle.')
+        leaf, issuers = Path(tmp)/'leaf.pem', Path(tmp)/'issuers.pem'
+        leaf.write_bytes(blocks[0]+b'\n')
+        issuers.write_bytes(b'\n'.join(blocks[1:]))
+        untrusted = ['-untrusted', str(issuers)] if len(blocks)>1 else []
+        cert_public = run('openssl', 'x509', '-in', str(leaf), '-pubkey', '-noout')
+        key_public = run('openssl', 'pkey', '-in', str(key), '-pubout')
+        if cert_public != key_public:
+            raise ValueError('Certificate does not match this device private key.')
+        sans = run('openssl', 'x509', '-in', str(leaf), '-noout', '-ext', 'subjectAltName').decode()
+        names = re.findall(r'DNS:([^,\s]+)', sans)
+        if names != [name]:
+            raise ValueError('Require exactly one DNS identity; shared/wildcard certificates are rejected.')
+        run('openssl', 'x509', '-in', str(leaf), '-checkend', '86400', '-noout')
+        run('openssl', 'verify', '-purpose', 'sslserver', '-verify_hostname', name,
+            '-CAfile', str(trust), *untrusted, str(leaf))
     return name
 
 

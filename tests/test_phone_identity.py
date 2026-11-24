@@ -70,6 +70,11 @@ class IdentityTests(unittest.TestCase):
             leaf=(d/'fullchain.pem').read_bytes()
             (d/'fullchain.pem').write_bytes(leaf+(issuer/'ca.pem').read_bytes())
             self.assertEqual(identity.validate(d,d/'ca.pem'),'device-a7f3.tempo.tinyrobotcompany.io')
+            bundle=(d/'fullchain.pem').read_bytes()
+            for invalid in [(issuer/'ca.pem').read_bytes()+leaf, bundle+b'garbage', b'not PEM']:
+                (d/'fullchain.pem').write_bytes(invalid)
+                with self.assertRaises(ValueError):identity.validate(d,d/'ca.pem')
+            (d/'fullchain.pem').write_bytes(bundle)
             (d/'identity.json').write_text('{"hostname":"wrong.example.com"}')
             with self.assertRaises(ValueError):identity.validate(d,d/'ca.pem')
             (d/'identity.json').write_bytes((self.directory/'identity.json').read_bytes())
