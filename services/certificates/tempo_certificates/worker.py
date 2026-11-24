@@ -3,6 +3,8 @@ import logging
 import secrets
 import time
 
+from .protocol import Rejected, validate_address, validate_csr
+
 LOG = logging.getLogger("tempo.certificates")
 LEASE_SECONDS = 900
 
@@ -47,6 +49,23 @@ class Worker:
             if row.get("challenge"):
                 self.dns.remove_challenge(row["hostname"], row["challenge"])
                 checkpoint({"challenge": ""})
+            # Validate durable input before charging issuance quota or starting
+            # provider work (after orphan challenge cleanup). Provider exceptions must remain retryable and redacted.
+            try:
+                if row.get("operation") == "certificate":
+                    if not row.get("job_id"):
+                        raise Rejected("invalid_job")
+                    if row.get("completed_job") != row["job_id"]:
+                        validate_csr(row.get("csr"), row["hostname"])
+                elif row.get("operation") == "address":
+                    validate_address(row.get("desired_address"))
+                else:
+                    raise Rejected("invalid_job")
+            except Rejected:
+                checkpoint({"state": "error", "error": "invalid_job", "lease": "",
+                            "retry_after": now + 86400})
+                LOG.warning("device_job_invalid")
+                return
             if row["attempts"] > 4:
                 checkpoint({"state": "error", "error": "retry_limit_reached", "retry_after": now + 86400})
                 return

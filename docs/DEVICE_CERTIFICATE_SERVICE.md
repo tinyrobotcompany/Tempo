@@ -110,6 +110,10 @@ burn eFuses during an ordinary update.
 - Worker leases and ETags coordinate replicas/revisions; DNS challenges are saved
   before publication, cleaned on retry, and certificate results are saved before
   cleanup. Four attempts bound a job; retries use backoff without erasing old certs.
+  Invalid persisted CSR/address jobs stop with `invalid_job` before new provider
+  work or issuance quota consumption. Investigate `device_job_invalid` events;
+  existing certificates are retained. After the one-day error cooldown, a corrected
+  signed request can create a new job.
 - Alert on `worker_cycle_failed`, repeated `device_job_failed`, near-expiry devices,
   CA rate limits, and DNS credential rotation failures. Log events omit private
   material. Configure alert recipients and budgets before production activation.

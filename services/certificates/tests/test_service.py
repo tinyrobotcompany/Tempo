@@ -205,14 +205,15 @@ def test_worker_recovers_crashed_challenge_and_commits_result(setup):
     assert [value for _, value in dns.removed] == ["orphan", "current"]
 
 
-def test_failed_worker_retains_existing_certificate_and_schedules_retry(setup):
+@pytest.mark.parametrize("failure", [TimeoutError, ValueError, Rejected])
+def test_failed_worker_retains_existing_certificate_and_schedules_retry(setup, failure):
     key, store, service = setup
     service.handle(*signed(key, store, "certificate", csr=csr(store.row["hostname"])))
     store.row["certificate"] = "still valid"
 
     class Issuer:
         def issue(self, *args):
-            raise TimeoutError("secret")
+            raise failure("secret")
 
     Worker(store, Issuer(), DNS(), lambda: NOW).process(store.get(store.row["PartitionKey"]))
     assert store.row["state"] == "pending" and store.row["next_attempt"] > NOW
@@ -282,3 +283,33 @@ def test_dns_does_not_report_success_before_convergence(setup, addresses):
     adapter.call = lambda *args, **kwargs: None
     with pytest.raises(RuntimeError, match="dns_address_not_converged"):
         adapter.set_address(store.row["hostname"], "192.168.1.34")
+
+
+@pytest.mark.parametrize("corruption", [
+    {"csr": "invalid secret CSR"}, {"csr": None},
+    {"operation": "address", "desired_address": "8.8.8.8"},
+    {"operation": "unknown"}, {"job_id": ""},
+])
+def test_invalid_persisted_job_is_terminal_before_provider_or_quota(setup, corruption, caplog):
+    key, store, service = setup
+    service.handle(*signed(key, store, "certificate", csr=csr(store.row["hostname"])))
+    store.row.update(certificate="still valid", **corruption)
+    dns = DNS()
+    # No issuer implementation: any attempted call would take the retry path.
+    Worker(store, object(), dns, lambda: NOW).process(store.get(store.row["PartitionKey"]))
+    assert store.row["state"] == "error" and store.row["error"] == "invalid_job"
+    assert store.row["lease"] == "" and store.row["attempts"] == 1
+    assert store.row.get("issue_count", 0) == 0
+    assert store.row["certificate"] == "still valid" and dns.addresses == []
+    assert "device_job_invalid" in caplog.text and "secret" not in caplog.text
+
+
+def test_completed_certificate_job_with_cleared_csr_does_not_reissue(setup):
+    key, store, service = setup
+    service.handle(*signed(key, store, "certificate", csr=csr(store.row["hostname"])))
+    store.row.update(completed_job=store.row["job_id"], csr="", certificate="issued", challenge="orphan")
+    dns = DNS()
+    Worker(store, object(), dns, lambda: NOW).process(store.get(store.row["PartitionKey"]))
+    assert store.row["state"] == "ready" and store.row["certificate"] == "issued"
+    assert store.row["challenge"] == "" and len(dns.removed) == 1
+    assert store.row.get("issue_count", 0) == 0
