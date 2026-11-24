@@ -92,6 +92,69 @@ class DeliveryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 migrate.inventory()
 
+    def test_migration_deletes_groups_only_after_successful_reconciliation(self):
+        for reconcile_succeeds in (False, True):
+            with self.subTest(reconcile_succeeds=reconcile_succeeds), tempfile.TemporaryDirectory() as name:
+                directory = Path(name)
+                groups = {prefix + c: [] for prefix in (migrate.OLD, migrate.NEW) for c in migrate.CONCERNS}
+                for concern, resources in migrate.EXPECTED.items():
+                    for kind, resource_name in resources:
+                        group = migrate.OLD + concern
+                        groups[group].append({'type': kind, 'name': resource_name, 'resourceGroup': group,
+                                              'id': '/subscriptions/id/resourceGroups/' + group + '/providers/' + kind + '/' + resource_name})
+                snapshot = {'sha': 'same', 'layout': migrate.layout(groups), 'roles': [], 'identities': {}}
+                (directory / 'migration.json').write_text(json.dumps(snapshot))
+                events = []
+
+                def azure(*args):
+                    verb = args[:2]
+                    def value(flag):
+                        return args[args.index(flag) + 1]
+                    if verb == ('group', 'exists'):
+                        return value('--name') in groups
+                    if verb == ('resource', 'list'):
+                        return list(groups[value('--resource-group')])
+                    if verb == ('resource', 'move'):
+                        destination = value('--destination-group')
+                        for identifier in args[args.index('--ids') + 1:]:
+                            for source, rows in list(groups.items()):
+                                found = next((r for r in rows if r['id'] == identifier), None)
+                                if found:
+                                    rows.remove(found)
+                                    found = dict(found, id=identifier.replace(source, destination), resourceGroup=destination)
+                                    groups[destination].append(found)
+                                    break
+                        events.append('move')
+                        return None
+                    if args[:3] == ('deployment', 'sub', 'create'):
+                        events.append('reconcile')
+                        return {'properties': {'provisioningState': 'Succeeded' if reconcile_succeeds else 'Failed'}}
+                    if args[:3] == ('network', 'private-endpoint', 'show'):
+                        return {'provisioningState': 'Succeeded', 'privateLinkServiceConnections': [{'privateLinkServiceConnectionState': {'status': 'Approved'}}]}
+                    if args[:4] == ('network', 'private-endpoint', 'dns-zone-group', 'list'):
+                        return [{'id': '/resourceGroups/' + migrate.NEW + 'security/dns'}]
+                    if verb == ('group', 'delete'):
+                        group = value('--name')
+                        self.assertFalse(groups[group])
+                        self.assertIn('verified', events)
+                        events.append('delete:' + group)
+                        del groups[group]
+                        return None
+                    if verb == ('group', 'list'):
+                        return [{'name': group} for group in groups]
+                    self.fail('Unexpected Azure operation: ' + str(args))
+
+                with patch.object(migrate, 'DIRECTORY', directory), patch.object(migrate, 'guard', return_value='same'), patch.object(migrate, 'inventory', return_value=groups), patch.object(migrate, 'resource_roles', return_value=[]), patch.object(migrate, 'az', side_effect=azure), patch.object(migrate, 'verify', side_effect=lambda: events.append('verified')), patch.object(migrate.subprocess, 'run'):
+                    if reconcile_succeeds:
+                        migrate.apply()
+                        self.assertEqual(sum(e.startswith('delete:') for e in events), 5)
+                        self.assertTrue((directory / 'migration-complete.json').exists())
+                    else:
+                        with self.assertRaises(ValueError):
+                            migrate.apply()
+                        self.assertFalse(any(e.startswith('delete:') for e in events))
+                        self.assertFalse((directory / 'migration-complete.json').exists())
+
     def test_github_only_entrypoints_and_pinned_actions(self):
         workflow = (ROOT / '.github/workflows/infrastructure-deploy.yaml').read_text()
         self.assertNotIn('pull_request_target', workflow)
