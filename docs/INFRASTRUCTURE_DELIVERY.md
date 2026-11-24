@@ -42,6 +42,11 @@ identity, federation and delivery permissions. It neither moves existing resourc
 nor starts the application. Never grant subscription Owner or put an Azure client
 secret in GitHub.
 
+Read-only bootstrap what-if was checked on 2026-11-24: Azure reported success,
+9 Create entries and 20 Unsupported permission entries. Unsupported entries are
+not verified grants: review those Bicep assignments explicitly, then verify the
+resulting scopes after bootstrap. Compilation alone is not Azure validation.
+
 The bootstrap grants subscription deployment-record operations plus Contributor
 and RBAC Administrator scoped to the ten exact source/destination Tempo groups.
 RBAC administration is needed to restore the narrowly scoped runtime assignments.

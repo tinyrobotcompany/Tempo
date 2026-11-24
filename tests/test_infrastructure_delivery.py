@@ -14,6 +14,17 @@ import migrate
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_cli_boolean_json_output(self):
+        # Azure CLI -o json emits JSON booleans, which json.loads preserves.
+        for output, expected in [('true\n', True), ('false\n', False), ('  true\n', True)]:
+            result = delivery.subprocess.CompletedProcess([], 0, stdout=output)
+            with patch.object(delivery.subprocess, 'run', return_value=result) as run:
+                self.assertIs(delivery.az('group', 'exists', '--name', 'example'), expected)
+                self.assertEqual(run.call_args.args[0][-2:], ['-o', 'json'])
+        with patch.object(delivery.subprocess, 'run', return_value=delivery.subprocess.CompletedProcess([], 0, stdout='unexpected')):
+            with self.assertRaises(json.JSONDecodeError):
+                delivery.az('group', 'exists', '--name', 'example')
+
     def test_no_local_or_branch_cloud_write(self):
         for context in ({}, {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'tinyrobotcompany/Tempo',
                              'GITHUB_REF': 'refs/heads/feature/test', 'GITHUB_EVENT_NAME': 'workflow_dispatch'}):
