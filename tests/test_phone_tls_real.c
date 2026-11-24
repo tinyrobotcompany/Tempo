@@ -23,6 +23,7 @@ int main(int argc,char **argv){
  chain=read_file(argv[1]);secret=read_file(argv[2]);dns="device-test.tempo.tinyrobotcompany.io";
  httpd_handle_t server=NULL;httpd_config_t config=HTTPD_DEFAULT_CONFIG();
  assert(station_phone_tls_start(&server,&config)==0);station_phone_tls_stop(server);
+ /* The bundle root has this SAN: it must not substitute for the leaf SAN. */
  dns="wrong.tempo.tinyrobotcompany.io";assert(station_phone_tls_start(&server,&config)!=0);
  dns="device-test.tempo.tinyrobotcompany.io";free(secret);secret=read_file(argv[3]);
  assert(station_phone_tls_start(&server,&config)!=0);

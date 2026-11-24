@@ -57,6 +57,8 @@ static bool matches_identity(void)
         /* Issuer trust is checked before installation. At startup require the
            exact DNS SAN and key pair; a normal CA-issued leaf is not its own CA.
            Validity dates are enforced by the browser, including before SNTP. */
+        /* cert is the first PEM certificate; issuers live in cert.next.
+           This sequence contains only names on that first certificate. */
         const mbedtls_x509_sequence *san=&cert.subject_alt_names;
         result=-1;
         for(;san;san=san->next){
