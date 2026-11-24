@@ -74,7 +74,12 @@ OIDC with a long-lived password or remove approval.
 
 After the infrastructure PR is merged by the user and bootstrap is complete:
 
-1. Run **Infrastructure deployment** from `main`, initially with `preview`.
+1. For this existing foundation, first run **Infrastructure deployment** from
+   `main` with `migrate`. Its preview inventories the resources; its separately
+   approved apply moves and reconciles them before cleanup. Do not run a normal
+   foundation deployment first: even with compute disabled it would try to create
+   destination copies of existing resources. Normal `preview` and `deploy` refuse
+   while any old group remains. After migration, use `preview` for future changes.
 2. Approve access to the infrastructure environment. The job validates checkout,
    current main SHA, subscription and tenant, compiles Bicep and runs Azure what-if.
 3. Review the immutable plan artifact, compiled template, parameters and diagnostics.

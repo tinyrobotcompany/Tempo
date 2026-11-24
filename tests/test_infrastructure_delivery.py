@@ -14,6 +14,17 @@ import migrate
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_normal_plan_requires_migration_before_compilation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(delivery, 'guard', return_value='same'), patch.object(delivery, 'az', return_value=True) as azure, patch.object(delivery.subprocess, 'run') as process:
+                with self.assertRaisesRegex(ValueError, 'group migration'):
+                    delivery.plan(Path(directory), '', 'staging')
+                process.assert_not_called()
+                self.assertEqual(azure.call_args.args[:2], ('group', 'exists'))
+        with patch.object(delivery, 'az', return_value=False) as azure:
+            delivery.require_migrated()
+            self.assertEqual(azure.call_count, 5)
+
     def test_cli_boolean_json_output(self):
         # Azure CLI -o json emits JSON booleans, which json.loads preserves.
         for output, expected in [('true\n', True), ('false\n', False), ('  true\n', True)]:

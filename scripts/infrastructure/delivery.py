@@ -75,8 +75,16 @@ def changes(result):
     return sorted(safe_preview(result.get('changes', [])), key=lambda c: c['resourceId'].lower())
 
 
+def require_migrated():
+    for concern in CONCERNS:
+        group = 'rg-tempo-staging-westeurope-' + concern
+        if az('group', 'exists', '--subscription', SUBSCRIPTION, '--name', group):
+            raise ValueError('Complete the approved group migration before normal deployment')
+
+
 def plan(directory, image, acme):
     head = guard()
+    require_migrated()
     directory.mkdir(parents=True, exist_ok=True)
     subprocess.run(['az', 'bicep', 'build', '--file', str(ROOT / 'infra/certificates/main.bicep'),
                     '--outfile', str(directory / 'template.json')], check=True)
@@ -108,10 +116,7 @@ def apply(directory):
     preview = az(*command('what-if', directory), '--result-format', 'FullResourcePayloads')
     if changes(preview) != manifest['changes']:
         raise ValueError('Azure changed since preview: review a fresh plan')
-    for concern in CONCERNS:
-        group = 'rg-tempo-staging-westeurope-' + concern
-        if az('group', 'exists', '--subscription', SUBSCRIPTION, '--name', group):
-            raise ValueError('Complete the approved group migration before normal deployment')
+    require_migrated()
     result = az(*command('create', directory))
     if result['properties']['provisioningState'] != 'Succeeded':
         raise ValueError('Deployment failed')
