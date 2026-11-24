@@ -128,6 +128,26 @@ class DeliveryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 migrate.inventory()
 
+    def test_endpoint_and_managed_nic_deletion_is_confirmed(self):
+        items = {migrate.OLD + 'security': [
+            {'type': 'Microsoft.Network/privateEndpoints', 'name': 'tempo-table-endpoint', 'id': '/endpoint'},
+            {'type': 'Microsoft.Network/networkInterfaces', 'name': 'managed-nic', 'id': '/nic'}]}
+        with tempfile.TemporaryDirectory() as name, patch.object(migrate, 'DIRECTORY', Path(name)), patch.object(migrate, 'az') as azure:
+            migrate.detach_endpoints(items)
+            self.assertTrue((Path(name) / 'migration-progress.json').exists())
+            calls = [call.args for call in azure.call_args_list]
+            self.assertEqual(calls[0][:3], ('network', 'private-endpoint', 'delete'))
+            self.assertEqual(calls[1][:3], ('network', 'private-endpoint', 'wait'))
+            self.assertEqual(calls[2][:2], ('resource', 'wait'))
+            for call in calls[1:]:
+                self.assertIn('--deleted', call)
+                self.assertIn('--timeout', call)
+            azure.reset_mock()
+            azure.side_effect = [None, RuntimeError('deletion timeout')]
+            with self.assertRaisesRegex(RuntimeError, 'deletion timeout'):
+                migrate.detach_endpoints(items)
+            self.assertEqual(azure.call_count, 2)
+
     def test_source_roles_cannot_satisfy_destination_verification(self):
         source = {'scope': '/subscriptions/id/resourceGroups/RG-TEMPO-STAGING-WESTEUROPE-DATA/providers/type/name',
                   'principalId': 'principal', 'roleDefinitionId': '/role'}

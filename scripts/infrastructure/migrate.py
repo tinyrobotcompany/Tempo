@@ -136,12 +136,8 @@ def assert_empty(group):
         raise ValueError('Refuse deletion of nonempty group: ' + group)
 
 
-def apply():
-    sha = guard()
-    approved = json.loads((DIRECTORY / 'migration.json').read_text())
-    items = inventory()
-    if approved['sha'] != sha or approved['layout'] != layout(items) or approved['roles'] != resource_roles():
-        raise ValueError('Migration changed since preview: start a fresh run')
+def detach_endpoints(items):
+    (DIRECTORY / 'migration-progress.json').write_text(json.dumps(layout(items), indent=2))
     # Removing these connections temporarily closes the already-private data path;
     # it never opens storage or Key Vault to the internet. No application is deployed.
     for group, rows in items.items():
@@ -149,6 +145,24 @@ def apply():
             if resource['type'] == 'Microsoft.Network/privateEndpoints' and group.startswith(OLD):
                 az('network', 'private-endpoint', 'delete', '--subscription', SUBSCRIPTION,
                    '--resource-group', group, '--name', resource['name'])
+                az('network', 'private-endpoint', 'wait', '--subscription', SUBSCRIPTION,
+                   '--resource-group', group, '--name', resource['name'],
+                   '--deleted', '--interval', '10', '--timeout', '600')
+    # Managed NIC deletion can lag behind deletion of the parent endpoint.
+    for group, rows in items.items():
+        for resource in rows:
+            if resource['type'] == 'Microsoft.Network/networkInterfaces' and group.startswith(OLD):
+                az('resource', 'wait', '--ids', resource['id'],
+                   '--deleted', '--interval', '10', '--timeout', '600')
+
+
+def apply():
+    sha = guard()
+    approved = json.loads((DIRECTORY / 'migration.json').read_text())
+    items = inventory()
+    if approved['sha'] != sha or approved['layout'] != layout(items) or approved['roles'] != resource_roles():
+        raise ValueError('Migration changed since preview: start a fresh run')
+    detach_endpoints(items)
     for concern in ('data', 'ops', 'network', 'security'):
         rows = az('resource', 'list', '--subscription', SUBSCRIPTION, '--resource-group', OLD + concern) \
             if az('group', 'exists', '--subscription', SUBSCRIPTION, '--name', OLD + concern) else []
