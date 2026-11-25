@@ -106,6 +106,8 @@ int main(void){
  parse_calls=0;assert(tick()&&waiting_certificate&&cert_requests==1&&!strcmp(last_address,"192.168.1.34"));
  assert(parse_calls>0&&parse_length==strlen(response)); /* Valid replies parse exactly the received JSON. */
  pending=true;assert(tick()&&installs==0&&cert_requests==1);pending=false;have_certificate=true;
+ /* A 202 status body is non-final: it must not install, change DNS state or request a CSR. */
+ last_address[0]=0;http_status=202;assert(!tick()&&waiting_certificate&&installs==0&&cert_requests==1&&!last_address[0]);http_status=200;
  /* Renewal is due (renew_time=0) while the offered chain fails to install: retry that chain, never submit another CSR. */
  install_error=-1;assert(!tick()&&!install_notification&&waiting_certificate&&installs==1&&cert_requests==1);
  assert(!tick()&&!install_notification&&waiting_certificate&&installs==2&&cert_requests==1);install_error=0;

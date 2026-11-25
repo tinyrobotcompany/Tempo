@@ -31,8 +31,10 @@ static esp_err_t response_header(esp_http_client_event_t *event)
     }
     return ESP_OK;
 }
-static cJSON *request(const char *action,const char *value)
+/* Returns the parsed 200/202 reply; *http_status reports which, so callers can require a final 200. */
+static cJSON *request(const char *action,const char *value,int *http_status)
 {
+    *http_status=0;
     cJSON *json=cJSON_CreateObject();if(!json)return NULL;
     unsigned char random[32];char nonce[65];esp_fill_random(random,sizeof(random));
     for(unsigned i=0;i<32;i++)snprintf(nonce+2*i,3,"%02x",random[i]);
@@ -60,7 +62,7 @@ static cJSON *request(const char *action,const char *value)
     cJSON_free(body);
     cJSON *reply=NULL;
     if(err==ESP_OK&&esp_http_client_fetch_headers(client)>=0){
-        int status=esp_http_client_get_status_code(client);
+        int status=esp_http_client_get_status_code(client);*http_status=status;
         if(status==200||status==202){
             char *response=calloc(1,12289);size_t total=0;bool valid=response!=NULL;
             while(valid&&total<12288){
@@ -82,11 +84,13 @@ static bool tick(void)
     if(!iface||esp_netif_get_ip_info(iface,&info)!=ESP_OK||!info.ip.addr)return false;
     char address[16];snprintf(address,sizeof(address),IPSTR,IP2STR(&info.ip));
     if(strcmp(last_address,address)){
-        cJSON *reply=request("address",address);if(!reply)return false;
+        int http_status;cJSON *reply=request("address",address,&http_status);if(!reply)return false;
         /* Mark only when status confirms DNS applied; POST acceptance isn't completion. */
         cJSON_Delete(reply);
     }
-    cJSON *status=request("status",NULL);if(!status)return false;
+    /* Status is authoritative only as a final 200; the service never answers status with 202. */
+    int http_status;cJSON *status=request("status",NULL,&http_status);if(!status)return false;
+    if(http_status!=200){cJSON_Delete(status);return false;}
     const cJSON *dns=cJSON_GetObjectItemCaseSensitive(status,"address");
     if(cJSON_IsString(dns)&&!strcmp(dns->valuestring,address))snprintf(last_address,sizeof(last_address),"%s",address);
     const cJSON *chain=cJSON_GetObjectItemCaseSensitive(status,"certificate");
@@ -103,7 +107,7 @@ static bool tick(void)
     if(time(NULL)>=station_identity_renew_after()&&!pending){
         char *csr=calloc(1,2048);if(!csr)return false;
         esp_err_t err=station_identity_csr(csr,2048);
-        cJSON *reply=err==ESP_OK?request("certificate",csr):NULL;free(csr);
+        cJSON *reply=err==ESP_OK?request("certificate",csr,&http_status):NULL;free(csr);
         if(!reply)return false;
         cJSON_Delete(reply);waiting_certificate=true;
     }
