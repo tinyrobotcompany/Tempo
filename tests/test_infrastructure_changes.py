@@ -23,6 +23,14 @@ class InfrastructureChangesTests(unittest.TestCase):
                      '.github/workflows/ota-release.yml'):
             self.assertFalse(changes.affects_infrastructure(path), path)
 
+    def test_deployment_only_selects_bicep(self):
+        for path in ('infra/certificates/main.bicep', 'infra/certificates/modules/nested.bicep'):
+            self.assertTrue(changes.affects_deployment(path), path)
+        for path in ('infra/certificates/deployment.json', 'infra/certificates/README.md',
+                     'scripts/infrastructure/delivery.py', '.github/workflows/infrastructure-deploy.yaml',
+                     'firmware/main/main.c', 'other/main.bicep'):
+            self.assertFalse(changes.affects_deployment(path), path)
+
     def test_full_push_range_includes_deleted_and_renamed_infrastructure(self):
         with tempfile.TemporaryDirectory() as directory:
             def git(*args):
@@ -37,6 +45,7 @@ class InfrastructureChangesTests(unittest.TestCase):
                 paths = changes.changed_paths({'before': base}, head)
                 self.assertIn('infra/certificates/old.bicep', paths)
                 self.assertTrue(any(map(changes.affects_infrastructure, paths)))
+                self.assertTrue(any(map(changes.affects_deployment, paths)))
                 initial = changes.changed_paths({'before': '0'*40}, base)
                 self.assertIn('infra/certificates/old.bicep', initial)
                 paths = changes.changed_paths({'pull_request': {'base': {'sha': base}, 'head': {'sha': head}}}, head)

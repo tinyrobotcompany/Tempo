@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Select infrastructure validation using the full Git diff, including deletions."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,10 @@ def affects_infrastructure(path):
                      'tests/test_infrastructure_changes.py', 'tests/test_infrastructure_migration.py'})
 
 
+def affects_deployment(path):
+    return path.startswith('infra/certificates/') and path.endswith('.bicep')
+
+
 def changed_paths(event, head):
     pr = event.get('pull_request')
     if pr:
@@ -26,8 +31,12 @@ def changed_paths(event, head):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--deployment', action='store_true', help='Select Bicep deployment inputs only')
+    args = parser.parse_args()
+    predicate = affects_deployment if args.deployment else affects_infrastructure
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-    selected = [p for p in changed_paths(event, os.environ['GITHUB_SHA']) if affects_infrastructure(p)]
+    selected = [p for p in changed_paths(event, os.environ['GITHUB_SHA']) if predicate(p)]
     value = str(bool(selected)).lower()
     with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
         output.write('infrastructure='+value+'\n')
