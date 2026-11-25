@@ -1,0 +1,8 @@
+{
+  "name": "Weather Station Location",
+  "protocol": "WSLOC1",
+  "sha256": "2e06aef550913f98b4317d08826d4fb9d922f63b16a866c02b660d70da8220b2",
+  "source_sha256": "7b7d7e0e08e4b2510f3ce6a0fb28a522b82998f7ac371978015eed1fddb12332",
+  "export_method": "macOS Shortcuts File > Export > Anyone",
+  "iphone_acceptance": "pending"
+}
