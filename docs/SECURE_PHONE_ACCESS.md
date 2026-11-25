@@ -116,3 +116,12 @@ No automatic security downgrade, eFuse programming or flash migration occurs.
 
 Source compilation/host tests are development evidence. Cloud deployment, physical
 key protection, browser trust and network compatibility require live acceptance.
+
+### Revocation feedback
+
+A failed revocation can be retried without restarting Tempo; it requires a new
+confirmation and immediately replaces the error with progress. While pending and
+after success, the button is disabled for that page visit. Reopening Phone setup
+clears old success/error feedback and permits another explicitly confirmed
+revocation. Pending work remains visible across navigation. Host tests exercise
+these transitions and verify duplicate pending requests do not repeat key rotation.
