@@ -12,7 +12,7 @@ The firmware verifies a signed ECDSA P-256 manifest, target/layout/version, imag
 
 Use one flashing owner and stop USB watchers. Install over USB with the rollback-enabled bootloader and existing A/B partition layout. Record the installed version and ensure a later published version is strictly newer for OTA acceptance.
 
-The build no longer reads `.env`. Provision the PRIM key in paired phone setup under Transport API access, or run `python3 scripts/provision-transport-key.py --env /absolute/path/to/private/.env` and enter the current HTTPS QR URL at its hidden prompt. For the development CA supply `--ca /private/path/ca.pem`. Transport uses the separate NVS namespace `tempo_secret`; updates do not erase it. Phone access now requires a provisioned HTTPS identity; see [HTTPS migration](SECURE_PHONE_ACCESS.md). NVS encryption and protection against physical extraction are not claimed.
+The build no longer reads `.env`. Provision the PRIM key in paired phone setup under Transport API access, or run `python3 scripts/provision-transport-key.py --env /absolute/path/to/private/.env` and enter the current HTTPS QR URL at its hidden prompt. For the development CA supply `--ca /private/path/ca.pem`. Transport uses the separate NVS namespace `tempo_secret`; updates do not erase it. Phone access now requires a device-generated HTTPS identity; see [HTTPS migration](SECURE_PHONE_ACCESS.md). Production enrollment requires hardware protection; do not infer eFuse provisioning from a firmware build.
 
 ## Acceptance
 
