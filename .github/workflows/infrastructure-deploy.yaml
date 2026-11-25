@@ -1,0 +1,100 @@
+name: Infrastructure deployment
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/certificates/**'
+      - 'scripts/infrastructure/**'
+      - '.github/workflows/infrastructure-*.yaml'
+      - '.github/scripts/infrastructure-changes.py'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Preview only or deploy the reviewed configuration
+        type: choice
+        options: [preview, deploy]
+        default: preview
+permissions:
+  contents: read
+concurrency:
+  group: tempo-infrastructure-live
+  cancel-in-progress: false
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      infrastructure: ${{ steps.detect.outputs.infrastructure }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: detect
+        run: python3 .github/scripts/infrastructure-changes.py
+  validate:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.infrastructure == 'true'
+    uses: ./.github/workflows/infrastructure-ci.yaml
+  preview:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.repository == 'tinyrobotcompany/Tempo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: tempo-infrastructure
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Test reviewed delivery code
+        run: python3 tests/test_infrastructure_delivery.py
+      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Prepare immutable preview
+        run: python3 scripts/infrastructure/delivery.py plan
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: infrastructure-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-host/infrastructure/
+          retention-days: 14
+          if-no-files-found: error
+  apply:
+    needs: preview
+    if: github.ref == 'refs/heads/main' && github.repository == 'tinyrobotcompany/Tempo' && (github.event_name == 'push' || inputs.operation == 'deploy') && needs.preview.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    # Separate approval AFTER the preview artifact exists, on the same live environment.
+    environment: tempo-infrastructure
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: infrastructure-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-host/infrastructure
+      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Apply the approved plan
+        run: python3 scripts/infrastructure/delivery.py apply
+      - name: Retain deployment and recovery evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: infrastructure-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-host/infrastructure/
+          retention-days: 14
+          if-no-files-found: warn

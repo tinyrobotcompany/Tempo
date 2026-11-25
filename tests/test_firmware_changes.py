@@ -10,6 +10,8 @@ class FirmwareChangesTests(unittest.TestCase):
    self.assertFalse(changes.affects_firmware(p),p)
  def test_only_intentional_firmware_skip_can_pass(self):
   result={name:{'result':'success'} for name in ['changes','host-tests','changeset','firmware','certificates']}
+  result['infrastructure-changes']={'result':'success','outputs':{'infrastructure':'false'}}
+  result['infrastructure']={'result':'skipped'}
   result['changes']['outputs']={'firmware':'true'};self.assertTrue(changes.gate(result))
   result['firmware']['result']='skipped';self.assertFalse(changes.gate(result))
   result['changes']['outputs']['firmware']='false';self.assertTrue(changes.gate(result))
