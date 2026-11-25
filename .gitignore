@@ -24,3 +24,4 @@
 
 # Local signing backup; never distribute or commit private material.
 /.secrets/
+/build-production-test/
