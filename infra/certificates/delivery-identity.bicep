@@ -8,7 +8,8 @@ resource federation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedI
   name: 'github-approved-infrastructure'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:tinyrobotcompany/Tempo:environment:tempo-infrastructure'
+    // GitHub's immutable subject binds both names to their numeric IDs.
+    subject: 'repo:tinyrobotcompany@326183923/Tempo@1458582269:environment:tempo-infrastructure'
     audiences: ['api://AzureADTokenExchange']
   }
 }
