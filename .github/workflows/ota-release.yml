@@ -7,6 +7,7 @@ on:
       - 'firmware/**'
       - 'companion/shortcut/**'
       - 'scripts/ota-release.py'
+      - 'scripts/production-release.py'
       - '.github/scripts/ota-release-head.sh'
       - '.github/workflows/ota-release.yml'
 # Serial publication prevents two merges allocating the same version.
@@ -74,6 +75,11 @@ jobs:
       - name: Build credential-free release firmware
         env:
           TEMPO_RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+          SECURE_BOOT_SIGNING_PRIVATE_KEY: ${{ secrets.SECURE_BOOT_SIGNING_PRIVATE_KEY }}
+          SECURE_BOOT_PUBLIC_KEY_SHA256: ${{ vars.SECURE_BOOT_PUBLIC_KEY_SHA256 }}
+          TEMPO_ENROLLMENT_URL: ${{ vars.TEMPO_ENROLLMENT_URL }}
+          TEMPO_IDENTITY_HMAC_KEY_ID: ${{ vars.TEMPO_IDENTITY_HMAC_KEY_ID }}
+          TEMPO_SECURE_VERSION: ${{ vars.TEMPO_SECURE_VERSION }}
         run: |
           test ! -f .env
           test -f firmware/main/credentials.c
@@ -82,7 +88,17 @@ jobs:
           .artifacts/esp-idf/install.sh esp32p4
           source .artifacts/esp-idf/export.sh
           python3 scripts/check-idf-security.py "$IDF_PATH"
-          idf.py -C firmware build
+          set +x
+          test -n "$SECURE_BOOT_SIGNING_PRIVATE_KEY"
+          umask 077
+          secure_key=$(mktemp)
+          trap 'rm -f "$secure_key"' EXIT
+          printf '%s\n' "$SECURE_BOOT_SIGNING_PRIVATE_KEY" > "$secure_key"
+          unset SECURE_BOOT_SIGNING_PRIVATE_KEY
+          config="$PWD/build-host/production.sdkconfig"
+          python3 scripts/production-release.py configure --config "$config" --key "$secure_key"
+          idf.py -C firmware -D SDKCONFIG="$config" build
+          python3 scripts/production-release.py verify --config "$config" --key "$secure_key" --image firmware/build/weather_station.bin
           python3 scripts/check-transport-memory.py
           mkdir -p build-host/release
           cp firmware/dependencies.lock build-host/release/dependencies.lock
@@ -97,7 +113,7 @@ jobs:
           signing_key=$(mktemp)
           trap 'rm -f "$signing_key"' EXIT
           printf '%s\n' "$OTA_SIGNING_PRIVATE_KEY" > "$signing_key"
-          python3 scripts/ota-release.py package --image firmware/build/weather_station.bin --version "$RELEASE_VERSION" --key "$signing_key"
+          python3 scripts/ota-release.py package --production --image firmware/build/weather_station.bin --version "$RELEASE_VERSION" --key "$signing_key"
       - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,6 +1,14 @@
 rsource "Kconfig.identity"
 # Phone positioning uses a locally distributed Apple Shortcut. No hosted URL is required.
 menu "Tempo device enrollment"
+config TEMPO_PRODUCTION_RELEASE
+    bool "Protected production release compatibility"
+    default n
+    depends on SECURE_BOOT && SECURE_FLASH_ENC_ENABLED
+    help
+        Selects the protected-device OTA compatibility identifier. Production
+        release tooling validates all hardware security and enrollment settings.
+        Enabling this does not provision hardware; initial migration requires USB.
 config TEMPO_ENROLLMENT_URL
     string "Production enrollment HTTPS endpoint"
     default ""

@@ -20,6 +20,7 @@
 #include "map_tiles.h"
 #include "phone_setup.h"
 #include "device_enrollment.h"
+#include "identity_store.h"
 #include "update_service.h"
 
 static const char *TAG = "station";
@@ -73,6 +74,11 @@ static bool update_display_guard(bool quiet)
 void app_main(void)
 {
     ESP_LOGI(TAG, "Reset reason: %d", (int)esp_reset_reason());
+#ifdef CONFIG_TEMPO_PRODUCTION_RELEASE
+    /* Check existing locked factory keys before IDF's default-NVS HMAC provider
+     * can attempt key generation. Missing provisioning must fail, never burn. */
+    ESP_ERROR_CHECK(station_identity_store_init());
+#endif
     /* Never silently erase settings on an NVS/schema error. */
     ESP_ERROR_CHECK(nvs_flash_init());
     station_settings_t settings;

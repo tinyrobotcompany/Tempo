@@ -38,14 +38,14 @@ def plan(destination):
         allocated_tag = 'v'+version
     release.version_tuple(version)
     body=f'# Tempo {version}\n\nSource: `{head}`\n\n'+('\n\n'.join(n[2] for n in notes) or 'Validated firmware and dependency updates.')
-    body+='\n\n## Installation and compatibility\n\nWaveshare ESP32-P4 10.1-inch, revision 3, 32 MB flash. Existing A/B 8 MB partition layout only. Initial OTA bootstrap requires USB. Credentials and settings remain on the device.\n\nAutomated tests/build/security gates passed before publication. Physical hardware acceptance is recorded separately; CI does not claim a hardware test.\n'
+    body+='\n\n## Installation and compatibility\n\nWaveshare ESP32-P4 10.1-inch, revision 3, 32 MB flash. Protected production A/B 8 MB devices only. Initial security/bootstrap migration requires an approved factory/USB procedure; ordinary development firmware rejects this update. Credentials and settings remain on the device.\n\nAutomated tests/build/security gates passed before publication. Physical hardware acceptance is recorded separately; CI does not claim a hardware test.\n'
     destination.mkdir(parents=True,exist_ok=True)
     # previous is the predecessor used for release notes, never this release's own tag.
     (destination/'release.json').write_text(json.dumps({'version':version,'tag':allocated_tag,'commit':head,'previous':notes_base_tag},indent=2)+'\n')
     (destination/'notes.md').write_text(body)
     return version
 
-def package(destination, image, version, key, public_key):
+def package(destination, image, version, key, public_key, production=False):
     release.version_tuple(version)
     blob=image.read_bytes()
     if not 1024<=len(blob)<=0x800000 or blob[0]!=0xe9:
@@ -58,7 +58,7 @@ def package(destination, image, version, key, public_key):
         raise ValueError('Private key material in release image')
     for forbidden in (b'tempo-ci-placeholder-not-a-credential',b'STATION_PRIM_API_KEY'):
         if forbidden in blob:raise ValueError('Forbidden credential/build marker in release image')
-    manifest={'schema':1,'source_commit':git('rev-parse','HEAD'),'dependency_lock_sha256':hashlib.sha256((ROOT/'firmware/dependencies.lock').read_bytes()).hexdigest(),'version':version,'target':TARGET,'layout':LAYOUT,'size':len(blob),
+    manifest={'schema':1,'source_commit':git('rev-parse','HEAD'),'dependency_lock_sha256':hashlib.sha256((ROOT/'firmware/dependencies.lock').read_bytes()).hexdigest(),'version':version,'target':TARGET,'layout':'ab-8mb-protected-v1' if production else LAYOUT,'size':len(blob),
               'sha256':hashlib.sha256(blob).hexdigest(),
               'url':f'https://github.com/tinyrobotcompany/Tempo/releases/download/v{version}/tempo.bin'}
     destination.mkdir(parents=True,exist_ok=True)
@@ -79,11 +79,11 @@ def verify_assets(expected, downloaded):
             raise ValueError('Draft asset differs from validated local artifact: '+name)
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['plan','package','verify-assets']);p.add_argument('--output',type=Path,default=ROOT/'build-host/release');p.add_argument('--downloaded',type=Path);p.add_argument('--image',type=Path);p.add_argument('--version');p.add_argument('--key',type=Path);a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['plan','package','verify-assets']);p.add_argument('--output',type=Path,default=ROOT/'build-host/release');p.add_argument('--downloaded',type=Path);p.add_argument('--image',type=Path);p.add_argument('--version');p.add_argument('--key',type=Path);p.add_argument('--production',action='store_true');a=p.parse_args()
     if a.action=='plan':print(plan(a.output))
     elif a.action=='verify-assets':
         if not a.downloaded:p.error('verify-assets requires --downloaded')
         verify_assets(a.output,a.downloaded)
     else:
         if not all([a.image,a.version,a.key]):p.error('package requires --image, --version and --key')
-        package(a.output,a.image,a.version,a.key,ROOT/'firmware/main/ota_public.pem')
+        package(a.output,a.image,a.version,a.key,ROOT/'firmware/main/ota_public.pem',a.production)

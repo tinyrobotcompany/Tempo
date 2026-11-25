@@ -9,7 +9,7 @@ class ReleaseTests(unittest.TestCase):
   self.assertIn('test -f firmware/main/credentials.c',build)
   self.assertIn('test -f firmware/main/update_service.c',build)
   self.assertIn('test ! -f scripts/generate_transport_config.py',build)
-  self.assertLess(build.index('test ! -f scripts/generate_transport_config.py'),build.index('idf.py -C firmware build'))
+  self.assertLess(build.index('test ! -f scripts/generate_transport_config.py'),build.index('idf.py -C firmware -D SDKCONFIG='))
   self.assertNotIn('OTA_SIGNING_PRIVATE_KEY',build)
   self.assertIn('needs: [validation, security, prerequisites]',workflow)
   copy_commands='\n'.join(line.strip() for line in build.splitlines() if line.strip().startswith(('mkdir -p build-host/release','cp firmware/dependencies.lock')))
