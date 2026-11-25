@@ -70,7 +70,14 @@ GitHub environment `tempo-infrastructure` must have:
 
 Federation accepts ONLY issuer `https://token.actions.githubusercontent.com`,
 audience `api://AzureADTokenExchange`, and subject
-`repo:tinyrobotcompany/Tempo:environment:tempo-infrastructure`. Never add a wildcard
+`repo:tinyrobotcompany@326183923/Tempo@1458582269:environment:tempo-infrastructure`.
+This matches this repository's `use_immutable_subject: true` configuration. Before
+bootstrap, compare `gh api repos/tinyrobotcompany/Tempo/actions/oidc/customization/sub`
+with the template: its `sub_claim_prefix` plus `:environment:tempo-infrastructure`
+must match exactly. Do not disable immutable subjects to make a legacy template work.
+The login attempt in run `45629123208` confirmed this subject on 2026-11-25;
+the original name-only federation was rejected before any migration operations.
+Never add a wildcard
 branch/PR subject. If environment protections are unavailable, stop; do not replace
 OIDC with a long-lived password or remove approval.
 

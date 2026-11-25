@@ -13,6 +13,18 @@ import delivery
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_federation_matches_observed_immutable_github_subject(self):
+        # Regression fixture: repository OIDC settings and the rejected live token
+        # in run 45629123208. Name-only subjects cannot authenticate this repo.
+        observed = {'use_immutable_subject': True,
+                    'sub_claim_prefix': 'repo:tinyrobotcompany@326183923/Tempo@1458582269'}
+        template = (ROOT / 'infra/certificates/delivery-identity.bicep').read_text()
+        subject = observed['sub_claim_prefix'] + ':environment:tempo-infrastructure'
+        self.assertIn("subject: '" + subject + "'", template)
+        self.assertNotIn("subject: 'repo:tinyrobotcompany/Tempo:", template)
+        self.assertIn("issuer: 'https://token.actions.githubusercontent.com'", template)
+        self.assertIn("audiences: ['api://AzureADTokenExchange']", template)
+
     def test_normal_plan_requires_migration_before_compilation(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.object(delivery, 'guard', return_value='same'), patch.object(delivery, 'az', return_value=True) as azure, patch.object(delivery.subprocess, 'run') as process:
