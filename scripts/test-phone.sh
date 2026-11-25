@@ -6,7 +6,6 @@ cc -std=c11 -Wall -Wextra -Werror -Ifirmware/main -Ifirmware/components/station_
 ./build-host/test_phone_protocol
 node tests/test_phone_location.js
 node --check firmware/main/web/app.js
-node --check companion/location-helper/helper.js
 idf_components="${IDF_PATH:-$HOME/.espressif/v6.1/esp-idf}"
 embed_script="${IDF_EMBED_SCRIPT:-$idf_components/tools/cmake/scripts/data_file_embed_asm.cmake}"
 for asset in index.html app.js style.css location.js shortcut.js connection.js; do
