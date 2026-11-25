@@ -9,6 +9,7 @@ param image string = ''
 param acmeEnvironment string = 'staging'
 param dnsDomain string = 'tinyrobotcompany.io'
 param deviceSuffix string = 'tempo.tinyrobotcompany.io'
+param waveformDeviceSuffix string = 'waveform.tinyrobotcompany.io'
 // Preserve existing resource names/data during the resource-group-only migration.
 var prefix = 'tempo-staging'
 var unique = uniqueString(subscription().id, 'staging', location)
@@ -79,6 +80,7 @@ module compute 'compute.bicep' = if (deployCompute) {
     vaultUrl: security.outputs.vaultUrl
     dnsDomain: dnsDomain
     deviceSuffix: deviceSuffix
+    waveformDeviceSuffix: waveformDeviceSuffix
     environment: acmeEnvironment
     bootstrapContactEmail: ''
     bootstrapTermsUrl: ''

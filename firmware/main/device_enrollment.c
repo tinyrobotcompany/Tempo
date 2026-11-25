@@ -6,6 +6,7 @@
 #include "esp_netif.h"
 #include "esp_random.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -15,11 +16,21 @@
 #include <strings.h>
 #include <stdio.h>
 #include <time.h>
+#include <errno.h>
 
 static bool started;
 static unsigned failures;
 static char last_address[16];
 static bool waiting_certificate;
+static bool pending_work;
+static unsigned retry_seconds;
+
+typedef struct { bool json; unsigned retry; } response_info_t;
+
+static void remember_retry(unsigned seconds)
+{
+    if(seconds>retry_seconds)retry_seconds=seconds;
+}
 
 /* Protocol replies must declare JSON: application/json with optional parameters, any case. */
 static esp_err_t response_header(esp_http_client_event_t *event)
@@ -27,7 +38,13 @@ static esp_err_t response_header(esp_http_client_event_t *event)
     if(event->event_id==HTTP_EVENT_ON_HEADER&&event->header_key&&event->header_value&&!strcasecmp(event->header_key,"Content-Type")){
         const char *type=event->header_value;while(*type==' '||*type=='\t')type++;
         size_t length=strlen("application/json");
-        *(bool *)event->user_data=!strncasecmp(type,"application/json",length)&&(!type[length]||type[length]==';'||type[length]==' '||type[length]=='\t');
+        ((response_info_t *)event->user_data)->json=!strncasecmp(type,"application/json",length)&&(!type[length]||type[length]==';'||type[length]==' '||type[length]=='\t');
+    }
+    if(event->event_id==HTTP_EVENT_ON_HEADER&&event->header_key&&event->header_value&&!strcasecmp(event->header_key,"Retry-After")){
+        /* Delta-seconds only. Invalid/overflowing headers leave local backoff intact. */
+        char *end;errno=0;unsigned long seconds=strtoul(event->header_value,&end,10);
+        if(!errno&&end!=event->header_value&&!*end&&seconds<=604800)
+            ((response_info_t *)event->user_data)->retry=(unsigned)seconds;
     }
     return ESP_OK;
 }
@@ -45,8 +62,8 @@ static cJSON *request(const char *action,const char *value,int *http_status)
     char *body=cJSON_PrintUnformatted(json);cJSON_Delete(json);if(!body)return NULL;
     char signature[112];
     if(station_identity_sign(body,signature,sizeof(signature))!=ESP_OK){cJSON_free(body);return NULL;}
-    bool json_reply=false;
-    esp_http_client_config_t config={.url=CONFIG_TEMPO_ENROLLMENT_URL,.timeout_ms=15000,.event_handler=response_header,.user_data=&json_reply,
+    response_info_t response_info={0};
+    esp_http_client_config_t config={.url=CONFIG_TEMPO_ENROLLMENT_URL,.timeout_ms=15000,.event_handler=response_header,.user_data=&response_info,
         .crt_bundle_attach=esp_crt_bundle_attach,.disable_auto_redirect=true,.buffer_size=2048,
         .buffer_size_tx=2048};
     esp_http_client_handle_t client=esp_http_client_init(&config);
@@ -69,20 +86,31 @@ static cJSON *request(const char *action,const char *value,int *http_status)
                 int n=esp_http_client_read(client,response+total,12288-total);
                 if(n<0){valid=false;break;}if(n==0)break;total+=(size_t)n;
             }
-            if(valid&&json_reply&&total<12288&&esp_http_client_is_complete_data_received(client))reply=cJSON_ParseWithLength(response,total);
+            if(valid&&response_info.json&&total<12288&&esp_http_client_is_complete_data_received(client))reply=cJSON_ParseWithLength(response,total);
             free(response);
         }
     }
+    remember_retry(response_info.retry);
+    const cJSON *retry=cJSON_GetObjectItemCaseSensitive(reply,"retry_after");
+    if(cJSON_IsNumber(retry)&&retry->valuedouble>=0&&retry->valuedouble<=604800)
+        remember_retry((unsigned)retry->valuedouble);
     esp_http_client_close(client);esp_http_client_cleanup(client);return reply;
 }
 
-static bool tick(void)
+static bool current_address(char address[16])
 {
     station_network_status_t network;station_network_status(&network);
     if(!network.connected||time(NULL)<1700000000)return false;
     esp_netif_t *iface=esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");esp_netif_ip_info_t info;
     if(!iface||esp_netif_get_ip_info(iface,&info)!=ESP_OK||!info.ip.addr)return false;
-    char address[16];snprintf(address,sizeof(address),IPSTR,IP2STR(&info.ip));
+    snprintf(address,16,IPSTR,IP2STR(&info.ip));
+    return true;
+}
+
+static bool tick(void)
+{
+    retry_seconds=0;
+    char address[16];if(!current_address(address))return false;
     if(strcmp(last_address,address)){
         int http_status;cJSON *reply=request("address",address,&http_status);if(!reply)return false;
         /* Mark only when status confirms DNS applied; POST acceptance isn't completion. */
@@ -96,6 +124,11 @@ static bool tick(void)
     const cJSON *chain=cJSON_GetObjectItemCaseSensitive(status,"certificate");
     const cJSON *state=cJSON_GetObjectItemCaseSensitive(status,"state");
     bool pending=cJSON_IsString(state)&&(!strcmp(state->valuestring,"pending")||!strcmp(state->valuestring,"running"));
+    const cJSON *dns_state=cJSON_GetObjectItemCaseSensitive(status,"dns_state");
+    bool failed=(cJSON_IsString(state)&&!strcmp(state->valuestring,"error"))||
+                (cJSON_IsString(dns_state)&&!strcmp(dns_state->valuestring,"error"));
+    pending_work=pending||strcmp(last_address,address)!=0;
+    if(failed&&time(NULL)<station_identity_renew_after()){cJSON_Delete(status);return false;}
     if(waiting_certificate&&!pending&&cJSON_IsString(chain)&&chain->valuestring[0]){
         int64_t renewal;
         /* An issued chain that fails local install is retried with worker backoff.
@@ -109,17 +142,36 @@ static bool tick(void)
         esp_err_t err=station_identity_csr(csr,2048);
         cJSON *reply=err==ESP_OK?request("certificate",csr,&http_status):NULL;free(csr);
         if(!reply)return false;
-        cJSON_Delete(reply);waiting_certificate=true;
+        cJSON_Delete(reply);waiting_certificate=true;pending_work=true;
     }
     return true;
 }
+typedef struct { int64_t due; char address[16]; } enrollment_schedule_t;
+
+static void scheduled_tick(enrollment_schedule_t *schedule)
+{
+    char address[16];if(!current_address(address))return; /* Offline is not a provider failure. */
+    int64_t now=esp_timer_get_time()/1000000;
+    bool changed=strcmp(address,schedule->address)!=0;
+    bool renewal_due=!pending_work&&!failures&&time(NULL)>=station_identity_renew_after();
+    if(now<schedule->due&&(!changed||failures)&&!renewal_due)return;
+    snprintf(schedule->address,sizeof(schedule->address),"%s",address);
+    bool ok=tick();failures=ok?0:(failures<3?failures+1:3);
+    unsigned seconds=ok?(pending_work?30:86400):(failures==1?300:failures==2?900:3600);
+    if(retry_seconds>seconds)seconds=retry_seconds;
+    /* Randomize daily reconciliation without moving renewal past its due time. */
+    unsigned jitter=ok&&!pending_work?esp_random()%3600:esp_random()%15;
+    schedule->due=esp_timer_get_time()/1000000+seconds+jitter;
+}
+
 static void worker(void *unused)
 {
     (void)unused;
+    enrollment_schedule_t schedule={0};
     for(;;){
-        bool ok=tick();failures=ok?0:(failures<6?failures+1:6);
-        unsigned seconds=ok?30:(30U<<failures);
-        vTaskDelay(pdMS_TO_TICKS((seconds+esp_random()%15)*1000));
+        scheduled_tick(&schedule);
+        /* This checks local state only; healthy devices make no cloud request here. */
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
 /* Parse in boundary order: "https://", an authority of hostname/port characters only

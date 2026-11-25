@@ -9,11 +9,11 @@ from fastapi.responses import JSONResponse
 
 from .protocol import MAX_BODY, Rejected
 from .service import DeviceService
+from .admission import Admission
 from .store import TableStore
 
 
-@lru_cache(maxsize=1)
-def azure_store():
+def create_azure_store():
     endpoint = os.environ["TABLE_ENDPOINT"]
     if not endpoint.startswith("https://") or not endpoint.endswith(".table.core.windows.net"):
         raise ValueError("An Azure HTTPS Table endpoint is required")
@@ -23,7 +23,10 @@ def azure_store():
     return TableStore(tables.get_table_client("DeviceState"), tables.get_table_client("DeviceRegistry"))
 
 
-def create_app(service=None):
+azure_store = lru_cache(maxsize=1)(create_azure_store)
+
+def create_app(service=None, admission=None):
+    admission = admission or Admission()
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.get("/health")
@@ -32,6 +35,8 @@ def create_app(service=None):
 
     @app.post("/v1/device")
     async def device(request: Request):
+        if not admission.accept():
+            return JSONResponse({"error": "slow_down"}, 429, headers={"Retry-After": "30"})
         if request.headers.get("content-type", "").split(";")[0] != "application/json":
             return JSONResponse({"error": "json_required"}, 415)
         body = bytearray()
@@ -41,8 +46,9 @@ def create_app(service=None):
                 return JSONResponse({"error": "request_too_large"}, 413)
         from starlette.concurrency import run_in_threadpool
         try:
-            active = service or DeviceService(azure_store(), os.environ["DEVICE_SUFFIX"])
-            reply = await run_in_threadpool(active.handle, bytes(body), request.headers.get("x-tempo-signature", ""))
+            active = service or DeviceService(azure_store(), os.environ["DEVICE_SUFFIX"],
+                                               waveform_suffix=os.environ.get("WAVEFORM_DEVICE_SUFFIX", ""))
+            reply = await run_in_threadpool(active.handle, bytes(body), request.headers.get("x-device-signature", request.headers.get("x-tempo-signature", "")))
             return JSONResponse(reply.body, reply.status, headers={"Cache-Control": "no-store", "Retry-After": "30"})
         except Rejected as error:
             return JSONResponse({"error": error.code}, error.status, headers={"Cache-Control": "no-store", "Retry-After": "30"})
