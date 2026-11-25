@@ -13,6 +13,14 @@ def affects_firmware(path):
 
 
 def gate(results):
+    infrastructure = results.get('infrastructure-changes', {})
+    flag = infrastructure.get('outputs', {}).get('infrastructure')
+    outcome = results.get('infrastructure', {}).get('result')
+    if infrastructure.get('result') != 'success' or not (
+        (flag == 'true' and outcome == 'success') or
+        (flag == 'false' and outcome == 'skipped')
+    ):
+        return False
     for name in ('changes','host-tests','changeset','certificates'):
         if results.get(name,{}).get('result') != 'success':
             return False
