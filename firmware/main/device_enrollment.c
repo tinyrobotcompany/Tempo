@@ -55,7 +55,7 @@ static cJSON *request(const char *action,const char *value)
                 int n=esp_http_client_read(client,response+total,12288-total);
                 if(n<0){valid=false;break;}if(n==0)break;total+=(size_t)n;
             }
-            if(valid&&total<12288&&esp_http_client_is_complete_data_received(client))reply=cJSON_ParseWithLength(response,total+1);
+            if(valid&&total<12288&&esp_http_client_is_complete_data_received(client))reply=cJSON_ParseWithLength(response,total);
             free(response);
         }
     }

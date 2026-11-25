@@ -5,8 +5,14 @@
 #include <time.h>
 static time_t current_time=1800000000;
 static time_t fake_time(time_t *out){if(out)*out=current_time;return current_time;}
+#include "cJSON.h"
+/* Record the exact parse length: it must cover only received bytes, never the NUL terminator. */
+static size_t parse_length,parse_calls;
+static cJSON *checked_parse(const char *value,size_t length){parse_calls++;parse_length=length;assert(length==strlen(value));return cJSON_ParseWithLength(value,length);}
 #define time fake_time
+#define cJSON_ParseWithLength checked_parse
 #include "../firmware/main/device_enrollment.c"
+#undef cJSON_ParseWithLength
 #undef time
 const char *test_enrollment_url="https://tempo.example.com/v1/device";
 static station_network_status_t network={.connected=true};
@@ -78,7 +84,8 @@ int main(void){
  http_error=-1;assert(!tick());http_error=0;
  http_status=302;assert(!tick());http_status=401;assert(!tick());http_status=200;
  complete=false;assert(!tick());complete=true;
- assert(tick()&&waiting_certificate&&cert_requests==1&&!strcmp(last_address,"192.168.1.34"));
+ parse_calls=0;assert(tick()&&waiting_certificate&&cert_requests==1&&!strcmp(last_address,"192.168.1.34"));
+ assert(parse_calls>0&&parse_length==strlen(response)); /* Valid replies parse exactly the received JSON. */
  pending=true;assert(tick()&&installs==0&&cert_requests==1);pending=false;have_certificate=true;
  install_error=-1;assert(!tick()&&!install_notification);install_error=0;
  assert(tick()&&!waiting_certificate&&installs==2&&install_notification);
