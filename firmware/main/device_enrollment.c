@@ -82,6 +82,8 @@ static bool tick(void)
     bool pending=cJSON_IsString(state)&&(!strcmp(state->valuestring,"pending")||!strcmp(state->valuestring,"running"));
     if(waiting_certificate&&!pending&&cJSON_IsString(chain)&&chain->valuestring[0]){
         int64_t renewal;
+        /* An issued chain that fails local install is retried with worker backoff.
+           Return before the renewal block: never request another CSR while one is on offer. */
         if(station_identity_install(chain->valuestring,&renewal)!=ESP_OK){cJSON_Delete(status);return false;}
         waiting_certificate=false;
     }

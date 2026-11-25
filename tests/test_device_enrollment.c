@@ -87,8 +87,10 @@ int main(void){
  parse_calls=0;assert(tick()&&waiting_certificate&&cert_requests==1&&!strcmp(last_address,"192.168.1.34"));
  assert(parse_calls>0&&parse_length==strlen(response)); /* Valid replies parse exactly the received JSON. */
  pending=true;assert(tick()&&installs==0&&cert_requests==1);pending=false;have_certificate=true;
- install_error=-1;assert(!tick()&&!install_notification);install_error=0;
- assert(tick()&&!waiting_certificate&&installs==2&&install_notification);
+ /* Renewal is due (renew_time=0) while the offered chain fails to install: retry that chain, never submit another CSR. */
+ install_error=-1;assert(!tick()&&!install_notification&&waiting_certificate&&installs==1&&cert_requests==1);
+ assert(!tick()&&!install_notification&&waiting_certificate&&installs==2&&cert_requests==1);install_error=0;
+ assert(tick()&&!waiting_certificate&&installs==3&&cert_requests==1&&install_notification);
  assert(tick()&&install_notification); /* Further polls leave notification for phone maintenance. */
  renew_time=current_time-1;csr_error=-1;assert(!tick());csr_error=0;
  assert(tick()&&cert_requests==2);
