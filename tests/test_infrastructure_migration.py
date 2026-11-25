@@ -90,7 +90,7 @@ class MigrationTests(unittest.TestCase):
         roles = [{'scope': '/resourcegroups/' + migrate.OLD + 'data/providers/type/' + str(i), 'principalId': 'principal', 'roleDefinitionId': '/role'} for i in range(11)]
         with tempfile.TemporaryDirectory() as name:
             directory = Path(name)
-            with patch.object(migrate, 'DIRECTORY', directory), patch.object(migrate, 'guard', return_value='same'), patch.object(migrate, 'inventory', return_value=groups), patch.object(migrate, 'resource_roles', return_value=roles), patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(directory / 'summary')}), patch.object(migrate, 'az', side_effect=lambda *args: {'properties': {'principalId': args[-1] + '-principal'}}):
+            with patch.object(migrate, 'DIRECTORY', directory), patch.object(migrate, 'guard', return_value='same'), patch.object(migrate, 'inventory', return_value=groups), patch.object(migrate, 'resource_roles', return_value=roles), patch.object(migrate, 'require_destinations'), patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(directory / 'summary')}), patch.object(migrate, 'az', side_effect=lambda *args: {'properties': {'principalId': args[-1] + '-principal'}}):
                 migrate.plan()
                 manifest = json.loads((directory / 'migration.json').read_text())
                 self.assertEqual(manifest['identities'], expected)
@@ -120,6 +120,8 @@ class MigrationTests(unittest.TestCase):
                         return args[args.index(flag) + 1]
                     if verb == ('group', 'exists'):
                         return value('--name') in groups
+                    if verb == ('group', 'show'):
+                        return {'location': 'westeurope'}
                     if verb == ('resource', 'list'):
                         return list(groups[value('--resource-group')])
                     if verb == ('resource', 'move'):
@@ -197,6 +199,8 @@ class MigrationTests(unittest.TestCase):
             fail(args, groups)
             if args[:2] == ('group', 'exists'):
                 return value('--name') in groups
+            if args[:2] == ('group', 'show'):
+                return {'location': 'westeurope'}
             if args[:2] == ('resource', 'list'):
                 return list(groups[value('--resource-group')])
             if args[:3] == ('network', 'private-endpoint', 'delete'):
@@ -291,6 +295,33 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(str(error), 'move rejected')
         self.assertEqual(record['recovery'], 'failed')
         self.assertIn('create failed', record['recovery_error'])
+
+
+    def test_missing_or_misplaced_destination_stops_before_approval_or_detach(self):
+        for missing, location in ((migrate.NEW + 'network', 'westeurope'), (None, 'northeurope')):
+            with self.subTest(missing=missing, location=location):
+                def azure(*args):
+                    if args[:2] == ('group', 'exists'):
+                        return args[args.index('--name') + 1] != missing
+                    if args[:2] == ('group', 'show'):
+                        return {'location': location}
+                    self.fail('Unexpected Azure operation: ' + str(args))
+                with patch.object(migrate, 'az', side_effect=azure), self.assertRaisesRegex(ValueError, 'Destination group'):
+                    migrate.require_destinations()
+                with tempfile.TemporaryDirectory() as name:
+                    directory = Path(name)
+                    (directory / 'migration.json').write_text(json.dumps({'sha': 'same', 'layout': {}, 'roles': [],
+                        'identities': dict.fromkeys(migrate.PRESERVED_IDENTITIES, 'principal')}))
+                    with patch.object(migrate, 'DIRECTORY', directory), patch.object(migrate, 'guard', return_value='same'), \
+                            patch.object(migrate, 'inventory', return_value={}), patch.object(migrate, 'resource_roles', return_value=[]), \
+                            patch.object(migrate, 'az', side_effect=azure), patch.object(migrate, 'detach_endpoints') as detach:
+                        with self.assertRaisesRegex(ValueError, 'Destination group'):
+                            migrate.apply()
+                        detach.assert_not_called()
+                        self.assertFalse((directory / 'migration-recovery.json').exists())
+                        with patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(directory / 'summary')}), self.assertRaisesRegex(ValueError, 'Destination group'):
+                            migrate.plan()
+                        self.assertFalse((directory / 'summary').exists())
 
 
 if __name__=='__main__': unittest.main()

@@ -91,6 +91,19 @@ def inventory():
     return result
 
 
+MOVED = ('data', 'ops', 'network', 'security')
+
+
+def require_destinations():
+    """Every move destination must already exist in the region, before approval and before detach."""
+    for concern in MOVED:
+        group = NEW + concern
+        if not az('group', 'exists', '--subscription', SUBSCRIPTION, '--name', group):
+            raise ValueError('Destination group missing; deploy the foundation first: ' + group)
+        if az('group', 'show', '--subscription', SUBSCRIPTION, '--name', group)['location'] != 'westeurope':
+            raise ValueError('Destination group is in the wrong region: ' + group)
+
+
 def resource_roles(destination_only=False):
     roles = az('role', 'assignment', 'list', '--subscription', SUBSCRIPTION, '--all')
     # Resource-scoped assignments only. Bootstrap group grants deliberately stay
@@ -125,6 +138,7 @@ def layout(items):
 def plan():
     sha = guard()
     items = inventory()
+    require_destinations()
     identities = {}
     for rows in items.values():
         for r in rows:
@@ -223,6 +237,7 @@ def apply():
         raise ValueError('Migration identity manifest is incomplete')
     if approved['sha'] != sha or approved['layout'] != layout(items) or approved['roles'] != resource_roles():
         raise ValueError('Migration changed since preview: start a fresh run')
+    require_destinations()  # Fail before any endpoint is deleted.
     try:
         detach_endpoints(items)
         migrate_detached(sha, approved)
@@ -240,7 +255,7 @@ def apply():
 
 
 def migrate_detached(sha, approved):
-    for concern in ('data', 'ops', 'network', 'security'):
+    for concern in MOVED:
         rows = az('resource', 'list', '--subscription', SUBSCRIPTION, '--resource-group', OLD + concern) \
             if az('group', 'exists', '--subscription', SUBSCRIPTION, '--name', OLD + concern) else []
         ids = [r['id'] for r in rows if (r['type'], r['name']) in EXPECTED[concern]]
