@@ -118,6 +118,15 @@ static void worker(void *unused)
         vTaskDelay(pdMS_TO_TICKS((seconds+esp_random()%15)*1000));
     }
 }
+/* Parse in boundary order: "https://", an authority of hostname/port characters only
+   (so no userinfo '@', query '?' or fragment '#' can precede the path), then exactly "/v1/device". */
+static bool enrollment_url_valid(const char *url)
+{
+    if(strncmp(url,"https://",8))return false;
+    const char *authority=url+8,*end=authority;
+    while((*end>='a'&&*end<='z')||(*end>='A'&&*end<='Z')||(*end>='0'&&*end<='9')||*end=='.'||*end=='-'||*end==':')end++;
+    return end>authority&&*authority!=':'&&!strcmp(end,"/v1/device");
+}
 esp_err_t station_enrollment_start(void)
 {
     if(started)return ESP_OK;
@@ -125,9 +134,7 @@ esp_err_t station_enrollment_start(void)
     esp_err_t err=station_identity_init();if(err!=ESP_OK)return err;
     const char *url=CONFIG_TEMPO_ENROLLMENT_URL;
     if(!url[0])return ESP_OK; /* Local identity ready; no network worker. */
-    if(strncmp(url,"https://",8))return ESP_ERR_INVALID_ARG;
-    const char *path=strchr(url+8,'/');
-    if(!path||path==url+8||strcmp(path,"/v1/device")||strchr(url,'#')||strchr(url,'?')||strchr(url,'@'))return ESP_ERR_INVALID_ARG;
+    if(!enrollment_url_valid(url))return ESP_ERR_INVALID_ARG;
     if(xTaskCreate(worker,"enrollment",12288,NULL,3,NULL)!=pdPASS)return ESP_ERR_NO_MEM;
     started=true;return ESP_OK;
 }

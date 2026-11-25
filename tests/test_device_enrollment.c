@@ -80,6 +80,10 @@ int main(void){
   "https://tempo.example.com/x/v1/device","HTTPS://tempo.example.com/v1/device"};
  for(size_t i=0;i<sizeof(rejected)/sizeof(*rejected);i++){test_enrollment_url=rejected[i];assert(station_enrollment_start()!=0&&!task&&!started);}
  assert(!requests);
+ static const char *const malformed[]={"https://tempo.example.com/v1/device?","https://:443/v1/device","https://tempo example.com/v1/device",
+  "https://tempo.example.com%40evil.example/v1/device","https://[::1]/v1/device","https://tempo.example.com\\@evil/v1/device"};
+ for(size_t i=0;i<sizeof(malformed)/sizeof(*malformed);i++)assert(!enrollment_url_valid(malformed[i]));
+ assert(enrollment_url_valid("https://tempo.example.com/v1/device")&&enrollment_url_valid("https://tempo.example.com:443/v1/device"));
  test_enrollment_url="https://tempo.example.com/v1/device";
  init_error=-1;assert(station_enrollment_start()!=0);init_error=0;
  task_result=0;assert(station_enrollment_start()!=0);task_result=pdPASS;
