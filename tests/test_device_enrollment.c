@@ -71,6 +71,13 @@ int main(void){
  test_enrollment_url="http://tempo.example.com/v1/device";assert(station_enrollment_start()!=0);
  test_enrollment_url="https://tempo.example.com/wrong";assert(station_enrollment_start()!=0);
  test_enrollment_url="https://tempo.example.com/v1/device?bad";assert(station_enrollment_start()!=0);
+ /* Query, fragment and userinfo are rejected anywhere, including before the path; host and path are required. */
+ static const char *const rejected[]={"https://tempo.example.com?x/v1/device","https://tempo.example.com#x/v1/device",
+  "https://tempo.example.com/v1/device#x","https://user@tempo.example.com/v1/device","https://user:pw@tempo.example.com/v1/device",
+  "https:///v1/device","https://tempo.example.com","https://tempo.example.com/","https://tempo.example.com/v1/device/",
+  "https://tempo.example.com/x/v1/device","HTTPS://tempo.example.com/v1/device"};
+ for(size_t i=0;i<sizeof(rejected)/sizeof(*rejected);i++){test_enrollment_url=rejected[i];assert(station_enrollment_start()!=0&&!task&&!started);}
+ assert(!requests);
  test_enrollment_url="https://tempo.example.com/v1/device";
  init_error=-1;assert(station_enrollment_start()!=0);init_error=0;
  task_result=0;assert(station_enrollment_start()!=0);task_result=pdPASS;
