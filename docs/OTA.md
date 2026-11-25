@@ -52,3 +52,26 @@ GitHub-hosted assets require no separate domain or web hosting. Devices use publ
 8. Record real hardware outcomes before treating OTA as production-qualified. Host tests do not establish electrical power-loss resilience.
 
 Never flash concurrently from another checkout. The active display-idle-controls worktree has device ownership until that task completes; integration must preserve both branches' UI changes.
+
+## Superseded publication runs
+
+Publish OTA Release verifies that its checkout and event commit still match the
+remote main head before waiting for release approval, after approval before the
+build, before tag creation, and immediately before publishing the verified draft.
+A changed main or failed remote lookup stops publication with an actionable error.
+The workflow never checks out newer code under an older approval, grants wider
+token permissions, or moves an existing release tag. A main update can still race
+the final API call; publication is not an atomic transaction with branch updates.
+
+If a queued run is outdated, leave it failed/cancelled. Run **Publish OTA Release**
+using **Run workflow → main** to validate/build/sign current main, then review its
+normal `production-ota` approval. Re-running an old job retains its old commit and
+is not recovery. This manual entry point also covers a main update that did not
+match the automatic firmware path filters. Runs on other branches fail before
+publishing. Old workflow runs keep their original workflow and do not acquire this
+guard retroactively. Do not approve an old pending run after merging the fix.
+
+Run #4 failed creating tag `v0.11.0` for the historical PR #23 commit with HTTP 403,
+after successful build/signing. The guard avoids attempting historical unreferenced
+workflow commits with the built-in token; it does not bypass GitHub's permissions
+or certify a firmware version for physical-device rollout.

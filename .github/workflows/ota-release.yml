@@ -1,11 +1,13 @@
 name: Publish OTA Release
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
       - 'firmware/**'
       - 'companion/shortcut/**'
       - 'scripts/ota-release.py'
+      - '.github/scripts/ota-release-head.sh'
       - '.github/workflows/ota-release.yml'
 # Serial publication prevents two merges allocating the same version.
 concurrency:
@@ -29,6 +31,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Reject superseded release run
+        run: bash .github/scripts/ota-release-head.sh
       - name: Detect credential-free OTA runtime
         id: runtime
         run: |
@@ -50,6 +54,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Recheck release commit after approval
+        run: bash .github/scripts/ota-release-head.sh
       # Check out ESP-IDF before planning so no later checkout runs after release metadata exists.
       - name: Checkout pinned ESP-IDF
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -96,6 +102,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.plan.outputs.version }}
         run: |
+          bash .github/scripts/ota-release-head.sh
           tag="v$VERSION"
           if ! git show-ref --verify --quiet "refs/tags/$tag"; then
             if gh release view "$tag" >/dev/null 2>&1; then
@@ -126,4 +133,5 @@ jobs:
           mkdir "$verification/downloaded"
           gh release download "$tag" --pattern '*' --dir "$verification/downloaded"
           python3 scripts/ota-release.py verify-assets --downloaded "$verification/downloaded"
+          bash .github/scripts/ota-release-head.sh
           gh release edit "$tag" --draft=false --latest --notes-file build-host/release/notes.md
