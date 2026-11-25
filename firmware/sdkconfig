@@ -1316,15 +1316,17 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
-# Tempo protected identity storage
+# Tempo device enrollment
 #
 # default:
-CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID=-1
+CONFIG_TEMPO_ENROLLMENT_URL=""
 # default:
 CONFIG_TEMPO_DEVICE_SUFFIX="tempo.tinyrobotcompany.io"
 # default:
+CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID=-1
+# default:
 CONFIG_TEMPO_PRODUCTION_IDENTITY=y
-# end of Tempo protected identity storage
+# end of Tempo device enrollment
 
 #
 # Compiler options

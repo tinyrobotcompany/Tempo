@@ -19,6 +19,7 @@
 #include "transport_service.h"
 #include "map_tiles.h"
 #include "phone_setup.h"
+#include "device_enrollment.h"
 #include "update_service.h"
 
 static const char *TAG = "station";
@@ -88,6 +89,8 @@ void app_main(void)
     station_update_display_guard(update_display_guard);
     esp_err_t update_err=station_update_start();
     if(update_err!=ESP_OK)ESP_LOGE(TAG,"Update service unavailable: %s",esp_err_to_name(update_err));
+    esp_err_t enrollment_err=station_enrollment_start();
+    if(enrollment_err!=ESP_OK)ESP_LOGE(TAG,"Device enrollment unavailable: %s",esp_err_to_name(enrollment_err));
     esp_err_t phone_err=station_phone_start(&settings);
     if(phone_err!=ESP_OK)ESP_LOGE(TAG,"Phone setup could not start: %s",esp_err_to_name(phone_err));
     bsp_display_cfg_t display = {

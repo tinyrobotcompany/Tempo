@@ -761,7 +761,7 @@ static void update_phone(void)
         lv_label_set_text(phone_caption,"Scan with your phone camera.\nYour phone and display must share Wi-Fi.\n\nThe connection uses HTTPS.\nKeep this QR code private: it controls your display.");
     } else {
         phone_url[0]=0;lv_obj_add_flag(phone_qr,LV_OBJ_FLAG_HIDDEN);lv_obj_remove_flag(phone_wait,LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(phone_caption,link.dns_pending?"The secure device address is not ready.\nCheck its DNS record matches this network.\nPairing will appear automatically when ready.":network.connected?"Secure phone setup is not ready.\nComplete the device’s secure setup before pairing.":"Connect the display to Wi-Fi first.\n\nNo home Wi-Fi? Use your iPhone hotspot.\nOpen Settings > Wi-Fi on the display.\n\nThis page will show a QR code when connected.");
+        lv_label_set_text(phone_caption,link.dns_pending?"Waiting for this network to find Tempo.\nPairing will appear automatically when ready.\nIf this continues, try another Wi-Fi network.":network.connected?"Preparing secure phone access.\nKeep Tempo connected to Wi-Fi.\nYour pairing code will appear automatically.":"Connect the display to Wi-Fi first.\n\nNo home Wi-Fi? Use your iPhone hotspot.\nOpen Settings > Wi-Fi on the display.\n\nThis page will show a QR code when connected.");
     }
 }
 static bool forget_confirm;

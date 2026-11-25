@@ -1,4 +1,4 @@
 ---
 tempo: minor
 ---
-Require a unique provisioned HTTPS identity for phone control, validate certificates and keys before provisioning, and add device-side revocation of all paired phones. Use native browser location on HTTPS. This requires a one-time USB migration to the HTTPS identity partition and a trusted certificate; old-layout devices reject these OTA packages. Public DNS and certificate renewal deployment remain required before production rollout.
+Require HTTPS phone control with device-generated identity and TLS keys, authenticated cloud enrollment, automatic certificate renewal and DNS address updates. Add physical revocation of all paired phones and native browser location on HTTPS. Production identity requires Secure Boot and flash encryption. Existing devices require a controlled manufacturing migration to the new partition layout; old-layout devices reject these OTA packages. Deploy the certificate service and complete hardware/browser acceptance before rollout.

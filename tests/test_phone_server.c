@@ -10,6 +10,8 @@
 #include "credentials.h"
 static char test_key[513];
 static bool pairing_fail,rotate_fail;
+static bool identity_changed;
+bool station_identity_changed(void){bool result=identity_changed;identity_changed=false;return result;}
 esp_err_t station_pairing_rotate(char token[33]){if(rotate_fail)return ESP_FAIL;strcpy(token,"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");return ESP_OK;}
 esp_err_t station_pairing_load(char token[33]){if(pairing_fail)return ESP_FAIL;strcpy(token,"abababababababababababababababab");return ESP_OK;}
 esp_err_t station_credential_set(const char *key){if(strlen(key)>512)return ESP_ERR_INVALID_ARG;snprintf(test_key,sizeof(test_key),"%s",key);return ESP_OK;}
@@ -45,14 +47,15 @@ esp_err_t httpd_resp_send_err(httpd_req_t *r,int code,const char *s){r->code=cod
 esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *r,const char *key,char *out,size_t size){const char *s=!strcmp(key,"Authorization")?r->auth:r->type;if(!s||strlen(s)>=size)return ESP_FAIL;strcpy(out,s);return ESP_OK;}
 int httpd_req_recv(httpd_req_t *r,char *out,size_t n){size_t take=n>7?7:n;memcpy(out,r->body+r->received,take);r->received+=take;return take;}
 const char *station_phone_tls_hostname(void){return "device-a7f3.tempo.tinyrobotcompany.io";}
-static bool fail_start=true,fail_route=true;
-void station_phone_tls_stop(httpd_handle_t h){(void)h;route_count=0;}
-esp_err_t station_phone_tls_start(httpd_handle_t *h,const httpd_config_t *c){assert(c->max_open_sockets==3&&c->recv_wait_timeout==3&&c->stack_size==10240);if(fail_start)return ESP_FAIL;*h=(void*)1;return ESP_OK;}
+static bool fail_start=true,fail_route=true,fail_stop;
+static unsigned tls_starts,tls_stops;
+esp_err_t station_phone_tls_stop(httpd_handle_t h){(void)h;tls_stops++;if(fail_stop)return ESP_FAIL;route_count=0;return ESP_OK;}
+esp_err_t station_phone_tls_start(httpd_handle_t *h,const httpd_config_t *c){assert(c->max_open_sockets==3&&c->recv_wait_timeout==3&&c->stack_size==10240);tls_starts++;if(fail_start)return ESP_FAIL;*h=(void*)1;return ESP_OK;}
 esp_err_t httpd_register_uri_handler(httpd_handle_t h,const httpd_uri_t *route){(void)h;if(fail_route&&route_count==3)return ESP_FAIL;assert(route_count<14);routes[route_count++]=*route;return ESP_OK;}
 static httpd_req_t request(const char *uri,const char *body,const char *auth){httpd_req_t r={.uri=uri,.body=body,.content_len=body?strlen(body):0,.auth=auth,.type="application/json",.code=200};for(unsigned i=0;i<route_count;i++)if(!strcmp(uri,routes[i].uri)){assert(routes[i].handler(&r)==ESP_OK);return r;}assert(0);return r;}
 int main(void){station_settings_t initial=station_defaults();pairing_fail=true;assert(station_phone_start(&initial)==ESP_FAIL);pairing_fail=false;assert(station_phone_start(&initial)==ESP_FAIL);station_phone_link_t unavailable;network.connected=true;station_phone_link(&unavailable);assert(!unavailable.online);
  fail_start=false;assert(station_phone_start(&initial)==ESP_FAIL&&route_count==0);station_phone_link(&unavailable);assert(!unavailable.online);
- fail_route=false;assert(station_phone_start(&initial)==ESP_OK&&route_count==14);assert(station_phone_start(&initial)==ESP_OK&&route_count==14);network.connected=false;
+ fail_route=false;identity_changed=true;station_phone_maintenance();assert(route_count==14&&!identity_changed);assert(station_phone_start(&initial)==ESP_OK&&route_count==14);network.connected=false;
  httpd_req_t asset=request("/",NULL,NULL);assert(strstr(asset.response,"Your weather station"));
  asset=request("/connection.js",NULL,NULL);assert(strstr(asset.response,"StationConnection"));
  const char *auth="Bearer abababababababababababababababab";
@@ -111,4 +114,16 @@ int main(void){station_settings_t initial=station_defaults();pairing_fail=true;a
  rotate_fail=true;station_phone_maintenance();station_phone_link(&link);assert(link.forget_state==3);r=request("/api/status",NULL,auth);assert(r.code==200);
  rotate_fail=false;station_phone_forget();station_phone_maintenance();station_phone_link(&link);assert(link.forget_state==2&&strstr(link.url,"cdcd"));
  r=request("/api/status",NULL,auth);assert(r.code==401);r=request("/api/status",NULL,"Bearer cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");assert(r.code==200);
- puts("PASS: real HTTP handlers: auth, bounds, queued commands, busy location, cache headers and hotspot QR URL");}
+ unsigned before_starts=tls_starts,before_stops=tls_stops;
+ fail_stop=true;identity_changed=true;station_phone_maintenance();
+ assert(tls_starts==before_starts&&tls_stops==before_stops+1&&route_count==14);
+ assert(station_phone_start(&initial)!=ESP_OK&&tls_starts==before_starts);
+ fail_stop=false;station_phone_maintenance();assert(tls_starts==before_starts+1&&route_count==14);
+ before_starts=tls_starts;before_stops=tls_stops;
+ identity_changed=true;station_phone_maintenance();assert(route_count==14&&!identity_changed);
+ assert(tls_starts==before_starts+1&&tls_stops==before_stops+1);
+ station_phone_maintenance();assert(tls_starts==before_starts+1&&tls_stops==before_stops+1);
+ r=request("/api/status",NULL,"Bearer cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");assert(r.code==200);
+ identity_changed=true;fail_start=true;station_phone_maintenance();station_phone_link(&link);assert(!link.online);
+ fail_start=false;station_phone_maintenance();station_phone_link(&link);assert(link.online&&route_count==14);
+ puts("PASS: real HTTP handlers: auth, bounds, queued commands, TLS renewal/retry, cache headers and QR URL");}

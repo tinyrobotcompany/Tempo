@@ -1,2 +1,11 @@
 rsource "Kconfig.identity"
 # Phone positioning uses a locally distributed Apple Shortcut. No hosted URL is required.
+menu "Tempo device enrollment"
+config TEMPO_ENROLLMENT_URL
+    string "Production enrollment HTTPS endpoint"
+    default ""
+    help
+        Azure certificate API URL ending in /v1/device. Empty disables the network
+        worker but still initializes the device identity under the hardware guards;
+        release manufacturing must set the deployed endpoint, never a laptop URL.
+endmenu

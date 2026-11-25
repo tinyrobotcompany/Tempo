@@ -1,20 +1,27 @@
 #include "phone_tls.h"
+#include "identity_store.h"
+#include "esp_key_config.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/version.h"
 #include "esp_random.h"
+#include "sdkconfig.h"
+#if CONFIG_TEMPO_PRODUCTION_IDENTITY
+#include "esp_flash_encrypt.h"
+#include "esp_secure_boot.h"
+#endif
 #include <stdlib.h>
 #include <string.h>
 
 /* Separate from settings and OTA metadata; never erase on an initialization error. */
 static char hostname[97];
-static char *certificate, *private_key;
+static char *certificate;
+static const esp_key_config_t tls_key={.source=ESP_KEY_SOURCE_PSA,.psa={.key_id=STATION_TLS_KEY_ID}};
 static void clear_identity(void)
 {
-    if(private_key){volatile char *p=private_key;size_t n=strlen(private_key);while(n--)*p++=0;}
-    free(private_key);free(certificate);private_key=certificate=NULL;hostname[0]=0;
+    free(certificate);certificate=NULL;hostname[0]=0;
 }
 static bool valid_hostname(const char *name)
 {
@@ -36,22 +43,14 @@ static esp_err_t read_pem(nvs_handle_t h,const char *name,size_t maximum,char **
     err=nvs_get_str(h,name,*out,&n);
     return err;
 }
-#if MBEDTLS_VERSION_MAJOR < 4
-static int random_bytes(void *ctx,unsigned char *out,size_t n){(void)ctx;esp_fill_random(out,n);return 0;}
-#endif
 static bool matches_identity(void)
 {
     mbedtls_x509_crt cert;mbedtls_pk_context key;
     mbedtls_x509_crt_init(&cert);mbedtls_pk_init(&key);
     int result=mbedtls_x509_crt_parse(&cert,(const unsigned char *)certificate,strlen(certificate)+1);
     if(result==0){
-#if MBEDTLS_VERSION_MAJOR >= 4
-        result=mbedtls_pk_parse_key(&key,(const unsigned char *)private_key,strlen(private_key)+1,NULL,0);
+        result=mbedtls_pk_wrap_psa(&key,STATION_TLS_KEY_ID);
         if(result==0)result=mbedtls_pk_check_pair(&cert.pk,&key);
-#else
-        result=mbedtls_pk_parse_key(&key,(const unsigned char *)private_key,strlen(private_key)+1,NULL,0,random_bytes,NULL);
-        if(result==0)result=mbedtls_pk_check_pair(&cert.pk,&key,random_bytes,NULL);
-#endif
     }
     if(result==0){
         /* Issuer trust is checked before installation. At startup require the
@@ -70,13 +69,15 @@ static bool matches_identity(void)
 }
 esp_err_t station_phone_tls_start(httpd_handle_t *server,const httpd_config_t *config)
 {
+#if CONFIG_TEMPO_PRODUCTION_IDENTITY
+    if(!esp_flash_encryption_enabled()||!esp_secure_boot_enabled())return ESP_ERR_INVALID_STATE;
+#endif
     clear_identity();
-    esp_err_t err=nvs_flash_init_partition("phone_tls");if(err!=ESP_OK)return err;
+    esp_err_t err=station_identity_store_init();if(err!=ESP_OK)return err;
     nvs_handle_t h;err=nvs_open_from_partition("phone_tls","identity",NVS_READONLY,&h);if(err!=ESP_OK)return err;
     size_t n=sizeof(hostname);err=nvs_get_str(h,"hostname",hostname,&n);
     if(err==ESP_OK&&!valid_hostname(hostname))err=ESP_ERR_INVALID_ARG;
     if(err==ESP_OK)err=read_pem(h,"cert",8192,&certificate);
-    if(err==ESP_OK)err=read_pem(h,"key",4096,&private_key);
     nvs_close(h);
     if(err==ESP_OK&&!matches_identity())err=ESP_ERR_INVALID_ARG;
     if(err!=ESP_OK){clear_identity();return err;}
@@ -85,10 +86,10 @@ esp_err_t station_phone_tls_start(httpd_handle_t *server,const httpd_config_t *c
     /* ESP-IDF passes this entire PEM chain to ssl_conf_own_cert.
        cacert_pem is for client authentication, not server intermediates. */
     ssl.servercert=(const unsigned char *)certificate;ssl.servercert_len=strlen(certificate)+1;
-    ssl.prvtkey_pem=(const unsigned char *)private_key;ssl.prvtkey_len=strlen(private_key)+1;
+    ssl.server_key=&tls_key;
     err=httpd_ssl_start(server,&ssl);
     if(err!=ESP_OK)clear_identity();
     return err;
 }
-void station_phone_tls_stop(httpd_handle_t server){httpd_ssl_stop(server);clear_identity();}
+esp_err_t station_phone_tls_stop(httpd_handle_t server){esp_err_t err=httpd_ssl_stop(server);if(err==ESP_OK)clear_identity();return err;}
 const char *station_phone_tls_hostname(void){return hostname;}
