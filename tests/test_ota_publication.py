@@ -51,7 +51,10 @@ class PublicationTests(unittest.TestCase):
             def git(*args,cwd=None):
                 return subprocess.check_output(['git',*args],cwd=cwd,text=True,stderr=subprocess.DEVNULL).strip()
             git('init','--bare',str(remote));git('clone',str(remote),str(work))
+            git('checkout','-b','main',cwd=work)
             git('config','user.name','Test',cwd=work);git('config','user.email','test@example.com',cwd=work)
+            (work/'.github/scripts').mkdir(parents=True)
+            shutil.copyfile(ROOT/'.github/scripts/ota-release-head.sh',work/'.github/scripts/ota-release-head.sh')
             (work/'scripts').mkdir()
             for name in ('ota-release.py','release.py'):shutil.copyfile(ROOT/'scripts'/name,work/'scripts'/name)
             git('add','.',cwd=work);git('commit','-qm','release source',cwd=work);git('push','origin','HEAD',cwd=work)
@@ -60,7 +63,7 @@ class PublicationTests(unittest.TestCase):
             for name in names:(release/name).write_text(name)
             fake=bin_dir/'gh';fake.write_text(FAKE_GH);fake.chmod(0o755)
             storage=root/'release-api'
-            env={**os.environ,'PATH':str(bin_dir)+os.pathsep+os.environ['PATH'],'TEST_REMOTE':str(remote),'TEST_RELEASE':str(storage),'GITHUB_SHA':git('rev-parse','HEAD',cwd=work),'GITHUB_REPOSITORY':'test/repo','VERSION':'1.0.0'}
+            env={**os.environ,'PATH':str(bin_dir)+os.pathsep+os.environ['PATH'],'TEST_REMOTE':str(remote),'TEST_RELEASE':str(storage),'GITHUB_SHA':git('rev-parse','HEAD',cwd=work),'GITHUB_REPOSITORY':'tinyrobotcompany/Tempo','GITHUB_REF':'refs/heads/main','VERSION':'1.0.0'}
             def publish():return subprocess.run(['bash','-eo','pipefail','-c',commands],cwd=work,env=env,capture_output=True,text=True)
             first=publish();self.assertEqual(first.returncode,0,first.stderr)
             self.assertEqual((storage/'state').read_text(),'published')
@@ -72,5 +75,14 @@ class PublicationTests(unittest.TestCase):
             del env['CORRUPT'];retry=publish();self.assertEqual(retry.returncode,0,retry.stderr)
             self.assertEqual((storage/'state').read_text(),'published')
             self.assertEqual({p.name for p in (storage/'assets').iterdir()},names)
+            # A delayed approval must not tag/publish the previous main commit.
+            git('commit','--allow-empty','-qm','new main',cwd=work)
+            git('push','origin','HEAD',cwd=work)
+            git('checkout','--detach',env['GITHUB_SHA'],cwd=work)
+            env['VERSION']='1.0.1'
+            stale=publish();self.assertNotEqual(stale.returncode,0)
+            self.assertIn('Outdated OTA run',stale.stderr)
+            self.assertEqual(git('ls-remote',str(remote),'refs/tags/v1.0.1'),'')
+            self.assertEqual((storage/'state').read_text(),'published')
 
 if __name__=='__main__':unittest.main()
