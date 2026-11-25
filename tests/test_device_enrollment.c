@@ -21,6 +21,7 @@ static bool install_notification;
 static unsigned address=0xc0a80122,requests,cert_requests,installs;
 static int init_error,sign_error,csr_error,install_error,http_error,http_status=200;
 static bool fail_client,complete=true,iface_present=true,pending,have_certificate;
+static const char *content_type="application/json";static esp_http_client_config_t *client_config;
 static int64_t renew_time;
 static char response[13000],request_body[7000];static size_t response_offset;
 static void (*task)(void *);static int task_result=pdPASS;
@@ -43,7 +44,7 @@ int station_identity_install(const char *chain,int64_t *out){assert(!strcmp(chai
 void esp_crt_bundle_attach(void){}
 void *esp_http_client_init(esp_http_client_config_t *config){
  assert(!strcmp(config->url,test_enrollment_url)&&config->crt_bundle_attach==esp_crt_bundle_attach&&config->disable_auto_redirect);
- requests++;response_offset=0;request_body[0]=0;return fail_client?NULL:(void*)1;
+ client_config=config;requests++;response_offset=0;request_body[0]=0;return fail_client?NULL:(void*)1;
 }
 int esp_http_client_set_method(void *h,int method){assert(h&&method==HTTP_METHOD_POST);return 0;}
 int esp_http_client_set_header(void *h,const char *name,const char *value){assert(h&&name&&value);return 0;}
@@ -53,6 +54,7 @@ int64_t esp_http_client_fetch_headers(void *h){
  assert(h);cJSON *j=cJSON_Parse(request_body);assert(j);const char *action=cJSON_GetObjectItem(j,"action")->valuestring;
  if(!strcmp(action,"certificate"))cert_requests++;
  snprintf(response,sizeof(response),"{\"state\":\"%s\",\"address\":\"192.168.1.34\",\"certificate\":\"%s\"}",pending?"pending":"ready",have_certificate?"chain":"");
+ if(content_type){esp_http_client_event_t header={.event_id=HTTP_EVENT_ON_HEADER,.user_data=client_config->user_data,.header_key="content-type",.header_value=content_type};assert(client_config->event_handler(&header)==0);}
  cJSON_Delete(j);return http_error?-1:(int64_t)strlen(response);
 }
 int esp_http_client_get_status_code(void *h){assert(h);return http_status;}
@@ -91,6 +93,12 @@ int main(void){
  http_error=-1;assert(!tick());http_error=0;
  http_status=302;assert(!tick());http_status=401;assert(!tick());http_status=200;
  complete=false;assert(!tick());complete=true;
+ /* Only declared JSON replies are protocol data; HTML, lookalike and missing types fail with backoff. */
+ static const char *const wrong[]={"text/html","application/jsonp","application/json-seq","text/json",""," "};
+ for(size_t i=0;i<sizeof(wrong)/sizeof(*wrong);i++){content_type=wrong[i];parse_calls=0;assert(!tick()&&!parse_calls&&!waiting_certificate);}
+ content_type=NULL;parse_calls=0;assert(!tick()&&!parse_calls&&!waiting_certificate);
+ for(int status=200;status<=202;status+=2){http_status=status;content_type="text/html; charset=utf-8";assert(!tick()&&!waiting_certificate);}
+ http_status=200;content_type="Application/JSON;charset=utf-8";
  parse_calls=0;assert(tick()&&waiting_certificate&&cert_requests==1&&!strcmp(last_address,"192.168.1.34"));
  assert(parse_calls>0&&parse_length==strlen(response)); /* Valid replies parse exactly the received JSON. */
  pending=true;assert(tick()&&installs==0&&cert_requests==1);pending=false;have_certificate=true;

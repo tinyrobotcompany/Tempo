@@ -12,6 +12,7 @@
 #include "sdkconfig.h"
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -20,6 +21,16 @@ static unsigned failures;
 static char last_address[16];
 static bool waiting_certificate;
 
+/* Protocol replies must declare JSON: application/json with optional parameters, any case. */
+static esp_err_t response_header(esp_http_client_event_t *event)
+{
+    if(event->event_id==HTTP_EVENT_ON_HEADER&&event->header_key&&event->header_value&&!strcasecmp(event->header_key,"Content-Type")){
+        const char *type=event->header_value;while(*type==' '||*type=='\t')type++;
+        size_t length=strlen("application/json");
+        *(bool *)event->user_data=!strncasecmp(type,"application/json",length)&&(!type[length]||type[length]==';'||type[length]==' '||type[length]=='\t');
+    }
+    return ESP_OK;
+}
 static cJSON *request(const char *action,const char *value)
 {
     cJSON *json=cJSON_CreateObject();if(!json)return NULL;
@@ -32,7 +43,8 @@ static cJSON *request(const char *action,const char *value)
     char *body=cJSON_PrintUnformatted(json);cJSON_Delete(json);if(!body)return NULL;
     char signature[112];
     if(station_identity_sign(body,signature,sizeof(signature))!=ESP_OK){cJSON_free(body);return NULL;}
-    esp_http_client_config_t config={.url=CONFIG_TEMPO_ENROLLMENT_URL,.timeout_ms=15000,
+    bool json_reply=false;
+    esp_http_client_config_t config={.url=CONFIG_TEMPO_ENROLLMENT_URL,.timeout_ms=15000,.event_handler=response_header,.user_data=&json_reply,
         .crt_bundle_attach=esp_crt_bundle_attach,.disable_auto_redirect=true,.buffer_size=2048,
         .buffer_size_tx=2048};
     esp_http_client_handle_t client=esp_http_client_init(&config);
@@ -55,7 +67,7 @@ static cJSON *request(const char *action,const char *value)
                 int n=esp_http_client_read(client,response+total,12288-total);
                 if(n<0){valid=false;break;}if(n==0)break;total+=(size_t)n;
             }
-            if(valid&&total<12288&&esp_http_client_is_complete_data_received(client))reply=cJSON_ParseWithLength(response,total);
+            if(valid&&json_reply&&total<12288&&esp_http_client_is_complete_data_received(client))reply=cJSON_ParseWithLength(response,total);
             free(response);
         }
     }
