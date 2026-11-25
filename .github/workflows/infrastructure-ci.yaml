@@ -35,6 +35,8 @@ jobs:
               assert 'copyIndex' not in reference, reference
               assert '-security' in reference, reference
           PYCODE
+      - name: Verify compiled role delegation restrictions
+        run: python3 scripts/infrastructure/check-delegation.py build-host/infrastructure/bootstrap.json
       - name: Test deployment and migration guards
         run: |
           python3 tests/test_infrastructure_delivery.py

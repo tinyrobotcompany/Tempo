@@ -42,7 +42,8 @@ one-time setup is explicit, separately reviewed and captured in
 provisioning script. An authorised operator applies the reviewed template after
 preview, through an authenticated Azure administration session. Do not apply it
 from an unreviewed branch. It creates only the five destination groups, delivery
-identity, federation and delivery permissions. It neither moves existing resources
+identity, federation and constrained delivery permissions. After migration it also
+locks the existing storage and vault against control-plane deletion. It neither moves existing resources
 nor starts the application. Never grant subscription Owner or put an Azure client
 secret in GitHub.
 
@@ -52,12 +53,25 @@ not verified grants: review those Bicep assignments explicitly, then verify the
 resulting scopes after bootstrap. Compilation alone is not Azure validation.
 
 The bootstrap grants subscription deployment-record operations plus Contributor
-and RBAC Administrator scoped to the ten exact source/destination Tempo groups.
-RBAC administration is needed to restore the narrowly scoped runtime assignments.
-This is a privileged deployment identity: it can modify Tempo resources/access,
-but is not a runtime identity and has no subscription-wide resource writer grant.
-The source-group grants disappear when those groups are deleted. Bootstrap is
-not a recurring deployment and cannot be reapplied unchanged after source removal.
+on the exact Tempo groups. RBAC Administrator assignments retain their original
+IDs but now constrain **both assignment and removal** to exact runtime-role and
+managed-identity combinations. Network, operations and compute groups permit no
+role delegation. The delivery principal cannot grant itself a runtime role.
+
+Before migration, preview/apply with `includeMigrationSources=true` and
+`runtimeIdentityResourceGroup=rg-tempo-staging-westeurope-security`. After the
+reviewed migration completes, reapply with defaults: the existing identities are
+resolved in the destination group, deleted source groups are not referenced, and
+storage/vault deletion locks are installed. Never create replacement runtime
+identities to satisfy this template. This bootstrap targets the existing foundation;
+a fresh installation needs a separately reviewed foundation bootstrap.
+
+Read [role restriction evidence and rollout](AZURE_ROLE_BOUNDARIES.md) before
+applying. The normal delivery principal intentionally cannot create/remove locks.
+The source-group grants disappear with their empty groups. This remains a
+privileged code-delivery identity: it can replace worker code and therefore use
+that worker's privileges indirectly. These restrictions reduce direct RBAC abuse;
+they do not make arbitrary pipeline code harmless.
 
 GitHub environment `tempo-infrastructure` must have:
 
