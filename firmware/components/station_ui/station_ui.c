@@ -45,7 +45,8 @@ static station_view_t view;
 typedef enum { PAGE_DISPLAY, PAGE_WIFI, PAGE_HOME, PAGE_PROFILE, PAGE_COLOR, PAGE_PHONE, PAGE_HOTSPOT, PAGE_POWER, PAGE_UPDATES } page_t;
 static page_t page;
 static lv_obj_t *content, *date_label, *clock_text, *wifi_icon, *welcome, *settings_status, *header_clock;
-static lv_obj_t *phone_forget_status;
+static lv_obj_t *phone_forget_status, *phone_forget_button;
+static bool forget_confirm, forget_feedback;
 static lv_obj_t *phone_qr, *phone_caption, *phone_wait, *tap_notice;
 static uint64_t tap_notice_until;
 static char phone_url[160];
@@ -747,7 +748,13 @@ static void show_hotspot(lv_event_t *e)
 static void update_phone(void)
 {
     station_phone_link_t link={0};if(actions.phone_link)actions.phone_link(&link);
-    lv_label_set_text(phone_forget_status,link.forget_state==1?"Revoking access…":link.forget_state==2?"All previous phone access revoked. Scan the new QR to pair again.":link.forget_state==3?"Could not revoke access. Please retry.":"");
+    /* A result belongs to this page visit; an in-flight request survives navigation. */
+    if(link.forget_state==1)forget_feedback=true;
+    bool blocked=link.forget_state==1||(forget_feedback&&link.forget_state==2);
+    if(blocked){forget_confirm=false;lv_obj_add_state(phone_forget_button,LV_STATE_DISABLED);}
+    else lv_obj_remove_state(phone_forget_button,LV_STATE_DISABLED);
+    lv_label_set_text(lv_obj_get_child(phone_forget_button,0),link.forget_state==1?"Revoking access…":blocked?"Phones forgotten":forget_confirm?"Confirm: forget all phones":"Forget all phones");
+    lv_label_set_text(phone_forget_status,!forget_feedback?"":link.forget_state==1?"Revoking access…":link.forget_state==2?"All previous phone access revoked. Scan the new QR to pair again.":link.forget_state==3?"Could not revoke access. Please retry.":"");
     if(link.online) {
         lv_obj_add_flag(phone_wait,LV_OBJ_FLAG_HIDDEN);
         if(strcmp(phone_url,link.url)) {
@@ -764,17 +771,18 @@ static void update_phone(void)
         lv_label_set_text(phone_caption,link.dns_pending?"Waiting for this network to find Tempo.\nPairing will appear automatically when ready.\nIf this continues, try another Wi-Fi network.":network.connected?"Preparing secure phone access.\nKeep Tempo connected to Wi-Fi.\nYour pairing code will appear automatically.":"Connect the display to Wi-Fi first.\n\nNo home Wi-Fi? Use your iPhone hotspot.\nOpen Settings > Wi-Fi on the display.\n\nThis page will show a QR code when connected.");
     }
 }
-static bool forget_confirm;
 static void forget_phones(lv_event_t *e)
 {
+    if(lv_obj_has_state(lv_event_get_target(e),LV_STATE_DISABLED))return;
     lv_obj_t *button_label=lv_obj_get_child(lv_event_get_target(e),0);
     if(!forget_confirm){forget_confirm=true;lv_label_set_text(button_label,"Confirm: forget all phones");return;}
-    forget_confirm=false;lv_label_set_text(button_label,"Forget all phones");
+    forget_confirm=false;forget_feedback=true;
     if(actions.phone_forget)actions.phone_forget();
+    update_phone();
 }
 static void show_phone(lv_event_t *e)
 {
-    (void)e;page_header("Phone setup",PAGE_PHONE);forget_confirm=false;
+    (void)e;page_header("Phone setup",PAGE_PHONE);forget_confirm=false;forget_feedback=false;
     box(content,32,94,1216,520,CARD);
     phone_qr=lv_qrcode_create(content);lv_qrcode_set_size(phone_qr,290);lv_qrcode_set_quiet_zone(phone_qr,true);
     lv_qrcode_set_dark_color(phone_qr,lv_color_black());lv_qrcode_set_light_color(phone_qr,lv_color_white());
@@ -783,7 +791,7 @@ static void show_phone(lv_event_t *e)
     phone_wait=lv_spinner_create(content);lv_obj_set_size(phone_wait,64,64);lv_obj_set_pos(phone_wait,193,265);lv_spinner_set_anim_params(phone_wait,1000,200);
     phone_caption=label(content,"",440,150,&station_text_24);lv_obj_set_width(phone_caption,750);
     button(content,"Wi-Fi settings",440,430,370,show_network,NULL);
-    button(content,"Forget all phones",440,510,650,forget_phones,NULL);
+    phone_forget_button=button(content,"Forget all phones",440,510,650,forget_phones,NULL);
     phone_forget_status=label(content,"",60,630,&station_text_24);lv_obj_set_width(phone_forget_status,1160);
     phone_url[0]=0;update_phone();
 }
