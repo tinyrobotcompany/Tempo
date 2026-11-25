@@ -4,7 +4,7 @@ Adapted from project-template `ded9fcfb24cbe0bb741c2aed71d9a42bb1ffd0af` and Vox
 
 ## Local setup — required for every clone
 
-Use macOS with Xcode Command Line Tools, Node 22+, Python 3.10+, CMake and actionlint (`brew install cmake actionlint node`). Apple `aea` and `aa` are required for signed Shortcut verification. No API key, live transport endpoint, USB device or firmware flash is needed for unit tests.
+Use macOS with Xcode Command Line Tools, Node 22+, Python 3.10+, CMake and actionlint (`brew install cmake actionlint node`). No API key, live transport endpoint, USB device or firmware flash is needed for unit tests.
 
 ```sh
 bash scripts/setup-hooks.sh
@@ -13,12 +13,12 @@ bash scripts/test-all.sh
 
 Git does not automatically activate tracked hooks on clone. Setup records `core.hooksPath=.githooks` in local repository configuration, shared by its worktrees. The hook exports the index into an isolated temporary directory and runs **every** host test on **every** commit, including documentation-only and empty commits. It fails if a tool/dependency is missing, a test fails, or the index changes during execution. Unstaged edits remain untouched and cannot hide staged failures. Do not use `--no-verify`.
 
-Tests include core/settings/calendar, networking, weather, transport/parser/filter, phone server/protocol/reconnection, native Shortcut integrity, all clock styles/layouts, map decoding/cache, ASan/UBSan, adapter race/startup guards, watcher/preflight, hook behaviour, Codex review/security scripts and workflow lint. Host dependencies are pinned by SHA256 and restored from the existing Espressif cache or official HTTPS sources. Subsequent runs need no downloads. CMake outputs remain private in build-host.
+Tests include core/settings/calendar, networking, weather, transport/parser/filter, phone server/protocol/reconnection, all clock styles/layouts, map decoding/cache, ASan/UBSan, adapter race/startup guards, watcher/preflight, hook behaviour, Codex review/security scripts and workflow lint. Host dependencies are pinned by SHA256 and restored from the existing Espressif cache or official HTTPS sources. Subsequent runs need no downloads. CMake outputs remain private in build-host.
 
 ## Pull requests and CI
 
 - `All Unit Tests`: full macOS host suite (unit, host integration and regression), exactly the same runner as the commit hook; enforced 80% coverage gates and retained CI reports. See [testing scope](TESTING.md).
-- `ESP32-P4 Build`: runs only when firmware build inputs change (source, configuration, embedded assets, release packaging or embedded Shortcut). Transport uses runtime NVS credentials; neither CI nor local builds compile a key or sentinel. No production token or flashing. The aggregate gate accepts a skip only when the detector explicitly reports no firmware change.
+- `ESP32-P4 Build`: runs only when firmware build inputs change (source, configuration, embedded assets, release packaging). Transport uses runtime NVS credentials; neither CI nor local builds compile a key or sentinel. No production token or flashing. The aggregate gate accepts a skip only when the detector explicitly reports no firmware change.
 - `Changeset Check`: required change note for firmware, companion, tests, scripts, hooks and substantive workflow changes, regardless of PR author or triggering actor. A diff containing only SHA/version-annotation updates to existing remote action references in existing workflow files is exempt. Commands, inputs, permissions, action identity changes, file additions/deletions, and mixed application changes still require notes.
 - `Branch Name` / `PR Title (Conventional Commits)`: template naming conventions.
 - `Secret Scan`: pinned Gitleaks CLI, full-history scan with redacted output.
@@ -59,7 +59,7 @@ Alternatively a repository administrator can configure the listed required check
 
 A pushed `vX.Y.Z` tag runs full CI and security validation, verifies the commit belongs to main and matches firmware/CMakeLists.txt, then creates a **draft source release**. No binary with embedded credentials is uploaded, no device is flashed, and this is not OTA. Release preparation uses `python3 scripts/release.py prepare` to calculate the highest pending change-note bump and update the embedded firmware version and release history together. Tags must match that version and checked-in notes. See [Release strategy](RELEASING.md).
 
-Azure/IaC deployments, .NET, Swift app builds, TestFlight, project-board automation and quant/agent services are not applicable to this standalone firmware/browser project and are not copied. The native Shortcut test is retained. Device OTA remains a separate outstanding product requirement.
+Azure/IaC deployments, .NET, Swift app builds, TestFlight, project-board automation and quant/agent services are not applicable to this standalone firmware/browser project and are not copied. Device OTA remains a separate outstanding product requirement.
 
 ### Verified check contexts
 

@@ -30,8 +30,7 @@ xcrun llvm-profdata merge -sparse build-host/coverage/unit-raw/*.profraw -o buil
 python3 scripts/check-coverage.py
 node --test --experimental-test-coverage --test-coverage-lines=80 \
   '--test-coverage-include=**/firmware/main/web/*.js' \
-  '--test-coverage-include=**/companion/location-helper/helper.js' \
-  tests/test_phone_location.js tests/test_phone_connection.js tests/test_shortcut.js \
-  tests/test_phone_reconnect_ui.js tests/test_location_editor.js tests/test_location_helper.js tests/test_update_ui.js \
+  tests/test_phone_location.js tests/test_phone_connection.js \
+  tests/test_phone_reconnect_ui.js tests/test_location_editor.js tests/test_update_ui.js \
   | tee build-host/coverage/browser.txt
 python3 scripts/check-browser-coverage.py
