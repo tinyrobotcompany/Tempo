@@ -9,3 +9,5 @@ Dependabot checks backend pip and Docker dependencies monthly with one routine P
 Public fork PRs do not spend the OpenAI credential automatically. Their required Codex check fails before the paid call; a maintainer must inspect the contribution and import it onto a repository branch, where normal CI and Codex review run. No fork code is executed with the review credential. This cost boundary does not make model review immune to malicious text and does not replace human review.
 
 The full host suite now includes the mechanical CAD tests using the checked-in frozen uv lock. Install uv alongside the documented host tools. These tests validate the model, not a manufactured enclosure.
+
+The first C/C++ scan identified portable format mismatches in the adapter and permissive artifact creation in host tests. Those sites were corrected instead of suppressed: test outputs use owner-only file permissions and refuse symbolic links. These test artifact warnings are not evidence of a remote device exploit.

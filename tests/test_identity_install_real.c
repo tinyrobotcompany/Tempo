@@ -1,3 +1,7 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#include "private_output.h"
 /* Production install implementation, real SDK crypto; only NVS/HW are host seams. */
 #define ESP_ERR_INVALID_STATE 4
 #ifndef CONFIG_TEMPO_DEVICE_SUFFIX
@@ -39,8 +43,8 @@ int main(int argc,char **argv){
   /* Isolated test process/file-backed PSA store; no device key export. */
   psa_destroy_key(STATION_FACTORY_KEY_ID);psa_destroy_key(STATION_TLS_KEY_ID);
   assert(station_identity_init()==ESP_OK);char csr[2048];assert(station_identity_csr(csr,sizeof(csr))==ESP_OK);
-  FILE *f=fopen("device.csr","wb");assert(f);fputs(csr,f);fclose(f);
-  f=fopen("hostname.txt","wb");assert(f);fputs(station_identity_hostname(),f);fclose(f);return 0;
+  FILE *f=private_output("device.csr");assert(f);fputs(csr,f);fclose(f);
+  f=private_output("hostname.txt");assert(f);fputs(station_identity_hostname(),f);fclose(f);return 0;
  }
  assert(!strcmp(argv[1],"verify"));
  setenv("TZ","EST5EDT",1);tzset();assert(station_identity_init()==ESP_OK);
