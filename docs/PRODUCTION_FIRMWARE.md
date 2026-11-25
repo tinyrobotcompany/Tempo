@@ -24,3 +24,5 @@ Security version is independent of semantic version. Do not increment it on ever
 Acceptance on a dedicated provisioned unit must record hardware revision and public-key/digest identity, locked security state, first enrollment, trusted phone HTTPS, two successive signed updates, rejection of unsigned/wrong-key images, recovery while HTTPS/enrollment is unavailable, and interrupted-write rollback. A successful test-key SDK build does not establish these hardware outcomes.
 
 References: [Secure Boot V2](https://docs.espressif.com/projects/esp-idf/en/stable/esp32p4/security/secure-boot-v2.html) and [flash encryption](https://docs.espressif.com/projects/esp-idf/en/stable/esp32p4/security/flash-encryption.html).
+
+The production profile disables static RSA key exchange, TLS renegotiation and CBC cipher mode while retaining ECDHE with RSA/ECDSA authentication and AES-GCM. RSA certificate verification and Secure Boot signing remain supported. Browser and outbound weather/transport/update/enrollment interoperability must be included in device acceptance; the development baseline is not evidence of the production cipher configuration.
