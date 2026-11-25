@@ -137,6 +137,9 @@ class MigrationTests(unittest.TestCase):
                     if args[:3] == ('deployment', 'sub', 'create'):
                         events.append('reconcile')
                         return {'properties': {'provisioningState': 'Succeeded' if reconcile_succeeds else 'Failed'}}
+                    if args[:3] == ('network', 'private-endpoint', 'create') or args[:4] == ('network', 'private-endpoint', 'dns-zone-group', 'create'):
+                        events.append('reconnect')
+                        return {}
                     if args[:3] == ('network', 'private-endpoint', 'show'):
                         return {'provisioningState': 'Succeeded', 'privateLinkServiceConnections': [{'privateLinkServiceConnectionState': {'status': 'Approved'}}]}
                     if args[:4] == ('network', 'private-endpoint', 'dns-zone-group', 'list'):
@@ -167,7 +170,127 @@ class MigrationTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             migrate.apply()
                         self.assertFalse(any(e.startswith('delete:') for e in events))
+                        self.assertIn('reconnect', events)
                         self.assertFalse((directory / 'migration-complete.json').exists())
+
+
+    def run_with_endpoint_failure(self, fail):
+        """Run apply() against a stateful fake Azure where `fail(args, groups)` may raise."""
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        groups = {prefix + c: [] for prefix in (migrate.OLD, migrate.NEW) for c in migrate.CONCERNS}
+        def add(group, kind, name):
+            groups[group].append({'type': kind, 'name': name, 'resourceGroup': group,
+                                  'id': '/subscriptions/id/resourceGroups/' + group + '/providers/' + kind + '/' + name})
+        for concern, resources in migrate.EXPECTED.items():
+            for kind, name in resources:
+                add(migrate.OLD + concern, kind, name)
+        for name in sorted(migrate.ENDPOINTS):
+            add(migrate.OLD + 'security', 'Microsoft.Network/privateEndpoints', name)
+        add(migrate.NEW + 'security', 'Microsoft.ManagedIdentity/userAssignedIdentities', 'tempo-infrastructure-delivery')
+        identities = {name: name + '-principal' for name in migrate.PRESERVED_IDENTITIES}
+        (directory / 'migration.json').write_text(json.dumps({'sha': 'same', 'layout': migrate.layout(groups), 'roles': [],
+                                                              'destination_roles': [], 'identities': identities}))
+        events = []
+        def azure(*args):
+            def value(flag):
+                return args[args.index(flag) + 1]
+            fail(args, groups)
+            if args[:2] == ('group', 'exists'):
+                return value('--name') in groups
+            if args[:2] == ('resource', 'list'):
+                return list(groups[value('--resource-group')])
+            if args[:3] == ('network', 'private-endpoint', 'delete'):
+                rows = groups[value('--resource-group')]
+                rows.remove(next(r for r in rows if r['name'] == value('--name')))
+                events.append('detach:' + value('--name'))
+                return None
+            if args[:3] == ('network', 'private-endpoint', 'wait') or args[:2] == ('resource', 'wait'):
+                return None
+            if args[:2] == ('resource', 'move'):
+                destination = value('--destination-group')
+                for identifier in args[args.index('--ids') + 1:]:
+                    for source, rows in list(groups.items()):
+                        found = next((r for r in rows if r['id'] == identifier), None)
+                        if found:
+                            rows.remove(found)
+                            groups[destination].append(dict(found, id=identifier.replace(source, destination), resourceGroup=destination))
+                return None
+            if args[:3] == ('network', 'private-endpoint', 'create'):
+                add(value('--resource-group'), 'Microsoft.Network/privateEndpoints', value('--name'))
+                events.append(('create', value('--resource-group'), value('--name'), value('--subnet'),
+                               value('--private-connection-resource-id'), value('--group-id')))
+                return {}
+            if args[:4] == ('network', 'private-endpoint', 'dns-zone-group', 'create'):
+                events.append(('zone', value('--endpoint-name'), value('--private-dns-zone')))
+                return {}
+            if args[:3] == ('deployment', 'sub', 'create'):
+                return {'properties': {'provisioningState': 'Succeeded'}}
+            if args[:2] == ('group', 'delete'):
+                events.append('delete:' + value('--name'))
+                return None
+            self.fail('Unexpected Azure operation: ' + str(args))
+        with patch.object(migrate, 'DIRECTORY', directory), patch.object(migrate, 'guard', return_value='same'), \
+                patch.object(migrate, 'inventory', side_effect=lambda: {g: list(rows) for g, rows in groups.items()}), \
+                patch.object(migrate, 'resource_roles', return_value=[]), \
+                patch.object(migrate, 'az', side_effect=azure), patch.object(migrate.subprocess, 'run'), \
+                patch.object(migrate, 'verify', side_effect=RuntimeError('verification failed')):
+            with self.assertRaises(Exception) as raised:
+                migrate.apply()
+        self.assertFalse(any(isinstance(e, str) and e.startswith('delete:') for e in events), 'source groups must be retained')
+        record = json.loads((directory / 'migration-recovery.json').read_text())
+        return raised.exception, record, events, groups
+
+    def test_failed_move_after_detach_recreates_endpoints_at_current_locations(self):
+        def fail(args, groups):
+            if args[:2] == ('resource', 'move') and args[args.index('--destination-group') + 1] == migrate.NEW + 'security':
+                raise RuntimeError('move rejected')
+        error, record, events, groups = self.run_with_endpoint_failure(fail)
+        self.assertEqual(str(error), 'move rejected')  # The original failure is reported, not hidden.
+        self.assertEqual(record['recovery'], 'reconnected')
+        created = {e[2]: e for e in events if e[0] == 'create'}
+        self.assertEqual(set(created), migrate.ENDPOINTS)
+        table, vault = created['tempo-table-endpoint'], created['tempo-vault-endpoint']
+        # Data and network moved before the failure; the vault did not.
+        self.assertIn('/resourceGroups/' + migrate.NEW + 'data/', table[4])
+        self.assertIn('/resourceGroups/' + migrate.OLD + 'security/', vault[4])
+        self.assertTrue(table[3].startswith('/subscriptions/id/resourceGroups/' + migrate.NEW + 'network/') and table[3].endswith('/subnets/private'))
+        self.assertEqual((table[1], table[5], vault[5]), (migrate.OLD + 'security', 'table', 'vault'))
+        zones = {e[1]: e[2] for e in events if e[0] == 'zone'}
+        self.assertTrue(zones['tempo-table-endpoint'].endswith('/privatelink.table.core.windows.net'))
+        self.assertTrue(zones['tempo-vault-endpoint'].endswith('/privatelink.vaultcore.azure.net'))
+        # The recreated endpoints sit where the next reviewed preview accepts them.
+        for row in groups[migrate.OLD + 'security']:
+            self.assertTrue(migrate.known(row, 'security'))
+
+    def test_partial_detach_recreates_only_the_deleted_endpoint(self):
+        def fail(args, groups):
+            if args[:3] == ('network', 'private-endpoint', 'delete') and args[args.index('--name') + 1] == 'tempo-vault-endpoint':
+                raise RuntimeError('delete timeout')
+        error, record, events, _ = self.run_with_endpoint_failure(fail)
+        self.assertEqual(str(error), 'delete timeout')
+        self.assertEqual(record['recreated'], [{'endpoint': 'tempo-table-endpoint', 'resourceGroup': migrate.OLD + 'security'}])
+
+    def test_failure_after_reconciliation_leaves_reconciled_endpoints_alone(self):
+        def fail(args, groups):
+            if args[:3] == ('deployment', 'sub', 'create'):
+                for name in migrate.ENDPOINTS:
+                    groups[migrate.NEW + 'security'].append({'type': 'Microsoft.Network/privateEndpoints', 'name': name,
+                                                             'resourceGroup': migrate.NEW + 'security', 'id': '/reconciled/' + name})
+        error, record, events, _ = self.run_with_endpoint_failure(fail)
+        self.assertEqual(str(error), 'verification failed')
+        self.assertEqual((record['recovery'], record['recreated']), ('reconnected', []))
+        self.assertFalse(any(e[0] == 'create' for e in events if isinstance(e, tuple)))
+
+    def test_failed_recovery_still_reports_the_original_failure(self):
+        def fail(args, groups):
+            if args[:2] == ('resource', 'move'):
+                raise RuntimeError('move rejected')
+            if args[:3] == ('network', 'private-endpoint', 'create'):
+                raise RuntimeError('create failed')
+        error, record, _, _ = self.run_with_endpoint_failure(fail)
+        self.assertEqual(str(error), 'move rejected')
+        self.assertEqual(record['recovery'], 'failed')
+        self.assertIn('create failed', record['recovery_error'])
 
 
 if __name__=='__main__': unittest.main()

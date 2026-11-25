@@ -2,8 +2,9 @@
 """One-time, approved migration of the known Tempo foundation, never arbitrary groups.
 
 Private endpoints must be recreated; data, vault, identities and registry move
-in place. On failure retain all groups and state. Re-plan to resume after reviewing
-current locations; source groups are deleted only after verification.
+in place. On failure retain all groups and state, and recreate any deleted private
+endpoint against the resources' current locations before exiting. Re-plan to resume
+after reviewing current locations; source groups are deleted only after verification.
 """
 import argparse
 import json
@@ -34,6 +35,14 @@ EXPECTED = {
     'compute': set(),
 }
 ENDPOINTS = {'tempo-table-endpoint', 'tempo-vault-endpoint'}
+# Mirrors infra/certificates/endpoints.bicep: endpoint -> (target, group ID, private DNS zone).
+RECONNECT = {
+    'tempo-table-endpoint': (('data', 'Microsoft.Storage/storageAccounts', 'sttempo22bw55qnmg6pm'),
+                             'table', 'privatelink.table.core.windows.net'),
+    'tempo-vault-endpoint': (('security', 'Microsoft.KeyVault/vaults', 'kv-tempo-22bw55qnmg6pm'),
+                             'vault', 'privatelink.vaultcore.azure.net'),
+}
+assert set(RECONNECT) == ENDPOINTS
 PRESERVED_IDENTITIES = {'tempo-infrastructure-delivery'} | {
     name for kind, name in EXPECTED['security'] if kind == 'Microsoft.ManagedIdentity/userAssignedIdentities'
 }
@@ -134,7 +143,7 @@ def plan():
         out.write('## Resource-group migration\n\n')
         out.write('Move the known foundation in place; preserve resource names, data and identity principal IDs.\n\n')
         out.write('Recreate ONLY the two private endpoints and their managed NICs/DNS bindings. Public access stays disabled.\n\n')
-        out.write('Azure validates each move at execution after endpoint removal. An unsupported move stops the run; no source group is deleted on failure.\n\n')
+        out.write('Azure validates each move at execution after endpoint removal. An unsupported move stops the run; deleted endpoints are recreated at current locations and no source group is deleted on failure.\n\n')
         for group, ids in manifest['layout'].items():
             out.write(f'- `{group}`: {len(ids)} resources\n')
         out.write('\nAfter access/network verification, delete only the five EMPTY old Tempo groups.\n')
@@ -167,6 +176,45 @@ def detach_endpoints(items):
                    '--deleted', '--interval', '10', '--timeout', '600')
 
 
+def locate(concern, kind, name):
+    """Current ID of a foundation resource, whichever side of a partial move it is on."""
+    for prefix in (OLD, NEW):
+        group = prefix + concern
+        if az('group', 'exists', '--subscription', SUBSCRIPTION, '--name', group):
+            for resource in az('resource', 'list', '--subscription', SUBSCRIPTION, '--resource-group', group):
+                if (resource['type'], resource['name']) == (kind, name):
+                    return resource['id']
+    raise ValueError(f'Cannot locate {kind} {name} for endpoint recovery')
+
+
+def reconnect():
+    """Recreate only endpoints that no longer exist, against current resource locations.
+
+    Idempotent: endpoints already present (for example from a successful reconciliation)
+    are left alone. Recreated endpoints stay in a group the next preview accepts, so a
+    fresh reviewed run resumes the migration. Public access is never changed.
+    """
+    recreated = []
+    for name, ((concern, kind, target), group_id, zone) in sorted(RECONNECT.items()):
+        homes = [prefix + 'security' for prefix in (OLD, NEW)
+                 if az('group', 'exists', '--subscription', SUBSCRIPTION, '--name', prefix + 'security')]
+        if any(r['type'] == 'Microsoft.Network/privateEndpoints' and r['name'] == name
+               for home in homes for r in az('resource', 'list', '--subscription', SUBSCRIPTION, '--resource-group', home)):
+            continue
+        subnet = locate('network', 'Microsoft.Network/virtualNetworks', 'tempo-staging-vnet') + '/subnets/private'
+        zone_id = locate('network', 'Microsoft.Network/privateDnsZones', zone)
+        home = homes[0]
+        az('network', 'private-endpoint', 'create', '--subscription', SUBSCRIPTION, '--resource-group', home,
+           '--name', name, '--location', 'westeurope', '--subnet', subnet,
+           '--private-connection-resource-id', locate(concern, kind, target),
+           '--group-id', group_id, '--connection-name', group_id)
+        az('network', 'private-endpoint', 'dns-zone-group', 'create', '--subscription', SUBSCRIPTION,
+           '--resource-group', home, '--endpoint-name', name, '--name', 'default',
+           '--zone-name', group_id, '--private-dns-zone', zone_id)
+        recreated.append({'endpoint': name, 'resourceGroup': home})
+    return recreated
+
+
 def apply():
     sha = guard()
     approved = json.loads((DIRECTORY / 'migration.json').read_text())
@@ -175,7 +223,23 @@ def apply():
         raise ValueError('Migration identity manifest is incomplete')
     if approved['sha'] != sha or approved['layout'] != layout(items) or approved['roles'] != resource_roles():
         raise ValueError('Migration changed since preview: start a fresh run')
-    detach_endpoints(items)
+    try:
+        detach_endpoints(items)
+        migrate_detached(sha, approved)
+    except Exception as error:
+        # Never leave private data paths deleted: reconnect, retain every group, then fail.
+        record = {'error': repr(error), 'recovery': 'failed', 'recreated': []}
+        try:
+            record['recreated'] = reconnect()
+            record['recovery'] = 'reconnected'
+        except Exception as recovery_error:
+            record['recovery_error'] = repr(recovery_error)
+            print('RECOVERY FAILED: private endpoints may be missing; rerun the reviewed foundation deployment')
+        (DIRECTORY / 'migration-recovery.json').write_text(json.dumps(record, indent=2))
+        raise
+
+
+def migrate_detached(sha, approved):
     for concern in ('data', 'ops', 'network', 'security'):
         rows = az('resource', 'list', '--subscription', SUBSCRIPTION, '--resource-group', OLD + concern) \
             if az('group', 'exists', '--subscription', SUBSCRIPTION, '--name', OLD + concern) else []
