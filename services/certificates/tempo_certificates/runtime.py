@@ -8,11 +8,13 @@ from concurrent.futures import ThreadPoolExecutor
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 from cryptography import x509
+from acme import messages
 
 from .app import create_azure_store
 from .dns import Spaceship
 from .issuer import AcmeIssuer
 from .worker import Worker, cleanup_nonces
+from .secret_cache import SecretCache
 
 
 class CloudIssuer:
@@ -24,9 +26,15 @@ class CloudIssuer:
         read = lambda key: self.vault.get_secret(key).value
         roots = (x509.load_pem_x509_certificates(read("acme-staging-roots").encode())
                  if self.environment == "staging" else None)
-        issuer = AcmeIssuer(read("acme-account-key"), read("acme-account-uri"),
-                            self.environment, self.dns, roots)
-        return issuer.issue(name, csr, checkpoint)
+        try:
+            issuer = AcmeIssuer(read("acme-account-key"), read("acme-account-uri"),
+                                self.environment, self.dns, roots)
+            return issuer.issue(name, csr, checkpoint)
+        except messages.Error as error:
+            if error.typ in ("urn:ietf:params:acme:error:unauthorized",
+                              "urn:ietf:params:acme:error:accountDoesNotExist"):
+                self.vault.invalidate("acme-account-key", "acme-account-uri")
+            raise
 
 
 def run_cycle(store, vault, environment, lane=None):
@@ -35,6 +43,7 @@ def run_cycle(store, vault, environment, lane=None):
     credentials = json.loads(vault.get_secret("spaceship-credentials").value)
     dns = Spaceship(environment["DNS_DOMAIN"], environment["DEVICE_SUFFIX"],
                     credentials["key"], credentials["secret"],
+                    authentication_failed=lambda: vault.invalidate("spaceship-credentials"),
                     waveform_suffix=environment.get("WAVEFORM_DEVICE_SUFFIX", ""))
     try:
         Worker(store, CloudIssuer(vault, environment["ACME_ENVIRONMENT"], dns), dns).run_jobs(lane)
@@ -49,7 +58,7 @@ def main():
     # requests.Session / Azure clients are not shared between these threads.
     def run_lane(lane):
         credential = DefaultAzureCredential(managed_identity_client_id=os.environ.get("AZURE_CLIENT_ID"))
-        vault = SecretClient(os.environ["KEY_VAULT_URL"], credential, logging_enable=False)
+        vault = SecretCache(SecretClient(os.environ["KEY_VAULT_URL"], credential, logging_enable=False))
         store = None
         while True:
             try:

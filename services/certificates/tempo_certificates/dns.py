@@ -17,13 +17,12 @@ class TLSAdapter(HTTPAdapter):
 
 
 class Spaceship:
-    def __init__(self, domain, suffix, api_key, api_secret, session=None, waveform_suffix=""):
+    def __init__(self, domain, suffix, api_key, api_secret, session=None, authentication_failed=None, waveform_suffix=""):
         self.suffixes = (suffix, waveform_suffix) if waveform_suffix else (suffix,)
         if any(not value.endswith("." + domain) for value in self.suffixes):
             raise ValueError("Device suffix must be below DNS domain")
-        if not suffix.endswith("." + domain):
-            raise ValueError("Device suffix must be below DNS domain")
         self.domain, self.suffix = domain, suffix
+        self.authentication_failed = authentication_failed
         self.session = session or requests.Session()
         self.session.trust_env = False
         self.session.mount("https://", TLSAdapter())
@@ -37,6 +36,8 @@ class Spaceship:
 
     def call(self, method, **kwargs):
         response = self.session.request(method, self.url, timeout=(5, 15), allow_redirects=False, **kwargs)
+        if response.status_code in (401, 403) and self.authentication_failed:
+            self.authentication_failed()
         if response.status_code not in (200, 204):
             # Do not log provider response bodies/headers, which may contain account data.
             raise RuntimeError("dns_provider_error")

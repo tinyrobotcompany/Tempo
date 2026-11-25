@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 static time_t current_time=1800000000;
+static int64_t monotonic_seconds;
 static time_t fake_time(time_t *out){if(out)*out=current_time;return current_time;}
 #include "cJSON.h"
 /* Record the exact parse length: it must cover only received bytes, never the NUL terminator. */
@@ -14,6 +15,7 @@ static cJSON *checked_parse(const char *value,size_t length){parse_calls++;parse
 #include "../firmware/main/device_enrollment.c"
 #undef cJSON_ParseWithLength
 #undef time
+int64_t esp_timer_get_time(void){return monotonic_seconds*1000000;}
 const char *test_enrollment_url="https://tempo.example.com/v1/device";
 static station_network_status_t network={.connected=true};
 static unsigned init_calls;
@@ -21,7 +23,7 @@ static bool install_notification;
 static unsigned address=0xc0a80122,requests,cert_requests,installs;
 static int init_error,sign_error,csr_error,install_error,http_error,http_status=200;
 static bool fail_client,complete=true,iface_present=true,pending,have_certificate;
-static const char *content_type="application/json";static esp_http_client_config_t *client_config;
+static const char *content_type="application/json",*retry_header;static esp_http_client_config_t *client_config;
 static int64_t renew_time;
 static char response[13000],request_body[7000];static size_t response_offset;
 static void (*task)(void *);static int task_result=pdPASS;
@@ -55,6 +57,7 @@ int64_t esp_http_client_fetch_headers(void *h){
  if(!strcmp(action,"certificate"))cert_requests++;
  snprintf(response,sizeof(response),"{\"state\":\"%s\",\"address\":\"192.168.1.34\",\"certificate\":\"%s\"}",pending?"pending":"ready",have_certificate?"chain":"");
  if(content_type){esp_http_client_event_t header={.event_id=HTTP_EVENT_ON_HEADER,.user_data=client_config->user_data,.header_key="content-type",.header_value=content_type};assert(client_config->event_handler(&header)==0);}
+ if(retry_header){esp_http_client_event_t header={.event_id=HTTP_EVENT_ON_HEADER,.user_data=client_config->user_data,.header_key="Retry-After",.header_value=retry_header};assert(client_config->event_handler(&header)==0);}
  cJSON_Delete(j);return http_error?-1:(int64_t)strlen(response);
 }
 int esp_http_client_get_status_code(void *h){assert(h);return http_status;}
@@ -63,7 +66,7 @@ bool esp_http_client_is_complete_data_received(void *h){assert(h);return complet
 void esp_http_client_close(void *h){assert(h);}
 void esp_http_client_cleanup(void *h){assert(h);}
 int xTaskCreate(void (*fn)(void *),const char *name,unsigned stack,void *arg,unsigned priority,void *handle){assert(!strcmp(name,"enrollment")&&stack==12288&&!arg&&priority==3&&!handle);task=fn;return task_result;}
-void vTaskDelay(unsigned ticks){assert(ticks>=30000);if(++delays>=2)longjmp(loop_exit,1);}
+void vTaskDelay(unsigned ticks){assert(ticks==5000);monotonic_seconds+=5;if(++delays>=2)longjmp(loop_exit,1);}
 int main(void){
  test_enrollment_url="";
  init_error=-1;assert(station_enrollment_start()==init_error&&init_calls==1&&!task&&!requests);init_error=0;
@@ -115,9 +118,33 @@ int main(void){
  assert(tick()&&install_notification); /* Further polls leave notification for phone maintenance. */
  renew_time=current_time-1;csr_error=-1;assert(!tick());csr_error=0;
  assert(tick()&&cert_requests==2);
+ /* Healthy devices reconcile once daily; checking the local network does not poll Azure. */
+ enrollment_schedule_t schedule={0};waiting_certificate=false;pending_work=false;failures=0;
+ renew_time=current_time+7*86400;monotonic_seconds=100;
+ scheduled_tick(&schedule);unsigned baseline=requests;
+ for(unsigned i=0;i<17280;i++){monotonic_seconds+=5;scheduled_tick(&schedule);}
+ assert(requests==baseline); /* Jitter is four seconds beyond the first 24 hours. */
+ monotonic_seconds+=5;scheduled_tick(&schedule);assert(requests==baseline+1);
+ /* Renewal and address changes interrupt daily sleep, not an outstanding failure backoff. */
+ renew_time=current_time;scheduled_tick(&schedule);assert(waiting_certificate&&pending_work);
+ baseline=requests;monotonic_seconds+=29;scheduled_tick(&schedule);assert(requests==baseline);
+ monotonic_seconds+=5;scheduled_tick(&schedule);assert(requests>baseline&&!waiting_certificate);
+ baseline=requests;address=0xc0a80123;scheduled_tick(&schedule);assert(requests>=baseline+2&&pending_work);
+ address=0xc0a80122;scheduled_tick(&schedule);assert(!pending_work);
+ /* 5/15/60-minute failures use monotonic time, so wall-clock changes cannot defeat backoff. */
+ http_status=503;retry_header="1200";schedule.due=0;failures=0;
+ scheduled_tick(&schedule);assert(failures==1&&schedule.due==monotonic_seconds+1204);
+ baseline=requests;current_time+=86400;address=0xc0a80124;scheduled_tick(&schedule);assert(requests==baseline);
+ retry_header=NULL;monotonic_seconds=schedule.due;scheduled_tick(&schedule);assert(failures==2&&schedule.due==monotonic_seconds+904);
+ monotonic_seconds=schedule.due;scheduled_tick(&schedule);assert(failures==3&&schedule.due==monotonic_seconds+3604);
+ /* Offline/reconnect does not reset the server retry deadline or charge more failures. */
+ network.connected=false;baseline=requests;scheduled_tick(&schedule);assert(requests==baseline&&failures==3);
+ network.connected=true;scheduled_tick(&schedule);assert(requests==baseline);
+ http_status=200;address=0xc0a80122;renew_time=current_time+86400;
+ monotonic_seconds=schedule.due;scheduled_tick(&schedule);assert(failures==0&&!pending_work);
  if(!setjmp(loop_exit))task(NULL);
  assert(delays==2);delays=0;network.connected=false;
  if(!setjmp(loop_exit))task(NULL);
- assert(failures==2);
+ assert(failures==0);
  puts("PASS: signed HTTPS enrollment, clock/network gating, renewal, redirects denied and retry backoff");
 }
