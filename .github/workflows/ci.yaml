@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feature/secure-phone-access]
+    branches: [main, feature/secure-phone-access, feature/encrypted-identity-storage]
 permissions:
   contents: read
 concurrency:
@@ -95,6 +95,7 @@ jobs:
           test ! -f .env
           source .artifacts/esp-idf/export.sh
           bash scripts/test-phone-tls-real.sh
+          bash scripts/test-identity-real.sh
           TEMPO_CI_BUILD=1 idf.py -C firmware build
           python3 scripts/check-transport-memory.py
   changeset:

@@ -1,0 +1,18 @@
+menu "Tempo protected identity storage"
+config TEMPO_IDENTITY_HMAC_KEY_ID
+    int "Factory-provisioned and locked HMAC key slot for identity storage"
+    range -1 5
+    default -1
+    help
+        -1 disables identity storage until manufacturing selects a provisioned
+        HMAC_UP slot. Firmware never programs eFuses or stores unencrypted keys.
+config TEMPO_DEVICE_SUFFIX
+    string "Per-device DNS namespace"
+    default "tempo.tinyrobotcompany.io"
+config TEMPO_PRODUCTION_IDENTITY
+    bool "Require hardware protection before generating device identity"
+    default y
+    help
+        Fail closed unless Secure Boot and flash encryption are active. Factory
+        eFuse provisioning is a separate controlled process. Never disable for shipping.
+endmenu
