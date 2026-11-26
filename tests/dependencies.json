@@ -19,8 +19,8 @@
   },
   {
     "name": "embed.cmake",
-    "sha256": "5f4e716c04f0c5c07b6cb9faf5de14deaa0d10e43e12211f040967b152781568",
-    "url": "https://raw.githubusercontent.com/espressif/esp-idf/fff9895c82d744c7237be8847347bdd1b07c6643/tools/cmake/scripts/data_file_embed_asm.cmake",
+    "sha256": "4d02efe778724fd71796613ce0ace61271eb7ed15409987c66a4e93751ebbe56",
+    "url": "https://raw.githubusercontent.com/espressif/esp-idf/051e4c4eb20346e043cdd47bc388fde75ff8af63/tools/cmake/scripts/data_file_embed_asm.cmake",
     "local": ".espressif/v6.1/esp-idf/tools/cmake/scripts/data_file_embed_asm.cmake",
     "archive": false
   }

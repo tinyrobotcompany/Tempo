@@ -1,3 +1,5 @@
+> **Retired procedure — do not execute.** The old foundation was deleted by the operator. Use [Fresh Bicep delivery](FRESH_INFRASTRUCTURE_DELIVERY.md). The migration and Python infrastructure tooling described below have been removed. This page is retained only as a historical record.
+
 # Tempo infrastructure delivery
 
 ## Authority and current state
@@ -83,19 +85,24 @@ OIDC with a long-lived password or remove approval.
 
 ## Preview and apply
 
-On pushes to main, **Infrastructure deployment** starts automatically only for
-changes under `infra/certificates/`, `scripts/infrastructure/`, infrastructure
-workflow YAML files or the infrastructure detector. Application-only changes do
-not trigger deployment. PR validation additionally includes its tests and shared
-CI/gate wiring. GitHub native path filtering has a 300-file diff limit; unusually
-large mixed commits can require a manual run. Keep infrastructure PRs focused.
+On pushes to main, **Infrastructure deployment** starts only when a file matching
+`infra/certificates/**/*.bicep` changes. The main ruleset must require pull requests,
+without bypass, so deployment follows a reviewed merge. A second full-diff check
+selects only Bicep changes, including deleted/renamed files. Application, docs,
+workflow, script and JSON-only changes do not trigger deployment. PR validation
+still covers the wider infrastructure inputs. GitHub native path filtering has a
+300-file diff limit; keep infrastructure PRs focused.
 
-Automatic and manual deployment both use the reviewed
-`infra/certificates/deployment.json`: currently foundation-only (`image` empty)
-and ACME test certificates (`staging`, not a second Azure environment). Updating
-the image/CA mode requires a reviewed config change. Neither push nor a generic
-Run workflow silently enables the application. Manual `preview` remains available;
-manual `deploy` retries delivery after a stale run, migration or bootstrap.
+There is no ordinary manual deployment trigger. Retry a failed eligible run using
+GitHub's Re-run jobs, while its commit remains current main. Migration keeps its
+separate one-time manual workflow. A stale run needs a new reviewed Bicep change.
+
+Deployment still reads `infra/certificates/deployment.json`: an empty image means
+foundation-only, and ACME `staging` means test certificates, not a second Azure
+environment. A JSON-only configuration change cannot deploy. Before application
+activation, move the selected image/CA configuration into reviewed Bicep so that
+an activation change follows the same Bicep merge rule. No automatic trigger
+silently activates the backend.
 
 The workflow validates before Azure login. Existing GitHub environment approval
 is preserved for preview access and again for apply after the artifact exists.
@@ -109,13 +116,13 @@ PRs are merged by the user and bootstrap is complete:
    approved apply moves and reconciles them before cleanup. Do not run a normal
    foundation deployment first: even with compute disabled it would try to create
    destination copies of existing resources. Normal `preview` and `deploy` refuse
-   while any old group remains. After migration, use `preview` for future changes.
+   while any old group remains. After migration, normal Bicep merges generate a deployment preview.
 2. Approve access to the infrastructure environment. The job validates checkout,
    current main SHA, subscription and tenant, compiles Bicep and runs Azure what-if.
 3. Review the immutable plan artifact, compiled template, parameters and diagnostics.
    ARM can short-circuit role assignments derived from identity outputs; the preview
    must not be described as proof of complete runtime connectivity or access.
-4. For automatic deploy, manual `deploy`, or migration, a SECOND environment approval protects the apply job
+4. For automatic deployment or migration, a SECOND environment approval protects the apply job
    after its preview exists. The same GitHub environment is used for both gates;
    there are not two Azure environments.
 5. Apply uses the exact commit and artifact. Normal deployment verifies file hashes,

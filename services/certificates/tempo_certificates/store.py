@@ -27,11 +27,12 @@ class TableStore:
         except ResourceNotFoundError:
             row = {"PartitionKey": identifier, "RowKey": lane, "etag": None, "state": "idle"}
         row.update({key: registration[key] for key in ("public_key", "hostname", "enabled")})
+        row["product"] = registration.get("product", "tempo")
         return row
 
     @staticmethod
     def entity(row):
-        return {k: v for k, v in row.items() if k not in ("etag", "public_key", "hostname", "enabled")}
+        return {k: v for k, v in row.items() if k not in ("etag", "public_key", "hostname", "enabled", "product")}
 
     def accept(self, row, nonce, expires):
         mutation = (("update", self.entity(row), {"mode": UpdateMode.REPLACE, "etag": row["etag"],
