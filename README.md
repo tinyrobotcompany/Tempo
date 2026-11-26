@@ -34,7 +34,9 @@ Current firmware: **0.8.16**. Signed OTA and persistent transport credentials ar
 
 ## Configure and build
 
-Install ESP-IDF 6.1 for the tested ESP32-P4 revision, then provision the PRIM key through paired phone setup after installation; firmware builds no longer read `.env`. Dependencies are restored from the component manifest and lock file. The patched LVGL adapter under `firmware/vendor` is required.
+Install ESP-IDF 6.1.1 at commit `051e4c4eb20346e043cdd47bc388fde75ff8af63` for the tested ESP32-P4 revision, then provision the PRIM key through paired phone setup after installation; firmware builds no longer read `.env`. Dependencies are restored from the component manifest and lock file. The patched LVGL adapter under `firmware/vendor` is required.
+
+The build wrapper prefers an SDK checkout at `.artifacts/esp-idf`, or an explicitly activated `IDF_PATH`. It rejects other revisions and modified HTTP parser code. This pin includes Espressif's [Content-Length parsing correction](https://github.com/espressif/esp-idf/commit/eb0faad47bd064e1cbfb05893fedd39f91905a48); HTTPS alone does not fix the older parser. CI and release builds use the same pin and security preflight.
 
 ```sh
 ./scripts/idf.sh build

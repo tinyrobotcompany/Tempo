@@ -21,6 +21,7 @@
 #include "phone_setup.h"
 #include "device_enrollment.h"
 #include "update_service.h"
+#include "trial_health.h"
 
 static const char *TAG = "station";
 static atomic_uint flushes;
@@ -158,12 +159,14 @@ void app_main(void)
             ESP_LOGE(TAG, "UI stopped responding; restart");
             esp_restart();
         }
-        if (pending && phone_err == ESP_OK && update_err == ESP_OK && beat >= 100 && esp_timer_get_time()-started >= 120000000 && station_update_validate_trial()) {
+        station_trial_result_t trial=station_trial_health(pending,update_err==ESP_OK,beat,
+            esp_timer_get_time()-started,station_update_validate_trial);
+        if (trial == STATION_TRIAL_ACCEPT) {
             /* Worker confirmed durable trial state before accepting the image. */
             pending = false;
             ESP_LOGI(TAG, "Trial firmware healthy");
         }
-        if (pending && (update_err != ESP_OK || esp_timer_get_time()-started >= 180000000)) {
+        if (trial == STATION_TRIAL_ROLLBACK) {
             ESP_LOGE(TAG, "Trial firmware failed local health checks; rolling back");
             ESP_ERROR_CHECK(esp_ota_mark_app_invalid_rollback_and_reboot());
         }

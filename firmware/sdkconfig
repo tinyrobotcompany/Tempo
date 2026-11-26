@@ -1,6 +1,6 @@
 #
 # Automatically generated file. DO NOT EDIT.
-# Espressif IoT Development Framework (ESP-IDF) 6.1.0 Project Configuration
+# Espressif IoT Development Framework (ESP-IDF) 6.1.1 Project Configuration
 #
 # default:
 CONFIG_SOC_ADC_SUPPORTED=y
@@ -110,8 +110,6 @@ CONFIG_SOC_ECC_SUPPORTED=y
 CONFIG_SOC_ECC_EXTENDED_MODES_SUPPORTED=y
 # default:
 CONFIG_SOC_ECDSA_SUPPORTED=y
-# default:
-CONFIG_SOC_KEY_MANAGER_SUPPORTED=y
 # default:
 CONFIG_SOC_HUK_SUPPORTED=y
 # default:
@@ -332,8 +330,6 @@ CONFIG_SOC_GDMA_SUPPORT_CRC=y
 CONFIG_SOC_GDMA_SUPPORT_ETM=y
 # default:
 CONFIG_SOC_GDMA_SUPPORT_SLEEP_RETENTION=y
-# default:
-CONFIG_SOC_GDMA_EXT_MEM_ENC_ALIGNMENT=16
 # default:
 CONFIG_SOC_GPIO_PORT=1
 # default:
@@ -584,6 +580,8 @@ CONFIG_SOC_MCPWM_SUPPORT_SLEEP_RETENTION=y
 CONFIG_SOC_USB_OTG_PERIPH_NUM=2
 # default:
 CONFIG_SOC_USB_FSLS_PHY_NUM=1
+# default:
+CONFIG_SOC_USB_OTG_PSRAM_DMA_CAPABLE=y
 # default:
 CONFIG_SOC_USB_OTG_NEED_SOFTWARE_SUSPEND_BEFORE_SLEEP=y
 # default:
@@ -907,8 +905,6 @@ CONFIG_SOC_SLEEP_SYSTIMER_STALL_WORKAROUND=y
 # default:
 CONFIG_SOC_SLEEP_TGWDT_STOP_WORKAROUND=y
 # default:
-CONFIG_SOC_PM_RETENTION_MODULE_NUM=64
-# default:
 CONFIG_SOC_MAIN_POWER_CONTROL_SUPPORTED=y
 # default:
 CONFIG_SOC_CLK_RC_FAST_SUPPORT_CALIBRATION=y
@@ -972,6 +968,8 @@ CONFIG_SOC_LP_CORE_SUPPORT_I2C=y
 CONFIG_SOC_LP_CORE_HW_AUTO_CLRWAKEUPCAUSE=y
 # default:
 CONFIG_SOC_LP_CORE_LP_UART_WAKEUP_KEEP_TRIGGERED=y
+# default:
+CONFIG_SOC_DEBUG_HAVE_OCD_STUB_BINS=y
 # default:
 CONFIG_IDF_CMAKE=y
 # default:
@@ -1261,6 +1259,8 @@ CONFIG_ESPTOOLPY_FLASHMODE="dio"
 # default:
 CONFIG_ESPTOOLPY_FLASHMODE_VAL=3
 # default:
+# CONFIG_ESPTOOLPY_FLASHFREQ_120M is not set
+# default:
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 # default:
 # CONFIG_ESPTOOLPY_FLASHFREQ_40M is not set
@@ -1316,16 +1316,21 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
+# Tempo protected identity storage
+#
+# default:
+CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID=-1
+# default:
+CONFIG_TEMPO_DEVICE_SUFFIX="tempo.tinyrobotcompany.io"
+# default:
+CONFIG_TEMPO_PRODUCTION_IDENTITY=y
+# end of Tempo protected identity storage
+
+#
 # Tempo device enrollment
 #
 # default:
 CONFIG_TEMPO_ENROLLMENT_URL=""
-# default:
-CONFIG_TEMPO_DEVICE_SUFFIX="tempo.tinyrobotcompany.io"
-# default:
-CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID=-1
-# default:
-CONFIG_TEMPO_PRODUCTION_IDENTITY=y
 # end of Tempo device enrollment
 
 #
@@ -1836,6 +1841,8 @@ CONFIG_SPI_SLAVE_ISR_IN_IRAM=y
 #
 # default:
 # CONFIG_UHCI_ISR_HANDLER_IN_IRAM is not set
+# default:
+# CONFIG_UHCI_RECV_FUNC_IN_IRAM is not set
 # default:
 # CONFIG_UHCI_ISR_CACHE_SAFE is not set
 # default:
@@ -3876,6 +3883,14 @@ CONFIG_MBEDTLS_LARGE_KEY_SOFTWARE_MPI=y
 CONFIG_MBEDTLS_MPI_USE_INTERRUPT=y
 # default:
 CONFIG_MBEDTLS_MPI_INTERRUPT_LEVEL=0
+
+#
+# Security hardening
+#
+# default:
+# CONFIG_MBEDTLS_CONSTANT_TIME_PRIME_GEN is not set
+# end of Security hardening
+
 # default:
 CONFIG_MBEDTLS_HARDWARE_AES=y
 # default:
@@ -4005,6 +4020,8 @@ CONFIG_PTHREAD_TASK_NAME_DEFAULT="pthread"
 #
 # default:
 CONFIG_SD_ENABLE_SDIO_SUPPORT=y
+# default:
+CONFIG_SD_READY_POLL_PERIOD_START_US=100
 # end of SD Protocol Layer Configuration
 
 #
