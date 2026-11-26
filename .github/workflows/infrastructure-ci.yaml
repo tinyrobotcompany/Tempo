@@ -12,36 +12,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      # PR code runs without Azure login, OIDC permission or deployment secrets.
-      - name: Compile infrastructure templates
+      - name: Test infrastructure guards
+        run: bash .github/scripts/infrastructure.test.sh
+      - name: Compile Bicep
         run: |
           mkdir -p build-host/infrastructure
           az bicep build --file infra/certificates/main.bicep --outfile build-host/infrastructure/template.json
           az bicep build --file infra/certificates/bootstrap.bicep --outfile build-host/infrastructure/bootstrap.json
-      - name: Verify compiled bootstrap identity references
-        run: |
-          python3 - <<'PYCODE'
-          import json
-          from pathlib import Path
-          template = json.loads(Path('build-host/infrastructure/bootstrap.json').read_text())
-          references = [template['outputs']['clientId']['value']]
-          for resource in template['resources']:
-              if resource['type'] == 'Microsoft.Authorization/roleAssignments':
-                  references.append(resource['properties']['principalId'])
-              if resource['type'] == 'Microsoft.Resources/deployments' and 'copy' in resource:
-                  references.append(resource['properties']['parameters']['principalId']['value'])
-          assert len(references) == 4
-          for reference in references:
-              assert 'copyIndex' not in reference, reference
-              assert '-security' in reference, reference
-          PYCODE
-      - name: Test deployment and migration guards
-        run: |
-          python3 tests/test_infrastructure_delivery.py
-          python3 tests/test_infrastructure_migration.py
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: infrastructure-validation-${{ github.sha }}
-          path: build-host/infrastructure/*.json
-          retention-days: 14
-          if-no-files-found: error
+          jq -e '.resources | length > 0' build-host/infrastructure/template.json
+          jq -e '.parameters.project.defaultValue | test("^[a-z0-9]{2,8}$")' build-host/infrastructure/template.json
+          jq -e '.parameters.imageDigest.defaultValue | . == "" or test("^[a-f0-9]{64}$")' build-host/infrastructure/template.json

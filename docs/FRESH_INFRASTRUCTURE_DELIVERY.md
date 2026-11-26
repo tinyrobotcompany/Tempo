@@ -1,0 +1,96 @@
+# Tempo infrastructure delivery
+
+Tempo uses the same delivery pattern as Voxa and DejaGroove: Bicep defines Azure
+resources; GitHub Actions authenticates with OIDC and runs Azure CLI. There is no
+Python infrastructure tooling and no resource migration workflow.
+
+## One environment and predictable names
+
+The sole environment is in West Europe. `project`, `location` and `generation`
+in `infra/certificates/main.bicep` derive resource names. `generation` is stable
+between deployments; changing it deliberately creates a new set of globally
+unique resources, so it must never be randomized on each run. The fresh generation
+uses a different naming seed from the deleted legacy foundation, avoiding the
+soft-deleted legacy vault name without purging or weakening purge protection.
+
+The five groups are `rg-${project}-${location}-{network,data,security,ops,compute}`.
+The default project is `tempo`. The existing `rg-tempo-westeurope-security` group
+and its `tempo-infrastructure-delivery` identity are retained. The bootstrap and
+workload templates do not manage `rg-tinyrobotcompany` or `NetworkWatcherRG`.
+
+Storage, registry and vault names derive from the same project/region/generation
+seed. Consumers use Bicep module outputs, not copied resource IDs. Private DNS zone
+names and built-in role IDs are Azure-defined constants, not resource naming inputs.
+
+## One-time bootstrap after the user-deleted groups
+
+Deleting the old groups also deleted their scoped pipeline permissions. The
+preserved GitHub identity cannot create its own missing permissions. An authorised
+Azure operator applies the reviewed bootstrap **after this code is merged**:
+
+```sh
+az deployment sub what-if \
+  --subscription 923dd002-44bc-431c-b986-464d2ca524a2 \
+  --location westeurope --template-file infra/certificates/bootstrap.bicep
+az deployment sub create \
+  --subscription 923dd002-44bc-431c-b986-464d2ca524a2 \
+  --location westeurope --name tempo-bootstrap \
+  --template-file infra/certificates/bootstrap.bicep \
+  --query properties.outputs
+```
+
+This restores the five groups and their deployment permissions. It preserves the
+existing identity and its corrected immutable GitHub federation subject. It does
+not deploy the workload. Never grant subscription Owner or create a client secret.
+The current grants allow resource management and role administration only in the
+five Tempo groups, plus subscription deployment records. Further role-delegation
+restrictions are a separate reviewed change; these are privileged deployment
+permissions, not runtime permissions.
+
+The `tempo-infrastructure` GitHub environment contains `AZURE_CLIENT_ID`,
+`AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. Use bootstrap outputs to verify
+these values. If the identity survives, its client ID stays unchanged. The subject
+is `repo:tinyrobotcompany@326183923/Tempo@1458582269:environment:tempo-infrastructure`.
+Keep the main-only environment policy, required reviewer and disabled admin bypass.
+
+## Normal deployment
+
+1. Open a PR changing Bicep. PR checks compile templates and test the delivery
+   guards, without Azure credentials.
+2. The user merges the PR. Only changes matching `infra/certificates/**/*.bicep`
+   on `main` start deployment. Main requires PRs and the existing required checks,
+   without bypass. Script/workflow/docs/backend-only merges do not deploy Azure.
+3. Approve the preview job. It checks subscription/tenant and current main, compiles
+   Bicep and runs Azure what-if. The summary lists resource IDs and change types;
+   it does not expose resolved secrets. A proposed resource deletion fails.
+4. Inspect the preview, then approve apply. It verifies the same compiled artifact
+   and current main, deploys it using `az deployment sub create`, and checks that
+   storage and Key Vault remain private. This verifies control-plane configuration,
+   not application-level private-network connectivity.
+5. Review the output artifact. It contains generated names and endpoints, not keys.
+
+All Azure CLI errors remain visible in the workflow logs. Concurrent deployments
+queue rather than cancelling active writes. No local workload deployment script,
+ordinary manual deployment trigger, resource move or deletion exists. Retry a
+failed eligible run while its commit remains current main; a stale run requires
+a new reviewed Bicep merge. Native GitHub path filters have a 300-file limit, so
+keep infrastructure changes focused.
+
+## Foundation, application image and activation
+
+An empty `imageDigest` in main.bicep deploys the foundation only. The initial fresh
+registry must exist before the image can be built. The image delivery workflow
+builds the reviewed backend into that registry; its generated registry name must
+come from the `containerRegistry` deployment output, never a legacy literal.
+A subsequent reviewed Bicep change sets the exact 64-character image digest,
+which deploys the API, worker and jobs with that immutable image. Both stages use
+the same Azure environment. No placeholder or public sample image is deployed.
+
+ACME `staging` means test certificates, not an additional Azure environment. Live
+certificate issuance requires DNS credentials, CA account/terms setup and a
+reviewed change to production CA mode. These secrets are not workflow inputs or
+Bicep outputs. Application startup, private access, issuance, renewal and actual
+phone/device acceptance must be verified before declaring HTTPS operational.
+
+The old migration pipeline is retired: the user deleted the old foundation. Do
+not rerun historic migration workflows or restore the old resource-name allowlist.
