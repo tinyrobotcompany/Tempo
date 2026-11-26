@@ -97,6 +97,24 @@ A subsequent reviewed Bicep change sets the exact 64-character image digest,
 which deploys the API, worker and jobs with that immutable image. Both stages use
 the same Azure environment. No placeholder or public sample image is deployed.
 
+## CA account bootstrap
+
+After compute is deployed, an operator configures the `tempo-infrastructure`
+GitHub environment once:
+
+- secret `SPACESHIP_CREDENTIALS`: `{"key":"…","secret":"…"}`, a Spaceship API key
+  limited to DNS record read/write;
+- variable `ACME_CONTACT_EMAIL`: the CA account contact address;
+- variable `ACCEPTED_ACME_TERMS_URL`: the exact Let's Encrypt subscriber agreement
+  URL the operator has read and accepts (the bootstrap fails if it differs from the
+  CA's current agreement).
+
+Then start **Certificate CA account bootstrap** from `main` and approve it. It
+gives the credential to the private bootstrap job for one execution, which stores
+it and the ACME account in Key Vault. The credential is removed from the job
+afterwards, also on failure. Re-run it after switching `acmeEnvironment` or
+rotating the DNS credential; the account key is reused.
+
 ACME `staging` means test certificates, not an additional Azure environment. Live
 certificate issuance requires DNS credentials, CA account/terms setup and a
 reviewed change to production CA mode. These secrets are not workflow inputs or
