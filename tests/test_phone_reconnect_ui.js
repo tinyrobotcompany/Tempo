@@ -19,6 +19,9 @@ const status={settings,location:{valid:true,latitude:48,longitude:2,name:'Home',
 connected=true;options.onState({phase:'connected',failures:0});options.onStatus(status);
 assert.equal(element('name').value,'Simon');assert(!element('saveSettings').disabled);
 element('name').value='Unsaved name';element('settingsForm').input();candidate={latitude:49,longitude:3,name:'Unsaved map'};
+options.onStatus({...status,settings:{...settings,brightness:25}});
+assert.equal(element('brightness').value,25);assert.equal(element('brightnessValue').textContent,'25%');
+assert.equal(element('name').value,'Unsaved name');
 connected=false;options.onState({phase:'reconnecting',failures:1});
 assert(element('saveSettings').disabled);assert(element('saveLocation').disabled);assert(buttons.every(b=>b.disabled));assert(!element('name').disabled);
 assert.equal(element('name').value,'Unsaved name');assert.equal(candidate.name,'Unsaved map');
@@ -28,21 +31,6 @@ assert(!element('saveSettings').disabled);assert(!element('saveLocation').disabl
 assert.equal(element('name').value,'Unsaved name');assert.equal(candidate.name,'Unsaved map');assert(element('connectionHelp').hidden);
 assert(listeners.online&&listeners.pageshow&&listeners.visibilitychange);
 console.log('PASS: actual phone page retains edits/map during reconnect and restores controls without reload');
-// Shortcuts can return in a brand-new tab with entirely empty browser storage.
-(async()=>{
- const calls=[];let callbackOptions,parsed=false;
- const returned={latitude:48.81,longitude:2.22,name:'Phone position'};
- const fresh={...context,location:{...context.location,search:'?location_state='+'b'.repeat(32)+'&location_status=success&result=WSLOC1%0A48.81%0A2.22'},
-  StationShortcut:{consumeVerified:()=>{parsed=true;return{point:returned};}},
-  StationConnection:{create:config=>{callbackOptions=config;return{connected:()=>true,start:()=>{},wake:()=>{},request:async(path,body)=>{calls.push({path,body});assert.equal(path,'location-request');assert.equal(body.action,'validate');assert.equal(body.state,'b'.repeat(32));return{state:body.state};}};}}
- };
- vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),fresh,{filename:require('node:path').resolve('firmware/main/web/app.js')});
- assert(!parsed);callbackOptions.onState({phase:'connected',failures:0});callbackOptions.onStatus(status);
- for(let i=0;i<10;i++)await Promise.resolve();
- assert(parsed);assert.equal(candidate,returned);assert.equal(calls.length,1);
- callbackOptions.onStatus(status);assert.equal(calls.length,1);
- console.log('PASS: new-tab callback with empty session storage validates on device, displays position, never auto-saves');
-})().catch(e=>{console.error(e);process.exitCode=1;});
 // Saving feedback must be adjacent to the tapped button before any network reply.
 setImmediate(async()=>{
  let saveOptions,rejectStatus;
@@ -83,10 +71,18 @@ setImmediate(async()=>{
  field('offAfter').value='1';field('offAfter').oninput();assert.equal(field('offPreset').value,'1');
  await field('settingsForm').onsubmit({preventDefault(){}});assert.equal(requests,0);assert.match(field('settingsMessage').textContent,/later than dim/);
  field('offAfter').value='4';
+ field('settingsForm').input({target:{id:'offAfter'}});
+ idleOptions.onStatus({...status,settings:{...settings,brightness:25,dimAfter:3,offAfter:5,dimBrightness:10}});
+ assert.equal(field('dimAfter').value,'2');assert.equal(field('offAfter').value,'4');
+ assert.equal(field('brightness').value,25);
  const pending=field('settingsForm').onsubmit({preventDefault(){}});
  assert.equal(field('settingsMessage').textContent,'Saving…');assert(field('saveSettings').disabled);
- await pending;assert.equal(submitted.dimAfter,2);assert.equal(submitted.offAfter,4);assert.equal(submitted.dimBrightness,10);
+ field('name').value='Edited during save';field('settingsForm').input({target:{id:'name'}});
+ await pending;assert.equal(submitted.dimAfter,2);assert.equal(submitted.offAfter,4);assert.equal(submitted.dimBrightness,10);assert.equal(submitted.brightness,25);
  assert.match(field('settingsMessage').textContent,/SAVED/);assert(!field('saveSettings').disabled);
+ idleOptions.onStatus({...status,settings:{...submitted,dimAfter:5,offAfter:10,brightness:15}});
+ assert.equal(field('dimAfter').value,5);assert.equal(field('offAfter').value,10);assert.equal(field('brightness').value,15);
+ assert.equal(field('name').value,'Edited during save');
  console.log('PASS: idle presets/custom minutes, conflicting timer rejection and persisted save feedback');
 });
 
@@ -97,7 +93,23 @@ setImmediate(async()=>{
   StationConnection:{create:config=>{secureOptions=config;return{connected:()=>true,start(){},wake(){},request(){throw Error('HTTPS geolocation must not hand credentials to a shortcut');}};}}};
  vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),secure,{filename:require('node:path').resolve('firmware/main/web/app.js')});
  secureOptions.onState({phase:'connected',failures:0});secureOptions.onStatus({...status,shortcutAvailable:false});
- assert(element('shortcutHelp').hidden);await element('locate').onclick();assert.equal(located,1);
+ await element('locate').onclick();assert.equal(located,1);
  deny=true;await element('locate').onclick();assert.equal(element('locationMessage').textContent,'Location permission denied');assert(!element('locate').disabled);
  console.log('PASS: HTTPS uses native browser geolocation without transmitting credentials to a callback');
+});
+
+// Legacy callback data must not trigger parsing, a request or a saved location.
+setImmediate(async()=>{
+ let callbacks,requests=0,chosen=0;
+ const legacy={...context,isSecureContext:false,navigator:{},
+  location:{...context.location,search:'?location_state=old&location_status=success&result=WSLOC1%0A48%0A2'},
+  StationLocation:{editor:()=>({get:()=>null,choose(){chosen++;}})},
+  StationConnection:{create:config=>{callbacks=config;return{connected:()=>true,start(){},wake(){},request(){requests++;throw Error('Unexpected callback request');}};}}};
+ vm.runInNewContext(fs.readFileSync('firmware/main/web/app.js','utf8'),legacy);
+ callbacks.onState({phase:'connected',failures:0});callbacks.onStatus({...status,location:{valid:false}});
+ await element('locate').onclick();
+ assert.equal(requests,0);assert.equal(chosen,0);
+ assert.match(element('locationMessage').textContent,/Search for your address/);
+ assert(!element('locate').disabled);
+ console.log('PASS: obsolete callbacks ignored; unavailable native location keeps address fallback');
 });

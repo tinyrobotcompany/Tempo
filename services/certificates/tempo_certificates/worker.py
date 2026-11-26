@@ -116,6 +116,7 @@ class Worker:
         cleanup_nonces(self.store, int(self.clock()))
         self.run_jobs()
 
-    def run_jobs(self):
+    def run_jobs(self, lane=None):
         for candidate in self.store.candidates(int(self.clock())):
-            self.process(candidate)
+            if lane is None or candidate["RowKey"] == lane:
+                self.process(candidate)

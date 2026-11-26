@@ -1,13 +1,7 @@
-/* Shared by the on-device panel and the HTTPS companion. No accounts or telemetry. */
+/* Location editor for the HTTPS device panel. */
 (function(root){
 'use strict';
 const validPoint=p=>p&&Number.isFinite(p.latitude)&&Math.abs(p.latitude)<=90&&Number.isFinite(p.longitude)&&Math.abs(p.longitude)<=180;
-function privateReturn(value){
- try{const u=new URL(value),parts=u.hostname.split('.').map(Number);
- const privateIP=parts.length===4&&parts.every(n=>Number.isInteger(n)&&n>=0&&n<=255)&&(parts[0]===10||(parts[0]===192&&parts[1]===168)||(parts[0]===172&&parts[1]>=16&&parts[1]<=31));
- return u.protocol==='http:'&&privateIP&&!u.username&&!u.password&&!u.search&&u.pathname==='/'&&!u.hash&&(u.port===''||u.port==='80')?u.origin+'/':null;
- }catch{return null;}
-}
 function shortName(value){let out='';for(const c of String(value||'Home location').normalize('NFC').replace(/[\x00-\x1f\x7f]/g,'')){if(new TextEncoder().encode(out+c).length>63)break;out+=c;}return out||'Home location';}
 function project(lat,lon,z){const n=256*2**z,s=Math.sin(Math.max(-85.05112878,Math.min(85.05112878,lat))*Math.PI/180);return{x:(lon+180)/360*n,y:(.5-Math.log((1+s)/(1-s))/(4*Math.PI))*n};}
 function unproject(x,y,z){const n=256*2**z;return{latitude:Math.atan(Math.sinh(Math.PI*(1-2*Math.max(0,Math.min(n,y))/n)))*180/Math.PI,longitude:((x/n*360)%360+360)%360-180};}
@@ -40,5 +34,5 @@ function editor({message,onChange}){
  let searchRevision=0,searchPending=false;el('searchForm').addEventListener('submit',async e=>{e.preventDefault();if(searchPending)return;const q=el('address').value.trim();if(q.length<3){message('Enter at least three characters.');return;}const rev=++searchRevision;searchPending=true;const button=el('searchForm').querySelector('button');const caption=button?.textContent;if(button){button.disabled=true;button.textContent='Searching…';button.setAttribute('aria-busy','true');}message('Searching addresses…');el('results').replaceChildren();try{const results=await search(q);if(rev!==searchRevision)return;message(results.length?'Choose an address, then check the map.':'No results. Try a fuller address.');for(const p of results){const b=document.createElement('button');b.type='button';b.textContent=p.label;b.onclick=()=>{choose(p);el('results').replaceChildren();message('Check the pin, then confirm your location.');};el('results').append(b);}}catch(e){if(rev===searchRevision)message(e.message);}finally{searchPending=false;if(button){button.disabled=false;button.textContent=caption;button.setAttribute('aria-busy','false');}}});
  return{choose,get:()=>candidate,async locate(){if(!root.isSecureContext||!navigator.geolocation)throw new Error('Automatic positioning requires the secure location page.');message('Finding your position…');const result=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:20000,maximumAge:0}));await choose({latitude:result.coords.latitude,longitude:result.coords.longitude},true);message(`Position found (accuracy about ${Math.round(result.coords.accuracy)} m). Check the pin before saving.`);}};
 }
-root.StationLocation={validPoint,privateReturn,shortName,project,unproject,editor};
+root.StationLocation={validPoint,shortName,project,unproject,editor};
 })(globalThis);

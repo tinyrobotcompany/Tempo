@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID, ExtensionOID
 
 CONTEXT = b"TEMPO-DEVICE-V1\nPOST\n/v1/device\n"
+CONTEXTS = {"tempo": CONTEXT, "waveform": b"WAVEFORM-DEVICE-V1\nPOST\n/v1/device\n"}
 MAX_BODY = 6144
 MAX_CLOCK_SKEW = 300
 PRIVATE_NETWORKS = tuple(ipaddress.ip_network(n) for n in
@@ -67,6 +68,10 @@ def decode(body):
     if not isinstance(data, dict):
         raise Rejected("invalid_request")
     common = {"device_id", "action", "nonce", "issued_at"}
+    if "product" in data:
+        if not isinstance(data["product"], str) or data["product"] not in CONTEXTS:
+            raise Rejected("invalid_product")
+        common.add("product")
     extra = {"certificate": {"csr"}, "address": {"address"}, "status": set()}
     action = data.get("action")
     if not isinstance(action, str) or action not in extra or set(data) != common | extra[action]:
@@ -87,7 +92,7 @@ def authenticate(data, body, signature, registered_pem, now):
         if len(signature) > 104:
             raise ValueError()
         encoded = base64.b64decode(signature, validate=True)
-        public_key(registered_pem).verify(encoded, CONTEXT + body, ec.ECDSA(hashes.SHA256()))
+        public_key(registered_pem).verify(encoded, CONTEXTS[data.get("product", "tempo")] + body, ec.ECDSA(hashes.SHA256()))
     except (InvalidSignature, ValueError, TypeError) as error:
         raise Rejected("invalid_signature", 401) from error
 

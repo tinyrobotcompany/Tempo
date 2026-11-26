@@ -1,11 +1,16 @@
 param location string
+@minLength(13)
+@maxLength(13)
 param unique string
+@minLength(2)
+@maxLength(8)
+param project string
 param apiPrincipal string
 param workerPrincipal string
 param factoryPrincipal string
 param bootstrapPrincipal string
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: 'sttempo${unique}'
+  name: 'st${project}${unique}'
   location: location
   kind: 'StorageV2'
   sku: { name: 'Standard_ZRS' }
@@ -50,7 +55,7 @@ resource manufacture 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 output storageId string = storage.id
 output endpoint string = storage.properties.primaryEndpoints.table
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
-  name: 'acrtempo${unique}'
+  name: 'acr${project}${unique}'
   location: location
   sku: { name: 'Basic' }
   properties: { adminUserEnabled: false, anonymousPullEnabled: false, publicNetworkAccess: 'Enabled' }
@@ -65,3 +70,5 @@ resource pull 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for princi
   }
 }]
 output registry string = containerRegistry.properties.loginServer
+
+output storageName string = storage.name

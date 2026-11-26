@@ -1,6 +1,7 @@
 param location string
+param project string = 'tempo'
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'tempo-infrastructure-delivery'
+  name: '${project}-infrastructure-delivery'
   location: location
 }
 resource federation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
