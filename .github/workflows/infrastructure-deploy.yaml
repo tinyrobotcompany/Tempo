@@ -44,7 +44,7 @@ jobs:
           az bicep build --file infra/certificates/main.bicep --outfile build-host/infrastructure/template.json
           az deployment sub what-if --subscription "$AZURE_SUBSCRIPTION_ID" \
             --location "$AZURE_LOCATION" --name tempo-infrastructure \
-            --template-file build-host/infrastructure/template.json --result-format ResourceIdOnly -o json > build-host/infrastructure/preview.json
+            --template-file build-host/infrastructure/template.json --result-format ResourceIdOnly --no-pretty-print -o json > build-host/infrastructure/preview.json
           jq -e ' .status == "Succeeded" and all(.changes[]; .changeType != "Delete")' build-host/infrastructure/preview.json
           jq -r '.changes[] | "\(.changeType): \(.resourceId)"' build-host/infrastructure/preview.json >> "$GITHUB_STEP_SUMMARY"
           sha256sum build-host/infrastructure/template.json > build-host/infrastructure/template.sha256

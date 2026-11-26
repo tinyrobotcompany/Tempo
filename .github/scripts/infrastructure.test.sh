@@ -70,3 +70,25 @@ if grep -En 'python|\.py\b' "$root"/.github/workflows/infrastructure-*.yaml "$ro
 if grep -q 'workflow_dispatch:' "$root/.github/workflows/infrastructure-deploy.yaml"; then exit 1; fi
 grep -Fq "'infra/certificates/**/*.bicep'" "$root/.github/workflows/infrastructure-deploy.yaml"
 echo 'PASS: infrastructure change detection, deployment context and no-Python/no-migration guards'
+# Execute the workflow's actual what-if command against the Azure CLI output contract.
+# Without --no-pretty-print, Azure emits human-readable text even with -o json.
+cat > "$tmp/bin/az" <<'MOCK'
+#!/usr/bin/env bash
+[[ "$1 $2 $3" == 'deployment sub what-if' ]] || exit 99
+case " $* " in
+  *' --no-pretty-print '*) printf '{"status":"Succeeded","changes":[]}\n' ;;
+  *) printf 'Note: The result may contain false positive predictions (noise).\n' ;;
+esac
+MOCK
+mkdir -p build-host/infrastructure
+export AZURE_LOCATION=westeurope
+awk '/^[[:space:]]*az deployment sub what-if / { emit=1 } emit { print; if ($0 !~ /\\$/) exit }' \
+  "$root/.github/workflows/infrastructure-deploy.yaml" > "$tmp/preview-command.sh"
+[[ -s "$tmp/preview-command.sh" ]]
+bash "$tmp/preview-command.sh"
+jq -e '.status == "Succeeded" and all(.changes[]; .changeType != "Delete")' build-host/infrastructure/preview.json >/dev/null
+# Prove this fixture catches the original failure instead of accepting prose.
+sed 's/ --no-pretty-print//' "$tmp/preview-command.sh" > "$tmp/original-command.sh"
+bash "$tmp/original-command.sh"
+if jq -e . build-host/infrastructure/preview.json 2>/dev/null; then exit 1; fi
+echo 'PASS: actual workflow preview command emits parseable JSON; original command fails'
