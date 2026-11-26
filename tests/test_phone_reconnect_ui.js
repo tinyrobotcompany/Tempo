@@ -19,6 +19,9 @@ const status={settings,location:{valid:true,latitude:48,longitude:2,name:'Home',
 connected=true;options.onState({phase:'connected',failures:0});options.onStatus(status);
 assert.equal(element('name').value,'Simon');assert(!element('saveSettings').disabled);
 element('name').value='Unsaved name';element('settingsForm').input();candidate={latitude:49,longitude:3,name:'Unsaved map'};
+options.onStatus({...status,settings:{...settings,brightness:25}});
+assert.equal(element('brightness').value,25);assert.equal(element('brightnessValue').textContent,'25%');
+assert.equal(element('name').value,'Unsaved name');
 connected=false;options.onState({phase:'reconnecting',failures:1});
 assert(element('saveSettings').disabled);assert(element('saveLocation').disabled);assert(buttons.every(b=>b.disabled));assert(!element('name').disabled);
 assert.equal(element('name').value,'Unsaved name');assert.equal(candidate.name,'Unsaved map');
@@ -83,10 +86,18 @@ setImmediate(async()=>{
  field('offAfter').value='1';field('offAfter').oninput();assert.equal(field('offPreset').value,'1');
  await field('settingsForm').onsubmit({preventDefault(){}});assert.equal(requests,0);assert.match(field('settingsMessage').textContent,/later than dim/);
  field('offAfter').value='4';
+ field('settingsForm').input({target:{id:'offAfter'}});
+ idleOptions.onStatus({...status,settings:{...settings,brightness:25,dimAfter:3,offAfter:5,dimBrightness:10}});
+ assert.equal(field('dimAfter').value,'2');assert.equal(field('offAfter').value,'4');
+ assert.equal(field('brightness').value,25);
  const pending=field('settingsForm').onsubmit({preventDefault(){}});
  assert.equal(field('settingsMessage').textContent,'Saving…');assert(field('saveSettings').disabled);
- await pending;assert.equal(submitted.dimAfter,2);assert.equal(submitted.offAfter,4);assert.equal(submitted.dimBrightness,10);
+ field('name').value='Edited during save';field('settingsForm').input({target:{id:'name'}});
+ await pending;assert.equal(submitted.dimAfter,2);assert.equal(submitted.offAfter,4);assert.equal(submitted.dimBrightness,10);assert.equal(submitted.brightness,25);
  assert.match(field('settingsMessage').textContent,/SAVED/);assert(!field('saveSettings').disabled);
+ idleOptions.onStatus({...status,settings:{...submitted,dimAfter:5,offAfter:10,brightness:15}});
+ assert.equal(field('dimAfter').value,5);assert.equal(field('offAfter').value,10);assert.equal(field('brightness').value,15);
+ assert.equal(field('name').value,'Edited during save');
  console.log('PASS: idle presets/custom minutes, conflicting timer rejection and persisted save feedback');
 });
 

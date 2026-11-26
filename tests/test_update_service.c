@@ -94,6 +94,16 @@ int main(void){
  assert(!station_update_request(NULL));assert(!station_update_request("bad"));assert(!station_update_configure(2,true,180,240));assert(!station_update_configure(1,true,180,180));
  assert(station_update_request("check"));run(1);assert(status.state==UPDATE_AVAILABLE&&saved.next>test_clock&&!display_restore_pending);assert(candidate.size==1024);
  assert(station_update_configure(1,false,10,20));run(1);assert(saved.hours==1&&!saved.automatic);
+ /* A queued settings save must not defer the explicit check, in either order. */
+ for(unsigned order=0;order<2;order++){
+  unsigned before=cleanup_count;
+  if(order){assert(station_update_configure(720,false,10,20));assert(station_update_request("check"));}
+  else {assert(station_update_request("check"));assert(station_update_configure(720,false,10,20));}
+  run(1);assert(cleanup_count>before&&status.state==UPDATE_AVAILABLE);
+ }
+ {unsigned before=cleanup_count;rate_limited_until=test_clock+60;
+  assert(station_update_request("check"));assert(station_update_configure(720,false,10,20));run(1);
+  assert(cleanup_count==before&&saved.next>=rate_limited_until);rate_limited_until=0;}
  assert(station_update_request("postpone"));run(1);assert(saved.postponed>test_clock);
  net.connected=false;assert(station_update_request("check"));run(1);assert(status.state==UPDATE_ERROR);assert(station_update_request("install"));run(1);net.connected=true;
  http_code=404;assert(check_release()&&status.up_to_date);http_code=500;assert(!check_release()&&!status.up_to_date);http_code=200;
