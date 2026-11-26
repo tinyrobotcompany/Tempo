@@ -1,22 +1,27 @@
 targetScope = 'subscription'
 
 // One Azure environment. ACME test/live selection does not create another stack.
+@minLength(2)
+@maxLength(8)
+@description('Lowercase alphanumeric project name, used to derive resource names.')
+param project string = 'tempo'
 @allowed(['westeurope'])
 param location string = 'westeurope'
-param deployCompute bool = false
-param image string = ''
+@description('Stable name generation. Change only for an intentional fresh rebuild, never on each deployment.')
+param generation string = '1'
+@description('Reviewed image digest from the image-build workflow; empty deploys the foundation only.')
+param imageDigest string = ''
+var deployCompute = !empty(imageDigest)
 @allowed(['staging', 'production'])
 param acmeEnvironment string = 'staging'
 param dnsDomain string = 'tinyrobotcompany.io'
 param deviceSuffix string = 'tempo.tinyrobotcompany.io'
-param waveformDeviceSuffix string = 'waveform.tinyrobotcompany.io'
-// Preserve existing resource names/data during the resource-group-only migration.
-var prefix = 'tempo-staging'
-var unique = uniqueString(subscription().id, 'staging', location)
+var prefix = '${project}-${location}'
+var unique = uniqueString(subscription().id, project, location, generation)
 var concerns = ['network', 'data', 'security', 'ops', 'compute']
 // Groups and GitHub federation are established once by bootstrap.bicep.
 resource groups 'Microsoft.Resources/resourceGroups@2024-03-01' existing = [for concern in concerns: {
-  name: 'rg-tempo-${location}-${concern}'
+  name: 'rg-${project}-${location}-${concern}'
 }]
 module network 'network.bicep' = {
   name: '${prefix}-network'
@@ -26,7 +31,7 @@ module network 'network.bicep' = {
 module security 'security.bicep' = {
   name: '${prefix}-security'
   scope: groups[2]
-  params: { location: location, unique: unique, prefix: prefix }
+  params: { location: location, unique: unique, prefix: prefix, project: project }
 }
 module data 'data.bicep' = {
   name: '${prefix}-data'
@@ -34,6 +39,7 @@ module data 'data.bicep' = {
   params: {
     location: location
     unique: unique
+    project: project
     apiPrincipal: security.outputs.apiPrincipal
     workerPrincipal: security.outputs.workerPrincipal
     factoryPrincipal: security.outputs.factoryPrincipal
@@ -45,6 +51,7 @@ module endpoints 'endpoints.bicep' = {
   scope: groups[2]
   params: {
     location: location
+    prefix: prefix
     subnet: network.outputs.privateSubnet
     tableZone: network.outputs.tableZone
     vaultZone: network.outputs.vaultZone
@@ -63,7 +70,7 @@ module compute 'compute.bicep' = if (deployCompute) {
   params: {
     location: location
     prefix: prefix
-    image: image
+    image: '${data.outputs.registry}/tempo-certificates@sha256:${imageDigest}'
     registry: data.outputs.registry
     subnet: network.outputs.computeSubnet
     logWorkspaceId: ops.outputs.workspaceId
@@ -80,7 +87,6 @@ module compute 'compute.bicep' = if (deployCompute) {
     vaultUrl: security.outputs.vaultUrl
     dnsDomain: dnsDomain
     deviceSuffix: deviceSuffix
-    waveformDeviceSuffix: waveformDeviceSuffix
     environment: acmeEnvironment
     bootstrapContactEmail: ''
     bootstrapTermsUrl: ''
@@ -93,3 +99,8 @@ output keyVaultName string = security.outputs.vaultName
 output factoryJob string = deployCompute ? compute!.outputs.factoryJob : ''
 output computeResourceGroup string = groups[4].name
 output containerRegistry string = data.outputs.registry
+
+output resourceGroups array = [for concern in concerns: 'rg-${project}-${location}-${concern}']
+output storageAccountName string = data.outputs.storageName
+output apiName string = deployCompute ? '${prefix}-api' : ''
+output workerName string = deployCompute ? '${prefix}-worker' : ''

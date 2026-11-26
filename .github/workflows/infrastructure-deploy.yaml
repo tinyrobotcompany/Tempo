@@ -10,20 +10,7 @@ concurrency:
   group: tempo-infrastructure-live
   cancel-in-progress: false
 jobs:
-  changes:
-    runs-on: ubuntu-24.04
-    outputs:
-      infrastructure: ${{ steps.detect.outputs.infrastructure }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - id: detect
-        run: python3 .github/scripts/infrastructure-changes.py --deployment
   validate:
-    needs: changes
-    if: github.event_name == 'push' && needs.changes.outputs.infrastructure == 'true'
     uses: ./.github/workflows/infrastructure-ci.yaml
   preview:
     needs: validate
@@ -31,6 +18,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: tempo-infrastructure
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_LOCATION: westeurope
     permissions:
       contents: read
       id-token: write
@@ -39,15 +30,24 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Test reviewed delivery code
-        run: python3 tests/test_infrastructure_delivery.py
       - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Prepare immutable preview
-        run: python3 scripts/infrastructure/delivery.py plan
+      - name: Verify deployment context
+        run: bash scripts/infrastructure/check-context.sh
+      - name: Preview Bicep deployment
+        run: |
+          set -euo pipefail
+          mkdir -p build-host/infrastructure
+          az bicep build --file infra/certificates/main.bicep --outfile build-host/infrastructure/template.json
+          az deployment sub what-if --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --location "$AZURE_LOCATION" --name tempo-infrastructure \
+            --template-file build-host/infrastructure/template.json --result-format ResourceIdOnly -o json > build-host/infrastructure/preview.json
+          jq -e ' .status == "Succeeded" and all(.changes[]; .changeType != "Delete")' build-host/infrastructure/preview.json
+          jq -r '.changes[] | "\(.changeType): \(.resourceId)"' build-host/infrastructure/preview.json >> "$GITHUB_STEP_SUMMARY"
+          sha256sum build-host/infrastructure/template.json > build-host/infrastructure/template.sha256
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: infrastructure-plan-${{ github.run_id }}-${{ github.run_attempt }}
@@ -56,11 +56,14 @@ jobs:
           if-no-files-found: error
   apply:
     needs: preview
-    if: github.ref == 'refs/heads/main' && github.repository == 'tinyrobotcompany/Tempo' && github.event_name == 'push' && needs.preview.result == 'success'
+    if: github.ref == 'refs/heads/main' && github.repository == 'tinyrobotcompany/Tempo'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    # Separate approval AFTER the preview artifact exists, on the same live environment.
+    timeout-minutes: 60
     environment: tempo-infrastructure
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_LOCATION: westeurope
     permissions:
       contents: read
       id-token: write
@@ -78,13 +81,21 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Apply the approved plan
-        run: python3 scripts/infrastructure/delivery.py apply
-      - name: Retain deployment and recovery evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      - name: Verify deployment context
+        run: bash scripts/infrastructure/check-context.sh
+      - name: Deploy approved Bicep
+        run: |
+          set -euo pipefail
+          sha256sum -c build-host/infrastructure/template.sha256
+          az deployment sub create --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --location "$AZURE_LOCATION" --name tempo-infrastructure \
+            --template-file build-host/infrastructure/template.json \
+            --query properties.outputs -o json > build-host/infrastructure/outputs.json
+          bash scripts/infrastructure/verify.sh build-host/infrastructure/outputs.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: success()
         with:
-          name: infrastructure-result-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build-host/infrastructure/
+          name: infrastructure-outputs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-host/infrastructure/outputs.json
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
