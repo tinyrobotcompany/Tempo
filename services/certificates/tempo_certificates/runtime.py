@@ -43,8 +43,7 @@ def run_cycle(store, vault, environment, lane=None):
     credentials = json.loads(vault.get_secret("spaceship-credentials").value)
     dns = Spaceship(environment["DNS_DOMAIN"], environment["DEVICE_SUFFIX"],
                     credentials["key"], credentials["secret"],
-                    authentication_failed=lambda: vault.invalidate("spaceship-credentials"),
-                    waveform_suffix=environment.get("WAVEFORM_DEVICE_SUFFIX", ""))
+                    authentication_failed=lambda: vault.invalidate("spaceship-credentials"))
     try:
         Worker(store, CloudIssuer(vault, environment["ACME_ENVIRONMENT"], dns), dns).run_jobs(lane)
     finally:

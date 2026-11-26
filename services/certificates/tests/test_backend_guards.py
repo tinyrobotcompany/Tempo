@@ -1,88 +1,26 @@
-"""Product identity must come from manufacturing, never a caller-selected namespace."""
-import base64
-import json
-
+"""Tempo admission, DNS and worker regressions retained from the security review."""
 import pytest
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
-from test_service import setup, signed, csr, NOW, SUFFIX
-from tempo_certificates.protocol import Rejected, hostname
-from tempo_certificates.service import DeviceService
-
-WAVEFORM = 'waveform.tinyrobotcompany.io'
-CONTEXT = b'WAVEFORM-DEVICE-V1\nPOST\n/v1/device\n'
+from test_service import setup, signed, NOW, SUFFIX
+from tempo_certificates.protocol import Rejected
 
 
-def waveform_request(key, store, action='status', **fields):
-    body, _ = signed(key, store, action, product='waveform', **fields)
-    return body, base64.b64encode(key.sign(CONTEXT + body, ec.ECDSA(hashes.SHA256()))).decode()
-
-
-def test_waveform_admitted_in_its_own_namespace(setup):
-    key, store, _ = setup
-    store.row.update(product='waveform', hostname=hostname(store.row['PartitionKey'], WAVEFORM))
-    service = DeviceService(store, SUFFIX, clock=lambda: NOW, waveform_suffix=WAVEFORM)
-    reply = service.handle(*waveform_request(key, store, 'certificate', csr=csr(store.row['hostname'])))
-    assert reply.status == 202
-
-
-def test_tempo_registration_cannot_select_waveform_namespace(setup):
-    key, store, _ = setup
-    service = DeviceService(store, SUFFIX, clock=lambda: NOW, waveform_suffix=WAVEFORM)
-    with pytest.raises(Rejected, match='product_mismatch'):
-        service.handle(*waveform_request(key, store))
+def test_foreign_product_request_is_rejected(setup):
+    key, store, service = setup
+    with pytest.raises(Rejected, match='invalid_fields'):
+        service.handle(*signed(key, store, product='waveform'))
     assert not store.nonces
 
 
-def test_waveform_cannot_use_legacy_tempo_protocol(setup):
+def test_existing_tempo_device_needs_no_protocol_change(setup):
     key, store, service = setup
-    store.row['product'] = 'waveform'
-    with pytest.raises(Rejected, match='product_mismatch'):
-        service.handle(*signed(key, store))
-
-
-def test_existing_tempo_device_needs_no_migration(setup):
-    key, store, _ = setup
-    service = DeviceService(store, SUFFIX, clock=lambda: NOW, waveform_suffix=WAVEFORM)
     assert service.handle(*signed(key, store)).status == 200
 
 
-def test_waveform_csr_cannot_request_tempo_hostname(setup):
-    key, store, _ = setup
-    tempo_name = store.row['hostname']
-    store.row.update(product='waveform', hostname=hostname(store.row['PartitionKey'], WAVEFORM))
-    service = DeviceService(store, SUFFIX, clock=lambda: NOW, waveform_suffix=WAVEFORM)
-    with pytest.raises(Rejected, match='invalid_csr'):
-        service.handle(*waveform_request(key, store, 'certificate', csr=csr(tempo_name)))
-
-
-def test_waveform_signature_is_domain_separated(setup):
-    key, store, _ = setup
-    store.row.update(product='waveform', hostname=hostname(store.row['PartitionKey'], WAVEFORM))
-    service = DeviceService(store, SUFFIX, clock=lambda: NOW, waveform_suffix=WAVEFORM)
-    with pytest.raises(Rejected, match='invalid_signature'):
-        service.handle(*signed(key, store, product='waveform'))
-
-
-def test_waveform_product_is_registry_owned():
-    from unittest.mock import Mock
-    from test_adapters import Entity
-    from tempo_certificates.store import TableStore
-    registry, state = Mock(), Mock()
-    registry.get_entity.return_value = Entity(public_key='public', hostname='host', enabled=True, product='waveform')
-    state.get_entity.return_value = Entity(PartitionKey='id', RowKey='device', product='tempo')
-    store = TableStore(state, registry)
-    row = store.get('id')
-    assert row['product'] == 'waveform'
-    assert 'product' not in store.entity(row)
-
-
-def test_shared_dns_allows_only_configured_product_hosts():
+def test_dns_cannot_mutate_another_product_namespace():
     from tempo_certificates.dns import Spaceship
-    dns = Spaceship('tinyrobotcompany.io', SUFFIX, 'unused', 'unused', waveform_suffix=WAVEFORM)
-    assert dns.label('d-' + 'a'*32 + '.' + WAVEFORM).endswith('.waveform')
-    with pytest.raises(ValueError):
-        dns.label('d-' + 'a'*32 + '.other.tinyrobotcompany.io')
+    dns = Spaceship('tinyrobotcompany.io', SUFFIX, 'unused', 'unused')
+    with pytest.raises(ValueError, match='outside device namespace'):
+        dns.label('d-' + 'a'*32 + '.waveform.tinyrobotcompany.io')
 
 
 def test_unsigned_requests_are_bounded_before_storage(setup):
@@ -137,12 +75,12 @@ def test_dns_job_runs_while_certificate_is_waiting():
 
 def test_dns_large_zone_lookup_uses_bounded_sorted_pages():
     from tempo_certificates.dns import Spaceship
-    name = 'd-' + 'b'*32 + '.waveform'
+    name = 'd-' + 'b'*32 + '.tempo'
     rows = sorted([{'name':f'a{i:06}', 'type':'TXT'} for i in range(11000)] +
                   [{'name':name,'type':'A','address':'192.168.1.2'}] +
                   [{'name':f'z{i:06}', 'type':'TXT'} for i in range(11000)], key=lambda row:row['name'])
     calls=[]
-    dns=Spaceship('tinyrobotcompany.io',SUFFIX,'unused','unused',waveform_suffix=WAVEFORM)
+    dns=Spaceship('tinyrobotcompany.io',SUFFIX,'unused','unused')
     def call(method, **kwargs):
         params=kwargs['params'];calls.append(params)
         assert params['orderBy']=='name'
