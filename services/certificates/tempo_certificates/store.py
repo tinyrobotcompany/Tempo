@@ -27,7 +27,6 @@ class TableStore:
         except ResourceNotFoundError:
             row = {"PartitionKey": identifier, "RowKey": lane, "etag": None, "state": "idle"}
         row.update({key: registration[key] for key in ("public_key", "hostname", "enabled")})
-        row["product"] = registration.get("product", "tempo")
         return row
 
     @staticmethod

@@ -1,0 +1,58 @@
+name: Certificate service image
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/certificates/**'
+      - 'scripts/test-certificates.sh'
+      - 'scripts/certificate-image.sh'
+      - '.github/workflows/certificate-image.yaml'
+permissions:
+  contents: read
+concurrency:
+  group: tempo-certificate-image
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14'
+      - run: bash scripts/test-certificates.sh
+      - run: build-host/dependencies/certificate-service-python314/bin/pip-audit --no-deps --disable-pip -r services/certificates/requirements-test.txt
+      - run: bash .github/scripts/certificate-image.test.sh
+  publish:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.repository == 'tinyrobotcompany/Tempo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: tempo-infrastructure
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build reviewed source and record immutable image
+        run: bash scripts/certificate-image.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: certificate-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build-host/certificate-image.json
+          retention-days: 14
+          if-no-files-found: error
