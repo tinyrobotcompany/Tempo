@@ -1,5 +1,7 @@
 targetScope = 'subscription'
 
+// CI previews this template using what-if --no-pretty-print for machine-readable JSON.
+
 // One Azure environment. ACME test/live selection does not create another stack.
 @minLength(2)
 @maxLength(8)
