@@ -17,9 +17,8 @@ class TLSAdapter(HTTPAdapter):
 
 
 class Spaceship:
-    def __init__(self, domain, suffix, api_key, api_secret, session=None, authentication_failed=None, waveform_suffix=""):
-        self.suffixes = (suffix, waveform_suffix) if waveform_suffix else (suffix,)
-        if any(not value.endswith("." + domain) for value in self.suffixes):
+    def __init__(self, domain, suffix, api_key, api_secret, session=None, authentication_failed=None):
+        if not suffix.endswith("." + domain):
             raise ValueError("Device suffix must be below DNS domain")
         self.domain, self.suffix = domain, suffix
         self.authentication_failed = authentication_failed
@@ -30,7 +29,7 @@ class Spaceship:
         self.url = "https://spaceship.dev/api/v1/dns/records/" + domain
 
     def label(self, name):
-        if not any(re.fullmatch(r"d-[0-9a-f]{32}\." + re.escape(suffix), name) for suffix in self.suffixes):
+        if not re.fullmatch(r"d-[0-9a-f]{32}\." + re.escape(self.suffix), name):
             raise ValueError("DNS mutation outside device namespace")
         return name[:-(len(self.domain) + 1)]
 

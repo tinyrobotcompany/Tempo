@@ -8,13 +8,7 @@ from .protocol import Rejected, Reply, authenticate, decode, hostname, validate_
 
 
 class DeviceService:
-    def __init__(self, store, suffix, clock=time.time, waveform_suffix=""):
-        self.suffixes = {"tempo": suffix}
-        if waveform_suffix:
-            if waveform_suffix == suffix:
-                raise ValueError("Product DNS namespaces must differ")
-            hostname("0" * 32, waveform_suffix)
-            self.suffixes["waveform"] = waveform_suffix
+    def __init__(self, store, suffix, clock=time.time):
         self.store, self.suffix, self.clock = store, suffix, clock
 
     def handle(self, body, signature):
@@ -25,11 +19,6 @@ class DeviceService:
             row = self.store.get(request["device_id"], lane)
             if row is None or not row["enabled"]:
                 raise Rejected("device_not_enrolled", 401)
-            product = request.get("product", "tempo")
-            if product != row.get("product", "tempo"):
-                raise Rejected("product_mismatch", 401)
-            if product not in self.suffixes:
-                raise Rejected("product_unavailable", 503)
             authenticate(request, body, signature, row["public_key"], now)
             if attempt == 0:
                 # Independent of CA/DNS worker health. If cleanup storage is unavailable,
@@ -39,7 +28,7 @@ class DeviceService:
                 except Exception:
                     LOG.warning("nonce_cleanup_failed admission=denied")
                     raise
-            name = hostname(request["device_id"], self.suffixes[product])
+            name = hostname(request["device_id"], self.suffix)
             if row["hostname"] != name:
                 raise Rejected("device_configuration_mismatch", 503)
             if now - row.get("request_window", 0) >= 60:
