@@ -1,0 +1,39 @@
+name: Certificate CA account bootstrap
+# Manual, approval-gated, main only. Stores DNS credentials and the ACME account in
+# Key Vault via the private bootstrap job. Re-run after changing acmeEnvironment
+# or rotating the DNS credential. It does not deploy or change Bicep resources.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tempo-infrastructure-live
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    if: github.ref == 'refs/heads/main' && github.repository == 'tinyrobotcompany/Tempo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: tempo-infrastructure
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Run one-shot CA account bootstrap
+        env:
+          SPACESHIP_CREDENTIALS: ${{ secrets.SPACESHIP_CREDENTIALS }}
+          ACME_CONTACT_EMAIL: ${{ vars.ACME_CONTACT_EMAIL }}
+          ACCEPTED_ACME_TERMS_URL: ${{ vars.ACCEPTED_ACME_TERMS_URL }}
+        run: bash scripts/certificate-account.sh
