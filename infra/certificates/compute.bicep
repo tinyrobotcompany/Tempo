@@ -17,7 +17,6 @@ param bootstrapClient string
 param tableEndpoint string
 param vaultUrl string
 param dnsDomain string
-param waveformDeviceSuffix string
 param deviceSuffix string
 param environment string
 param bootstrapContactEmail string
@@ -36,7 +35,7 @@ resource managed 'Microsoft.App/managedEnvironments@2025-01-01' = {
     } }
   }
 }
-var common = [{ name: 'TABLE_ENDPOINT', value: replace(tableEndpoint, '.net/', '.net') }, { name: 'DEVICE_SUFFIX', value: deviceSuffix }, { name: 'WAVEFORM_DEVICE_SUFFIX', value: waveformDeviceSuffix }]
+var common = [{ name: 'TABLE_ENDPOINT', value: replace(tableEndpoint, '.net/', '.net') }, { name: 'DEVICE_SUFFIX', value: deviceSuffix }]
 resource api 'Microsoft.App/containerApps@2025-01-01' = {
   name: '${prefix}-api'
   location: location

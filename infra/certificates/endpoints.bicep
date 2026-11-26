@@ -1,4 +1,5 @@
 param location string
+param prefix string
 param subnet string
 param storageId string
 param vaultId string
@@ -9,7 +10,7 @@ var targets = [
   { name: 'vault', id: vaultId, zone: vaultZone }
 ]
 resource endpoints 'Microsoft.Network/privateEndpoints@2024-05-01' = [for target in targets: {
-  name: 'tempo-${target.name}-endpoint'
+  name: '${prefix}-${target.name}-endpoint'
   location: location
   properties: {
     subnet: { id: subnet }

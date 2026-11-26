@@ -1,3 +1,5 @@
+> **Retired procedure — do not execute.** The old foundation was deleted by the operator. Use [Fresh Bicep delivery](FRESH_INFRASTRUCTURE_DELIVERY.md). The migration and Python infrastructure tooling described below have been removed. This page is retained only as a historical record.
+
 # Tempo infrastructure delivery
 
 ## Authority and current state

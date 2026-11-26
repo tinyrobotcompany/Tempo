@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - id: detect
-        run: python3 .github/scripts/infrastructure-changes.py
+        run: bash .github/scripts/infrastructure-changes.sh
   infrastructure:
     needs: infrastructure-changes
     if: needs.infrastructure-changes.outputs.infrastructure == 'true'
