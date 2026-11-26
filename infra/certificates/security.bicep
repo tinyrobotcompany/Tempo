@@ -1,12 +1,17 @@
 param location string
+@minLength(13)
+@maxLength(13)
 param unique string
+@minLength(2)
+@maxLength(8)
+param project string
 param prefix string
 resource identities 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = [for role in ['api', 'worker', 'factory', 'bootstrap']: {
   name: '${prefix}-${role}'
   location: location
 }]
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: 'kv-tempo-${unique}'
+  name: 'kv-${project}-${take(unique, 10)}'
   location: location
   properties: {
     tenantId: tenant().tenantId

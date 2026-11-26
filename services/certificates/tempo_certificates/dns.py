@@ -17,10 +17,12 @@ class TLSAdapter(HTTPAdapter):
 
 
 class Spaceship:
-    def __init__(self, domain, suffix, api_key, api_secret, session=None):
-        if not suffix.endswith("." + domain):
+    def __init__(self, domain, suffix, api_key, api_secret, session=None, authentication_failed=None, waveform_suffix=""):
+        self.suffixes = (suffix, waveform_suffix) if waveform_suffix else (suffix,)
+        if any(not value.endswith("." + domain) for value in self.suffixes):
             raise ValueError("Device suffix must be below DNS domain")
         self.domain, self.suffix = domain, suffix
+        self.authentication_failed = authentication_failed
         self.session = session or requests.Session()
         self.session.trust_env = False
         self.session.mount("https://", TLSAdapter())
@@ -28,29 +30,60 @@ class Spaceship:
         self.url = "https://spaceship.dev/api/v1/dns/records/" + domain
 
     def label(self, name):
-        if not re.fullmatch(r"d-[0-9a-f]{32}\." + re.escape(self.suffix), name):
+        if not any(re.fullmatch(r"d-[0-9a-f]{32}\." + re.escape(suffix), name) for suffix in self.suffixes):
             raise ValueError("DNS mutation outside device namespace")
         return name[:-(len(self.domain) + 1)]
 
     def call(self, method, **kwargs):
         response = self.session.request(method, self.url, timeout=(5, 15), allow_redirects=False, **kwargs)
+        if response.status_code in (401, 403) and self.authentication_failed:
+            self.authentication_failed()
         if response.status_code not in (200, 204):
             # Do not log provider response bodies/headers, which may contain account data.
             raise RuntimeError("dns_provider_error")
         return response.json() if response.status_code == 200 else None
 
     def records(self, label):
+        # Spaceship supports name ordering, but no exact-name query. Binary search
+        # sorted pages rather than downloading every unrelated fleet record.
+        cache = {}
+        total = None
+        def page(index):
+            nonlocal total
+            if index not in cache:
+                reply = self.call("GET", params={"take": 500, "skip": index * 500, "orderBy": "name"})
+                count, items = reply["total"], reply["items"]
+                if type(count) is not int or count < 0 or count > 2147483647:
+                    raise RuntimeError("dns_pagination_error")
+                if total is not None and count != total:
+                    raise RuntimeError("dns_zone_changed_retry")
+                total = count
+                names = [r["name"].lower() for r in items]
+                if names != sorted(names) or len(items) != min(500, max(0, count-index*500)):
+                    raise RuntimeError("dns_pagination_error")
+                cache[index] = items
+            return cache[index]
+        page(0)
+        pages = (total + 499) // 500
+        low, high = 0, pages
+        label = label.lower()
+        while low < high:
+            middle = (low + high) // 2
+            items = page(middle)
+            if items[-1]["name"].lower() < label:
+                low = middle + 1
+            else:
+                high = middle
         records = []
-        skip = 0
-        while True:
-            page = self.call("GET", params={"take": 500, "skip": skip})
-            items = page["items"]
-            records.extend(r for r in items if r["name"].lower() == label.lower())
-            skip += len(items)
-            if skip >= page["total"]:
+        # Bound pathological duplicate sets without imposing a fleet-size ceiling.
+        for index in range(low, min(pages, low + 8)):
+            items = page(index)
+            records.extend(r for r in items if r["name"].lower() == label)
+            if items[-1]["name"].lower() > label or index == pages-1:
                 return records
-            if not items or skip > 10000:
-                raise RuntimeError("dns_pagination_error")
+        if low == pages:
+            return records
+        raise RuntimeError("dns_record_set_too_large")
 
     def set_address(self, name, address):
         label = self.label(name)
