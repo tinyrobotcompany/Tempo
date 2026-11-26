@@ -248,7 +248,7 @@ def test_dns_only_changes_exact_device_record(setup):
             records.extend(kwargs["json"]["items"])
         if method == "DELETE":
             records[:] = [r for r in records if not any(all(r.get(k) == v for k, v in old.items()) for old in kwargs["json"])]
-        return {"items": list(records), "total": len(records)} if method == "GET" else None
+        return {"items": sorted(records, key=lambda r: r["name"].lower()), "total": len(records)} if method == "GET" else None
 
     adapter.call = call
     adapter.set_address(store.row["hostname"], "192.168.1.34")

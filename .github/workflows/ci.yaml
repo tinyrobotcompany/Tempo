@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - id: detect
-        run: python3 .github/scripts/infrastructure-changes.py
+        run: bash .github/scripts/infrastructure-changes.sh
   infrastructure:
     needs: infrastructure-changes
     if: needs.infrastructure-changes.outputs.infrastructure == 'true'
@@ -99,7 +99,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: espressif/esp-idf
-          ref: fff9895c82d744c7237be8847347bdd1b07c6643
+          ref: 051e4c4eb20346e043cdd47bc388fde75ff8af63
           path: .artifacts/esp-idf
           submodules: recursive
           persist-credentials: false
@@ -110,6 +110,7 @@ jobs:
         run: |
           test ! -f .env
           source .artifacts/esp-idf/export.sh
+          python3 scripts/check-idf-security.py "$IDF_PATH"
           bash scripts/test-phone-tls-real.sh
           bash scripts/test-identity-real.sh
           TEMPO_CI_BUILD=1 idf.py -C firmware build

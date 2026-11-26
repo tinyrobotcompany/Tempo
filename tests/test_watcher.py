@@ -29,7 +29,7 @@ class WatcherTests(unittest.TestCase):
 
     def test_phone_assets_and_installer_are_watched(self):
         for name in ('firmware/main/web/app.js', 'firmware/main/web/index.html',
-                     'firmware/main/web/style.css', 'companion/shortcut/Weather Station Location.shortcut'):
+                     'firmware/main/web/style.css'):
             with self.subTest(name=name):
                 source=self.root/name
                 source.parent.mkdir(parents=True,exist_ok=True)

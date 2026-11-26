@@ -124,6 +124,32 @@ burn eFuses during an ordinary update.
 
 ## Source coverage and evidence
 
+### Background activity and credential rotation
+
+Healthy firmware reconciles every 24 hours plus up to one hour of random jitter.
+It checks local network/address state every five seconds without contacting the
+service. Initial setup, address changes and certificate renewal interrupt that
+daily wait. Pending jobs poll after 30 seconds plus jitter; provider failures
+back off by 5 minutes, 15 minutes, then one hour. Offline time does not count as
+a provider failure. Reconnection/address changes cannot defeat an active failure
+backoff. Delays use monotonic time; renewal uses the synchronised certificate clock.
+The client honours bounded delta-seconds `Retry-After` headers and JSON
+`retry_after` values (up to seven days), never shortening its local backoff.
+
+The single worker still checks durable jobs every 30 seconds. Its four known
+Key Vault secrets are cached only in process memory for at most five minutes;
+expired values are discarded even if Key Vault is unavailable. DNS 401/403 and
+ACME account authentication failures invalidate the corresponding cache entries.
+The next normal job attempt retrieves them again; authentication failures do not
+cause an immediate duplicate mutation or certificate order.
+
+For rotation, publish the replacement Key Vault version, allow five minutes for
+workers to refresh, then revoke the old provider credential. Coordinate ACME key
+and account URI changes; retain the old account until the replacement is verified.
+No credential values belong in workflow inputs, logs or deployment artifacts.
+Restarting a worker also clears its cache. These tests cover timing and cache
+behaviour; live cold start, provider rotation and device acceptance remain required.
+
 Design checked against official [ACME DNS-01](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge),
 [Spaceship API](https://docs.spaceship.dev/), [ACME Python client](https://acme-python.readthedocs.io/en/stable/api/client.html),
 [Azure managed identities](https://learn.microsoft.com/azure/container-apps/managed-identity),

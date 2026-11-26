@@ -56,7 +56,7 @@ esp_err_t httpd_register_uri_handler(httpd_handle_t h,const httpd_uri_t *route){
 static httpd_req_t request(const char *uri,const char *body,const char *auth){httpd_req_t r={.uri=uri,.body=body,.content_len=body?strlen(body):0,.auth=auth,.type="application/json",.code=200};for(unsigned i=0;i<route_count;i++)if(!strcmp(uri,routes[i].uri)){assert(routes[i].handler(&r)==ESP_OK);return r;}assert(0);return r;}
 int main(void){station_settings_t initial=station_defaults();pairing_fail=true;assert(station_phone_start(&initial)==ESP_FAIL);pairing_fail=false;assert(station_phone_start(&initial)==ESP_FAIL);station_phone_link_t unavailable;network.connected=true;station_phone_link(&unavailable);assert(!unavailable.online);
  fail_start=false;assert(station_phone_start(&initial)==ESP_FAIL&&route_count==0);station_phone_link(&unavailable);assert(!unavailable.online);
- fail_route=false;identity_changed=true;station_phone_maintenance();assert(route_count==14&&!identity_changed);assert(station_phone_start(&initial)==ESP_OK&&route_count==14);network.connected=false;
+ fail_route=false;identity_changed=true;station_phone_maintenance();assert(route_count==11&&!identity_changed);assert(station_phone_start(&initial)==ESP_OK&&route_count==11);network.connected=false;
  httpd_req_t asset=request("/",NULL,NULL);assert(strstr(asset.response,"Your weather station"));
  asset=request("/connection.js",NULL,NULL);assert(strstr(asset.response,"StationConnection"));
  const char *auth="Bearer abababababababababababababababab";
@@ -80,26 +80,8 @@ int main(void){station_settings_t initial=station_defaults();pairing_fail=true;a
  r=request("/api/status",NULL,"Bearer wrong");assert(r.code==401);
  r=request("/api/status",NULL,auth);assert(r.code==200&&r.no_store&&r.no_referrer&&strstr(r.response,"brightness")&&!strstr(r.response,"ababab"));
 
-#ifdef STATION_HAS_LOCATION_SHORTCUT
- assert(strstr(r.response,"\"shortcutAvailable\":true"));
- r=request("/Weather-Station-Location.shortcut",NULL,NULL);
- extern const char installer_start[] __asm__("_binary_Weather_Station_Location_shortcut_start");
- extern const char installer_end[] __asm__("_binary_Weather_Station_Location_shortcut_end");
- assert(r.code==200&&r.download&&r.no_store&&r.response_len==(size_t)(installer_end-installer_start));
- assert(!memcmp(r.response,installer_start,r.response_len)&&!memcmp(r.response,"AEA1",4));
-#else
- assert(strstr(r.response,"\"shortcutAvailable\":false"));
- r=request("/Weather-Station-Location.shortcut",NULL,NULL);assert(r.code==503);
-#endif
- r=request("/api/location-request","{\"action\":\"begin\"}",NULL);assert(r.code==401);
- r=request("/api/location-request","{\"action\":\"validate\",\"state\":\"abababababababababababababababab\"}",auth);assert(r.code==409);
- r=request("/api/location-request","{\"action\":\"begin\"}",auth);assert(r.code==200&&strstr(r.response,"abababababababababababababababab"));
- // A new browser/tab has only the callback token and nonce, not sessionStorage.
- r=request("/api/location-request","{\"action\":\"validate\",\"state\":\"abababababababababababababababab\"}",auth);assert(r.code==200&&location_calls==0);
- r=request("/api/location-request","{\"action\":\"validate\",\"state\":\"abababababababababababababababab\"}",auth);assert(r.code==200&&location_calls==0);
- r=request("/api/location-request","{\"action\":\"validate\",\"state\":\"00000000000000000000000000000000\"}",auth);assert(r.code==409);
- now_us+=600000000LL;
- r=request("/api/location-request","{\"action\":\"validate\",\"state\":\"abababababababababababababababab\"}",auth);assert(r.code==409);
+ assert(!strstr(r.response,"shortcutAvailable"));
+ for(unsigned i=0;i<route_count;i++){assert(strcmp(routes[i].uri,"/api/location-request"));assert(strcmp(routes[i].uri,"/Weather-Station-Location.shortcut"));}
  r=request("/api/view","{\"view\":1}",auth);assert(r.code==202);station_phone_command_t cmd;assert(station_phone_take(&cmd)&&cmd.change_view&&cmd.view==VIEW_WEATHER);assert(!station_phone_take(&cmd));
  r=request("/api/view","{\"view\":1.5}",auth);assert(r.code==400);r=request("/api/view","{\"view\":99}",auth);assert(r.code==400);
  r=request("/api/view","{\"view\":1} junk",auth);assert(r.code==400);r=request("/api/view","[[[[[[[[[]]]]]]]]]",auth);assert(r.code==400);
@@ -118,14 +100,14 @@ int main(void){station_settings_t initial=station_defaults();pairing_fail=true;a
  r=request("/api/status",NULL,auth);assert(r.code==401);r=request("/api/status",NULL,"Bearer cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");assert(r.code==200);
  unsigned before_starts=tls_starts,before_stops=tls_stops;
  fail_stop=true;identity_changed=true;station_phone_maintenance();
- assert(tls_starts==before_starts&&tls_stops==before_stops+1&&route_count==14);
+ assert(tls_starts==before_starts&&tls_stops==before_stops+1&&route_count==11);
  assert(station_phone_start(&initial)!=ESP_OK&&tls_starts==before_starts);
- fail_stop=false;station_phone_maintenance();assert(tls_starts==before_starts+1&&route_count==14);
+ fail_stop=false;station_phone_maintenance();assert(tls_starts==before_starts+1&&route_count==11);
  before_starts=tls_starts;before_stops=tls_stops;
- identity_changed=true;station_phone_maintenance();assert(route_count==14&&!identity_changed);
+ identity_changed=true;station_phone_maintenance();assert(route_count==11&&!identity_changed);
  assert(tls_starts==before_starts+1&&tls_stops==before_stops+1);
  station_phone_maintenance();assert(tls_starts==before_starts+1&&tls_stops==before_stops+1);
  r=request("/api/status",NULL,"Bearer cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd");assert(r.code==200);
  identity_changed=true;fail_start=true;station_phone_maintenance();station_phone_link(&link);assert(!link.online);
- fail_start=false;station_phone_maintenance();station_phone_link(&link);assert(link.online&&route_count==14);
+ fail_start=false;station_phone_maintenance();station_phone_link(&link);assert(link.online&&route_count==11);
  puts("PASS: real HTTP handlers: auth, bounds, queued commands, TLS renewal/retry, cache headers and QR URL");}

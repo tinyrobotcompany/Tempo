@@ -12,18 +12,24 @@ from .protocol import device_id, hostname
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--public-key", type=Path)
-    parser.add_argument("--suffix", default=os.environ.get("DEVICE_SUFFIX"))
+    parser.add_argument("--suffix", help="Must match the configured product namespace")
+    parser.add_argument("--product", choices=("tempo", "waveform"), default="tempo")
     parser.add_argument("--serial", default=os.environ.get("MANUFACTURING_SERIAL"))
     args = parser.parse_args()
+    suffix = os.environ.get("DEVICE_SUFFIX" if args.product == "tempo" else "WAVEFORM_DEVICE_SUFFIX", "")
+    if args.suffix and args.suffix != suffix:
+        parser.error("Suffix must match the configured product namespace")
+    if not suffix:
+        parser.error("Product namespace is not configured")
     pem = (args.public_key.read_text() if args.public_key else
            base64.b64decode(os.environ["MANUFACTURING_PUBLIC_KEY"], validate=True).decode())
     identifier = device_id(pem)
     if not args.serial or len(args.serial) > 64:
         parser.error("A manufacturing serial of at most 64 characters is required")
     azure_store().register({"PartitionKey": identifier, "RowKey": "identity", "public_key": pem,
-                            "hostname": hostname(identifier, args.suffix), "enabled": True,
-                            "serial": args.serial, "registered_at": int(time.time())})
-    print(hostname(identifier, args.suffix))
+                            "hostname": hostname(identifier, suffix), "enabled": True,
+                            "product": args.product, "serial": args.serial, "registered_at": int(time.time())})
+    print(hostname(identifier, suffix))
 
 
 if __name__ == "__main__":

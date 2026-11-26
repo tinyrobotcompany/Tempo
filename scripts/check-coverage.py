@@ -12,7 +12,7 @@ EXCLUDED = {
 }
 BINARIES = ['test_identity_store', 'test_device_identity', 'test_device_enrollment', 'test_phone_dns', 'test_phone_tls', 'test_pairing', 'test_credentials', 'test_update_policy', 'test_update_service', 'test_core', 'test_settings', 'test_network', 'test_weather', 'test_weather_service',
             'test_transport', 'test_transport_service', 'test_transport_json_filter',
-            'test_phone_protocol', 'test_phone_server', 'test_phone_server_installer',
+            'test_phone_protocol', 'test_phone_server',
             'ui/test_ui', 'ui/test_map_tiles']
 
 
