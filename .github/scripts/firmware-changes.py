@@ -9,7 +9,7 @@ import subprocess
 def affects_firmware(path):
     if path.startswith('firmware/'):
         return not (path.endswith(('.md', '.log')) or '/build/' in path or '/managed_components/' in path)
-    return path in {'scripts/ota-release.py', 'scripts/generate_transport_config.py', 'companion/shortcut/Weather Station Location.shortcut'}
+    return path in {'scripts/ota-release.py', 'scripts/generate_transport_config.py'}
 
 
 def gate(results):

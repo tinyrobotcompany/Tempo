@@ -1,3 +1,5 @@
+> Historical log: the Shortcut and hosted HTTP location helper described in older entries are retired. Current behavior and acceptance checks are documented in [phone setup](IPHONE_SETUP.md).
+
 # Firmware development and first hardware run
 
 Development history begins 12 November 2026. Use feature worktrees and the repository test/PR checks for current work.

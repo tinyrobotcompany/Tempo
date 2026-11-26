@@ -16,7 +16,5 @@ def check(report, names):
 
 if __name__=='__main__':
     names={p.name for p in (ROOT/'firmware/main/web').glob('*.js')}
-    names.update(p.name for p in (ROOT/'companion/location-helper').glob('*.js'))
-    # location.js is byte-identical in the two surfaces (verified by existing tests).
     check((ROOT/'build-host/coverage/browser.txt').read_text(),names)
     print('All shipped browser modules meet the 80% executable-line coverage floor.')

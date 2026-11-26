@@ -7,9 +7,6 @@ let token=incoming.get('token')||storedToken();
 if(!/^[a-f0-9]{32}$/.test(token))token='';
 let tokenStored=false;
 if(token)for(const name of ['localStorage','sessionStorage']){try{const storage=globalThis[name];if(storage){storage.setItem('stationToken',token);tokenStored=true;}}catch{}}
-const callbackSearch=location.search;
-const callbackState=new URLSearchParams(callbackSearch).get('location_state');
-let callbackDone=!callbackState,callbackPending=false;
 // If storage is blocked retain only the pairing fragment, so refreshing still works.
 history.replaceState(null,'',location.pathname+(!tokenStored&&token?'#token='+token:''));
 let state=null,initialised=false,savePending=false,locationPending=false,pendingPoint=null;
@@ -68,7 +65,6 @@ function fill(s){
  $('brightnessValue').textContent=$('brightness').value+'%';
 }
 function applyStatus(next){state=next;
- if(globalThis.isSecureContext&&globalThis.navigator?.geolocation)$('shortcutHelp').hidden=true;
  if(next.update){const u=next.update;
   const titles={1:'Checking for updates…',2:u.countdown?'Your update is ready to install':'A new update is available',3:'Downloading update',4:'Verifying update',5:'Restarting Tempo — reconnecting automatically',6:'Update needs attention',7:'Preparing to install'};
   $('updateTitle').textContent=titles[u.state]||(u.upToDate?'No new updates — Tempo is up to date':'Ready to check for updates');
@@ -87,23 +83,12 @@ function applyStatus(next){state=next;
  }
 
  const loc=state.location;$('savedLocation').textContent=loc.valid?`${loc.name} · ${loc.timezone}`:'No location saved yet.';
- $('installShortcut').hidden=!state.shortcutAvailable;
- $('shortcutAvailability').textContent=state.shortcutAvailable?'One-time setup. No account, subscription or website required.':'The location shortcut is not included in this firmware yet. You can use address search below.';
  fill(state.settings);
  if(!initialised){initialised=true;
   if(loc.valid)editor.choose(loc);
  }
 
  updateControls();
- if(!callbackDone&&!callbackPending)receiveLocation();}
-async function receiveLocation(){
- callbackPending=true;message('Checking the position returned by your iPhone…','locationMessage');
- try{await api('location-request',{action:'validate',state:callbackState});
-  const result=StationShortcut.consumeVerified(callbackSearch);callbackDone=true;
-  if(result.point){editor.choose(result.point,true);message('Position received. Check the map and confirm to save.','locationMessage');}
-  else message(result.error,'locationMessage',true);
- }catch(e){if(e.status===409||e.status===400)callbackDone=true;message(e.message,'locationMessage',true);}
- finally{callbackPending=false;}
 }
 $('settingsForm').addEventListener('input',markAppearance);
 $('settingsForm').addEventListener('change',markAppearance);
@@ -125,12 +110,7 @@ $('locate').onclick=async()=>{
   finally{locatePending=false;updateControls();}
   return;
  }
- if(!state?.shortcutAvailable){$('shortcutHelp').open=true;message('Automatic positioning is not ready in this firmware. Address search is available below.','locationMessage',true);return;}
- try{locatePending=true;$('locate').setAttribute('aria-busy','true');updateControls();message('Preparing iPhone location…','locationMessage');
- const request=await api('location-request',{action:'begin'});
- message('Opening Shortcuts. If it is missing, use Add location shortcut above.','locationMessage');
- location.assign(StationShortcut.launch(location.origin,token,request.state));
- }catch(e){message(e.message,'locationMessage',true);}finally{locatePending=false;$('locate').setAttribute('aria-busy','false');updateControls();}
+ message('Location is unavailable in this browser. Search for your address below, then confirm the map pin.','locationMessage',true);
 };
 $('saveLocation').onclick=async()=>{if(locationPending||!connection.connected()||!editor.get())return;pendingPoint={...editor.get()};locationPending=true;updateControls();message('Saving location…','locationMessage');
  try{const before=await api('status');await api('location',pendingPoint);let saved=false;
