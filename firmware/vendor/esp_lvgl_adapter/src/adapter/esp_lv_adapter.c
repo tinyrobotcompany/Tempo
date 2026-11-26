@@ -228,7 +228,7 @@ static esp_err_t adapter_unregister_all_inputs(void)
     }
 
     if (input_count > 0) {
-        ESP_LOGI(TAG, "%lu input device(s) cleaned up", input_count);
+        ESP_LOGI(TAG, "%" PRIu32 " input device(s) cleaned up", input_count);
     }
 
     return ESP_OK;

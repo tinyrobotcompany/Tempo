@@ -634,10 +634,10 @@ TEST_CASE("adapter fps benchmark", "[adapter][fps]")
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "FPS Benchmark Suite");
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "Testing %d resolutions", TEST_RESOLUTION_COUNT);
+    ESP_LOGI(TAG, "Testing %zu resolutions", TEST_RESOLUTION_COUNT);
 
     for (size_t i = 0; i < TEST_RESOLUTION_COUNT; i++) {
-        ESP_LOGI(TAG, "[%u/%u] Resolution: %ux%u",
+        ESP_LOGI(TAG, "[%zu/%zu] Resolution: %ux%u",
                  i + 1, TEST_RESOLUTION_COUNT,
                  k_test_resolutions[i].width,
                  k_test_resolutions[i].height);

@@ -15,6 +15,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      # Required check fails closed for forks before any paid API call. A
+      # maintainer must inspect and import a contribution into a trusted branch.
+      - name: Require a repository-owned branch for paid review
+        if: github.event.pull_request.head.repo.id != github.event.pull_request.base.repo.id
+        run: |
+          echo 'External fork: a maintainer must inspect and import this change into a repository branch for Codex review.' >&2
+          exit 1
       # Never check out or execute PR-head code with these credentials.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

@@ -1,3 +1,7 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#include "private_output.h"
 #include "../firmware/components/station_ui/fonts/text_fonts.h"
 #include "station_ui.h"
 #include <assert.h>
@@ -39,7 +43,7 @@ static lv_obj_t *find_prefix(lv_obj_t *p,const char *t){if(lv_obj_check_type(p,&
 static lv_obj_t *kind(lv_obj_t*p,const lv_obj_class_t*k,unsigned *skip){for(unsigned i=0;i<lv_obj_get_child_count(p);i++){lv_obj_t*c=lv_obj_get_child(p,i);if(lv_obj_check_type(c,k)){if(!*skip)return c;--*skip;}lv_obj_t*r=kind(c,k,skip);if(r)return r;}return NULL;}
 static lv_obj_t *widget(const lv_obj_class_t*k,unsigned n){return kind(lv_screen_active(),k,&n);}
 static void click(const char*t){lv_obj_t*c=find(lv_screen_active(),t);assert(c);lv_obj_t*b=lv_obj_get_parent(c);assert(!lv_obj_has_state(b,LV_STATE_DISABLED));lv_obj_send_event(b,LV_EVENT_CLICKED,NULL);tick();}
-static void shot(const char*name){tick();char path[160];snprintf(path,sizeof(path),"build-host/%s.ppm",name);FILE*f=fopen(path,"wb");assert(f&&frame);fprintf(f,"P6\n1280 800\n255\n");for(unsigned i=0;i<1280*800;i++){fputc(frame[i*3+2],f);fputc(frame[i*3+1],f);fputc(frame[i*3],f);}fclose(f);}
+static void shot(const char*name){tick();char path[160];snprintf(path,sizeof(path),"build-host/%s.ppm",name);FILE*f=private_output(path);assert(f&&frame);fprintf(f,"P6\n1280 800\n255\n");for(unsigned i=0;i<1280*800;i++){fputc(frame[i*3+2],f);fputc(frame[i*3+1],f);fputc(frame[i*3],f);}fclose(f);}
 static station_transport_snapshot_t transit;
 static unsigned transit_refreshes,nearby_resets;
 static void nearby_reset(void){nearby_resets++;}

@@ -9,3 +9,5 @@ The ISR now leaves the pending submission untouched while the rotated pipeline h
 `python3 tests/test_display_race.py` extracts/compiles the actual patched ISR and pipeline-list functions. An upstream function fixture reproduces the indefinitely stranded buffer; patched code succeeds with interrupts before publication, between publication and enqueue, after enqueue, and duplicate completion events. This establishes the code race and its correction. The test is not a physical PPA/DSI simulation and does not establish that no other hardware defect exists.
 
 Keep this override until an upstream release incorporates an equivalent correction; review the patch and rerun its deterministic test before changing adapter versions.
+
+Portable log formatting: use PRIu32 for the uint32_t input count and %zu for size_t benchmark indices/counts. This also removes host-analysis type mismatches without changing device behavior.
