@@ -123,11 +123,11 @@ Firmware 0.4.0 presents twelve upcoming hourly temperature/precipitation-probabi
 
 ### Phone location and mobility update (0.5.1)
 
-Use QR-based local browser control on the same Wi-Fi, including an iPhone Personal Hotspot. No paid hosting or domain is required for onboarding. Provide an optional, prepared Apple Shortcut for user-triggered phone positioning: Add shortcut once → Use my iPhone location → check map → Confirm location. Customers must never build or edit workflows, enter device IP addresses or configure a cloud service. Address search/map adjustment is a complete alternative for iPhone and Android. Location permission is requested explicitly by iOS; this is not background tracking.
+Use QR-based local HTTPS browser control on the same Wi-Fi. Native browser location is optional and requires permission; address search and map adjustment provide a complete alternative on iPhone and Android. Users confirm a selected location before saving. No installed Shortcut or hosted HTTP callback is used.
 
 Persist exact home coordinates and a locality name independently of the display timezone. Never change home location solely because Wi-Fi changes. Provide Change location through the phone panel, invalidate old weather immediately after saving, and use the same coordinates for future nearby transport. Keep the last known timezone while resolving a new one.
 
-Implementation status: local panel and shortcut callback handling implemented; the signed generic shortcut is now supplied and its source/output/download verified locally. Clean-iPhone installation, callback/tab behaviour, hotspot reachability, complete firmware build/flash and device acceptance remain outstanding. Transit and signed OTA with rollback remain mandatory and pending. Before sale, validate the entire first-use journey without developer assistance, recovery after a network change, and commercial suitability of all data providers.
+Implementation status and acceptance gates are maintained in [phone setup](IPHONE_SETUP.md) and [secure phone access](SECURE_PHONE_ACCESS.md). Historical Shortcut behavior has been retired.
 
 ### Transport refinement: hub priority, pickup times and maps
 

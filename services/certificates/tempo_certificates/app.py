@@ -46,8 +46,7 @@ def create_app(service=None, admission=None):
                 return JSONResponse({"error": "request_too_large"}, 413)
         from starlette.concurrency import run_in_threadpool
         try:
-            active = service or DeviceService(azure_store(), os.environ["DEVICE_SUFFIX"],
-                                               waveform_suffix=os.environ.get("WAVEFORM_DEVICE_SUFFIX", ""))
+            active = service or DeviceService(azure_store(), os.environ["DEVICE_SUFFIX"])
             reply = await run_in_threadpool(active.handle, bytes(body), request.headers.get("x-device-signature", request.headers.get("x-tempo-signature", "")))
             return JSONResponse(reply.body, reply.status, headers={"Cache-Control": "no-store", "Retry-After": "30"})
         except Rejected as error:

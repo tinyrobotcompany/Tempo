@@ -17,9 +17,6 @@ def fingerprint(root=ROOT):
     files.extend(p for p in firmware.iterdir() if p.is_file() and
                  (p.name.startswith('sdkconfig') and p.suffix != '.old' or
                   p.name in ('CMakeLists.txt', 'partitions.csv')))
-    installer = root / 'companion/shortcut/Weather Station Location.shortcut'
-    if installer.exists():
-        files.append(installer)
     credential = root / '.env'
     if credential.exists():
         files.append(credential)
