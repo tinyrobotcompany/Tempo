@@ -9,6 +9,22 @@ param project string = 'tempo'
 param location string = 'westeurope'
 param owner string = 'tinyrobotcompany'
 var concerns = ['network', 'data', 'security', 'ops', 'compute']
+// Roles main.bicep assigns to runtime identities in each group (CI checks this list
+// against the workload modules). Everything else, including Owner, is undelegable.
+var delegableRoles = {
+  network: []
+  data: [
+    '76199698-9eea-4c19-bc75-cec21354c6b6' // Storage Table Data Reader
+    '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3' // Storage Table Data Contributor
+    '7f951dda-4ed3-4680-a7ca-43fe172d538d' // AcrPull
+  ]
+  security: [
+    '4633458b-17de-408a-b874-0445c86b69e6' // Key Vault Secrets User
+    'b86a8fe4-44ce-4948-aee5-eccb2c155cd7' // Key Vault Secrets Officer
+  ]
+  ops: []
+  compute: []
+}
 resource groups 'Microsoft.Resources/resourceGroups@2024-03-01' = [for concern in concerns: {
   name: 'rg-${project}-${location}-${concern}'
   location: location
@@ -43,7 +59,7 @@ resource deploymentAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 module permissions 'delivery-permissions.bicep' = [for (concern, i) in concerns: {
   name: '${project}-delivery-${concern}'
   scope: groups[i]
-  params: { principalId: identity.outputs.principalId }
+  params: { principalId: identity.outputs.principalId, delegableRoles: delegableRoles[concern] }
 }]
 output clientId string = identity.outputs.clientId
 output tenantId string = tenant().tenantId

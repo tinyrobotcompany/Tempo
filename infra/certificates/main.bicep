@@ -12,7 +12,7 @@ param location string = 'westeurope'
 @description('Stable name generation. Change only for an intentional fresh rebuild, never on each deployment.')
 param generation string = '1'
 @description('Reviewed image digest from the image-build workflow; empty deploys the foundation only.')
-param imageDigest string = ''
+param imageDigest string = '30bdf6688868aad851b0387ba015eb1ea89de00fd9d04e647a9c764fca10d628'
 var deployCompute = !empty(imageDigest)
 @allowed(['staging', 'production'])
 param acmeEnvironment string = 'staging'

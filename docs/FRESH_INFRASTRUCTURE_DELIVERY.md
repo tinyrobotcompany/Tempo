@@ -42,10 +42,21 @@ az deployment sub create \
 This restores the five groups and their deployment permissions. It preserves the
 existing identity and its corrected immutable GitHub federation subject. It does
 not deploy the workload. Never grant subscription Owner or create a client secret.
-The current grants allow resource management and role administration only in the
-five Tempo groups, plus subscription deployment records. Further role-delegation
-restrictions are a separate reviewed change; these are privileged deployment
-permissions, not runtime permissions.
+The grants allow resource management in the five Tempo groups, plus subscription
+deployment records. Role administration is ABAC-conditioned per group: the
+identity may assign only the runtime roles `main.bicep` uses in that group, only
+to service principals and never to itself, and may delete only those roles'
+assignments. Groups whose workload assigns no roles (network, ops, compute) allow
+no role administration. Owner, User Access Administrator and RBAC Administrator
+are never delegable. CI fails if `delegableRoles` in `bootstrap.bicep` differs
+from the roles the workload modules assign, so adding a runtime role needs both
+changes in one reviewed PR and an operator re-run of bootstrap.
+
+Re-running bootstrap updates the existing administrator assignments in place
+(their names are unchanged) by adding the condition; nothing else changes.
+Recipients are restricted by role and principal type, not by identity: runtime
+identities are created by the workload after bootstrap, so they cannot be named
+in the condition without a second bootstrap pass.
 
 The `tempo-infrastructure` GitHub environment contains `AZURE_CLIENT_ID`,
 `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. Use bootstrap outputs to verify

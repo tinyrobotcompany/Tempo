@@ -22,3 +22,5 @@ jobs:
           jq -e '.resources | length > 0' build-host/infrastructure/template.json
           jq -e '.parameters.project.defaultValue | test("^[a-z0-9]{2,8}$")' build-host/infrastructure/template.json
           jq -e '.parameters.imageDigest.defaultValue | . == "" or test("^[a-f0-9]{64}$")' build-host/infrastructure/template.json
+      - name: Check delivery role delegation
+        run: bash .github/scripts/delegation.test.sh build-host/infrastructure/bootstrap.json
