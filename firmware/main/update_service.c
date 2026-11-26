@@ -295,7 +295,7 @@ static void worker(void *unused)
    if(cmd.action==4){saved_t old=saved;saved.hours=cmd.hours;saved.automatic=cmd.automatic;saved.start=cmd.start;saved.end=cmd.end;
     saved.next=station_update_next(now,saved.hours,esp_random());if(!persist()){saved=old;message(UPDATE_ERROR,"Could not save update settings.");}else message(candidate.version[0]?UPDATE_AVAILABLE:UPDATE_IDLE,"Update settings saved.");publish();}
   }
-  if(ready&&!countdown&&(force_check||mono-connected_since>=30000000)&&(!saved.next||now>=saved.next)){
+  if(ready&&!countdown&&(force_check||(mono-connected_since>=30000000&&(!saved.next||now>=saved.next)))){
    force_check=false;bool ok=check_release();saved.last=now;failures=ok?0:failures+1;saved.next=ok?station_update_next(now,saved.hours,esp_random()):now+station_update_retry(failures);
    if(rate_limited_until>saved.next)saved.next=rate_limited_until;
    if(!persist())message(UPDATE_ERROR,"Could not save update check history.");

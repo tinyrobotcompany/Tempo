@@ -7,15 +7,19 @@ let token=incoming.get('token')||storedToken();
 if(!/^[a-f0-9]{32}$/.test(token))token='';
 let tokenStored=false;
 if(token)for(const name of ['localStorage','sessionStorage']){try{const storage=globalThis[name];if(storage){storage.setItem('stationToken',token);tokenStored=true;}}catch{}}
-const callbackSearch=location.search;
-const callbackState=new URLSearchParams(callbackSearch).get('location_state');
-let callbackDone=!callbackState,callbackPending=false;
 // If storage is blocked retain only the pairing fragment, so refreshing still works.
 history.replaceState(null,'',location.pathname+(!tokenStored&&token?'#token='+token:''));
 let state=null,initialised=false,savePending=false,locationPending=false,pendingPoint=null;
 let updateEdited=false,updateBusy=false,credentialBusy=false;
 function message(text,id='message',error=false){$(id).textContent=text;$(id).classList.toggle('error',error);if(id==='locationMessage'){$('locationSaveStatus').textContent=text;$('locationSaveStatus').classList.toggle('error',error);}}
-let appearanceEdited=false;
+const appearanceDirty=new Set();
+const appearanceKeys=['name','brightness','theme','font','color','rotate','dwell','dimAfter','offAfter','dimBrightness'];
+function appearanceValue(key){return key==='rotate'?$('rotate').checked:key==='color'?parseInt($('color').value.slice(1),16):key==='name'?$('name').value:Number($(key).value);}
+function markAppearance(event){
+ const key=event?.target?.id?.replace(/^(dim|off)Preset$/,'$1After');
+ if(appearanceKeys.includes(key))appearanceDirty.add(key);
+ else if(state)for(const field of appearanceKeys){if(appearanceValue(field)!==(state.settings[field]??(field==='dimBrightness'?10:0)))appearanceDirty.add(field);}
+}
 let linkPhase='connecting',viewPending=false,locatePending=false;
 function updateControls(){const ready=linkPhase==='connected';
  const u=state?.update,busy=u&&[1,3,4,5,7].includes(u.state);
@@ -47,12 +51,20 @@ const editor=L.editor({message:text=>message(text,'locationMessage'),onChange:()
 function minutes(value){const [h,m]=value.split(':').map(Number);return h*60+m;}
 function syncIdlePreset(kind){const value=$(kind+'After').value;$(kind+'Preset').value=['0','1','2','5','10'].includes(String(value))?String(value):'custom';}
 for(const kind of ['dim','off']){
- $(kind+'Preset').onchange=()=>{if($(kind+'Preset').value!=='custom')$(kind+'After').value=$(kind+'Preset').value;else $(kind+'After').focus();};
- $(kind+'After').oninput=()=>syncIdlePreset(kind);
+ $(kind+'Preset').onchange=()=>{if($(kind+'Preset').value!=='custom'){$(kind+'After').value=$(kind+'Preset').value;appearanceDirty.add(kind+'After');}else $(kind+'After').focus();};
+ $(kind+'After').oninput=()=>{appearanceDirty.add(kind+'After');syncIdlePreset(kind);};
 }
-function fill(s){for(const key of ['name','brightness','theme','font','dwell'])$(key).value=s[key];$('dimBrightness').value=s.dimBrightness??10;for(const kind of ['dim','off']){$(kind+'After').value=s[kind+'After']??0;syncIdlePreset(kind);}$('rotate').checked=s.rotate;$('color').value='#'+s.color.toString(16).padStart(6,'0');$('brightnessValue').textContent=s.brightness+'%';}
+function fill(s){
+ for(const key of appearanceKeys){
+  if(appearanceDirty.has(key))continue;
+  if(key==='rotate')$(key).checked=s[key];
+  else if(key==='color')$(key).value='#'+s[key].toString(16).padStart(6,'0');
+  else $(key).value=s[key]??(key==='dimBrightness'?10:0);
+ }
+ for(const kind of ['dim','off'])syncIdlePreset(kind);
+ $('brightnessValue').textContent=$('brightness').value+'%';
+}
 function applyStatus(next){state=next;
- if(globalThis.isSecureContext&&globalThis.navigator?.geolocation)$('shortcutHelp').hidden=true;
  if(next.update){const u=next.update;
   const titles={1:'Checking for updates…',2:u.countdown?'Your update is ready to install':'A new update is available',3:'Downloading update',4:'Verifying update',5:'Restarting Tempo — reconnecting automatically',6:'Update needs attention',7:'Preparing to install'};
   $('updateTitle').textContent=titles[u.state]||(u.upToDate?'No new updates — Tempo is up to date':'Ready to check for updates');
@@ -71,31 +83,22 @@ function applyStatus(next){state=next;
  }
 
  const loc=state.location;$('savedLocation').textContent=loc.valid?`${loc.name} · ${loc.timezone}`:'No location saved yet.';
- $('installShortcut').hidden=!state.shortcutAvailable;
- $('shortcutAvailability').textContent=state.shortcutAvailable?'One-time setup. No account, subscription or website required.':'The location shortcut is not included in this firmware yet. You can use address search below.';
- if(!initialised){if(!appearanceEdited)fill(state.settings);initialised=true;
+ fill(state.settings);
+ if(!initialised){initialised=true;
   if(loc.valid)editor.choose(loc);
  }
 
  updateControls();
- if(!callbackDone&&!callbackPending)receiveLocation();}
-async function receiveLocation(){
- callbackPending=true;message('Checking the position returned by your iPhone…','locationMessage');
- try{await api('location-request',{action:'validate',state:callbackState});
-  const result=StationShortcut.consumeVerified(callbackSearch);callbackDone=true;
-  if(result.point){editor.choose(result.point,true);message('Position received. Check the map and confirm to save.','locationMessage');}
-  else message(result.error,'locationMessage',true);
- }catch(e){if(e.status===409||e.status===400)callbackDone=true;message(e.message,'locationMessage',true);}
- finally{callbackPending=false;}
 }
-$('settingsForm').addEventListener('input',()=>{appearanceEdited=true;});
+$('settingsForm').addEventListener('input',markAppearance);
+$('settingsForm').addEventListener('change',markAppearance);
 $('brightness').oninput=()=>{$('brightnessValue').textContent=$('brightness').value+'%';};
 $('settingsForm').onsubmit=async e=>{e.preventDefault();if(savePending||!connection.connected())return;const settings={name:$('name').value,brightness:Number($('brightness').value),theme:Number($('theme').value),font:Number($('font').value),color:parseInt($('color').value.slice(1),16),rotate:$('rotate').checked,dwell:Number($('dwell').value),dimAfter:Number($('dimAfter').value),offAfter:Number($('offAfter').value),dimBrightness:Number($('dimBrightness').value)};
  if(settings.dimAfter&&settings.offAfter&&settings.offAfter<=settings.dimAfter){message('Screen off must be later than dim, or set either to Never.','settingsMessage',true);return;}
  if(new TextEncoder().encode(settings.name).length>48){message('Please use a shorter name.','settingsMessage',true);return;}
  savePending=true;updateControls();message('Saving…','settingsMessage');try{await api('settings',settings);
  // Wait for the UI worker to apply the command and the NVS worker to commit it.
- let saved=false;for(let i=0;i<30;i++){await new Promise(r=>setTimeout(r,300));const s=await api('status');if(Object.keys(settings).every(k=>s.settings[k]===settings[k])&&s.saveState===2){saved=true;break;}if(s.saveState===3)throw new Error('Could not save. Please retry.');}
+ let saved=false;for(let i=0;i<30;i++){await new Promise(r=>setTimeout(r,300));const s=await api('status');if(Object.keys(settings).every(k=>s.settings[k]===settings[k])&&s.saveState===2){saved=true;for(const key of appearanceKeys)if(appearanceValue(key)===settings[key])appearanceDirty.delete(key);state={...state,settings:s.settings};fill(s.settings);break;}if(s.saveState===3)throw new Error('Could not save. Please retry.');}
  if(!saved)throw new Error('Save not confirmed. Check the display before retrying.');message('SAVED — Your display settings are stored. Idle timers have started.','settingsMessage');
  }catch(e){message(connection.connected()?e.message:'Save not confirmed. Your changes are kept here. Check the display after reconnection before saving again.','settingsMessage',true);}finally{savePending=false;updateControls();}};
 for(const b of document.querySelectorAll('[data-view]'))b.onclick=async()=>{if(!connection.connected()||viewPending)return;viewPending=true;const caption=b.textContent;b.textContent='Opening…';b.setAttribute('aria-busy','true');message('Changing the display view…');updateControls();try{await api('view',{view:Number(b.dataset.view)});message('Display view requested.');}catch(e){message(e.message,'message',true);}finally{viewPending=false;b.textContent=caption;b.setAttribute('aria-busy','false');updateControls();}};
@@ -107,12 +110,7 @@ $('locate').onclick=async()=>{
   finally{locatePending=false;updateControls();}
   return;
  }
- if(!state?.shortcutAvailable){$('shortcutHelp').open=true;message('Automatic positioning is not ready in this firmware. Address search is available below.','locationMessage',true);return;}
- try{locatePending=true;$('locate').setAttribute('aria-busy','true');updateControls();message('Preparing iPhone location…','locationMessage');
- const request=await api('location-request',{action:'begin'});
- message('Opening Shortcuts. If it is missing, use Add location shortcut above.','locationMessage');
- location.assign(StationShortcut.launch(location.origin,token,request.state));
- }catch(e){message(e.message,'locationMessage',true);}finally{locatePending=false;$('locate').setAttribute('aria-busy','false');updateControls();}
+ message('Location is unavailable in this browser. Search for your address below, then confirm the map pin.','locationMessage',true);
 };
 $('saveLocation').onclick=async()=>{if(locationPending||!connection.connected()||!editor.get())return;pendingPoint={...editor.get()};locationPending=true;updateControls();message('Saving location…','locationMessage');
  try{const before=await api('status');await api('location',pendingPoint);let saved=false;

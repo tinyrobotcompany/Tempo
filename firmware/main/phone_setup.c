@@ -72,19 +72,11 @@ void station_phone_maintenance(void)
     portENTER_CRITICAL(&mux);memcpy(token,replacement,sizeof(token));portEXIT_CRITICAL(&mux);
     memset(replacement,0,sizeof(replacement));atomic_store(&forget_state,2);
 }
-/* HTTP handlers execute serially. Location handoff is device-owned, not tab-owned. */
-static char location_request[33];
-static int64_t location_request_until;
+/* HTTP handlers execute serially. Location saving remains device-owned. */
 static bool location_busy;
 static unsigned location_completion;
 extern const char connection_js_start[] __asm__("_binary_connection_js_start");
 extern const char connection_js_end[] __asm__("_binary_connection_js_end");
-extern const char shortcut_js_start[] __asm__("_binary_shortcut_js_start");
-extern const char shortcut_js_end[] __asm__("_binary_shortcut_js_end");
-#ifdef STATION_HAS_LOCATION_SHORTCUT
-extern const char shortcut_start[] __asm__("_binary_Weather_Station_Location_shortcut_start");
-extern const char shortcut_end[] __asm__("_binary_Weather_Station_Location_shortcut_end");
-#endif
 extern const char page_start[] __asm__("_binary_index_html_start");
 extern const char page_end[] __asm__("_binary_index_html_end");
 extern const char app_start[] __asm__("_binary_app_js_start");
@@ -146,7 +138,6 @@ static esp_err_t asset(httpd_req_t *r)
 {
     headers(r);const char *start=page_start,*end=page_end,*type="text/html; charset=utf-8";
     if(!strcmp(r->uri,"/connection.js")){start=connection_js_start;end=connection_js_end;type="text/javascript";}
-    if(!strcmp(r->uri,"/shortcut.js")){start=shortcut_js_start;end=shortcut_js_end;type="text/javascript";}
     if(!strcmp(r->uri,"/app.js")){start=app_start;end=app_end;type="text/javascript";}
     if(!strcmp(r->uri,"/location.js")){start=location_start;end=location_end;type="text/javascript";}
     if(!strcmp(r->uri,"/style.css")){start=style_start;end=style_end;type="text/css";}
@@ -167,11 +158,7 @@ static esp_err_t status_get(httpd_req_t *r)
     cJSON_AddNumberToObject(settings,"dimBrightness",s.night_brightness);
     cJSON_AddNumberToObject(j,"view",v);cJSON_AddBoolToObject(j,"connected",net.connected);
     cJSON_AddNumberToObject(j,"saveState",station_settings_save_state());
-#ifdef STATION_HAS_LOCATION_SHORTCUT
-    cJSON_AddBoolToObject(j,"shortcutAvailable",true);
-#else
-    cJSON_AddBoolToObject(j,"shortcutAvailable",false);
-#endif
+
     cJSON_AddBoolToObject(loc,"valid",net.location_valid);cJSON_AddNumberToObject(loc,"latitude",net.latitude);cJSON_AddNumberToObject(loc,"longitude",net.longitude);
     cJSON_AddStringToObject(loc,"name",net.location_name);cJSON_AddStringToObject(loc,"timezone",net.timezone);
     cJSON_AddStringToObject(loc,"message",net.location_message);cJSON_AddNumberToObject(loc,"completion",net.location_completion);
@@ -190,7 +177,7 @@ static esp_err_t status_get(httpd_req_t *r)
 static esp_err_t post(httpd_req_t *r)
 {
     /* Single authentication gate for every POST route: /api/credential, /api/update,
-       /api/location-request, /api/location, /api/settings and /api/view all require the
+       /api/location, /api/settings and /api/view all require the
        pairing bearer token before the body is read or any route is dispatched.
        There are no unauthenticated POST endpoints; tests/test_phone_server.c pins this. */
     headers(r);
@@ -202,25 +189,6 @@ static esp_err_t post(httpd_req_t *r)
     if(memchr(body,0,used))return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid JSON");
     body[used]=0;
     cJSON *j=station_phone_json_shallow(body)?cJSON_ParseWithOpts(body,NULL,true):NULL;
-    if(!strcmp(r->uri,"/api/location-request")) {
-        const cJSON *action=cJSON_GetObjectItemCaseSensitive(j,"action");
-        if(!cJSON_IsString(action)) {cJSON_Delete(j);return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid location request");}
-        if(!strcmp(action->valuestring,"begin")) {
-            uint8_t random[16];esp_fill_random(random,sizeof(random));
-            for(unsigned i=0;i<16;i++)snprintf(location_request+2*i,3,"%02x",random[i]);
-            location_request_until=esp_timer_get_time()+600000000LL;
-        } else if(!strcmp(action->valuestring,"validate")) {
-            const cJSON *state=cJSON_GetObjectItemCaseSensitive(j,"state");
-            if(!cJSON_IsString(state)||strlen(state->valuestring)!=32||!location_request_until||esp_timer_get_time()>=location_request_until||strcmp(state->valuestring,location_request)) {
-                cJSON_Delete(j);httpd_resp_set_status(r,"409 Conflict");return httpd_resp_sendstr(r,"Location request expired or replaced. Start a new location request.");
-            }
-            /* Idempotent validation permits retry after a lost HTTP reply.
-               It never saves coordinates; confirmation uses /api/location. */
-        } else {cJSON_Delete(j);return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid location request action");}
-        cJSON_Delete(j);cJSON *result=cJSON_CreateObject();
-        if(!result)return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"Out of memory");
-        cJSON_AddStringToObject(result,"state",location_request);return json_reply(r,result);
-    }
     /* Authorised: only reachable after the authorised() gate at the top of post(). */
     if(!strcmp(r->uri,"/api/credential")) {
         cJSON *key=cJSON_GetObjectItemCaseSensitive(j,"key");
@@ -264,19 +232,6 @@ static esp_err_t post(httpd_req_t *r)
     if(!accepted){httpd_resp_set_status(r,"503 Service Unavailable");return httpd_resp_sendstr(r,"Busy. Please retry.");}
     httpd_resp_set_status(r,"202 Accepted");httpd_resp_set_type(r,"application/json");return httpd_resp_sendstr(r,"{\"accepted\":true}");
 }
-static esp_err_t shortcut_download(httpd_req_t *r)
-{
-    headers(r);
-#ifdef STATION_HAS_LOCATION_SHORTCUT
-    /* Generic signed installer: contains no pairing token or customer data. */
-    httpd_resp_set_type(r,"application/octet-stream");
-    httpd_resp_set_hdr(r,"Content-Disposition","attachment; filename=\"Weather Station Location.shortcut\"");
-    return httpd_resp_send(r,shortcut_start,shortcut_end-shortcut_start);
-#else
-    httpd_resp_set_status(r,"503 Service Unavailable");
-    return httpd_resp_sendstr(r,"Location shortcut not included in this build. Use address search.");
-#endif
-}
 esp_err_t station_phone_start(const station_settings_t *settings)
 {
     if(server_ready)return ESP_OK;
@@ -287,13 +242,11 @@ esp_err_t station_phone_start(const station_settings_t *settings)
         queue=xQueueCreate(2,sizeof(station_phone_command_t));if(!queue)return ESP_ERR_NO_MEM;
     }
     httpd_config_t config=HTTPD_DEFAULT_CONFIG();config.stack_size=10240;config.max_open_sockets=3;
-    config.lru_purge_enable=true;config.recv_wait_timeout=3;config.send_wait_timeout=3;config.max_uri_handlers=14;
+    config.lru_purge_enable=true;config.recv_wait_timeout=3;config.send_wait_timeout=3;config.max_uri_handlers=11;
     esp_err_t err=station_phone_tls_start(&server,&config);if(err!=ESP_OK){server=NULL;return err;}
     const httpd_uri_t routes[]={
         {.uri="/api/credential",.method=HTTP_POST,.handler=post},{.uri="/api/update",.method=HTTP_POST,.handler=post},
-        {.uri="/api/location-request",.method=HTTP_POST,.handler=post},
         {.uri="/connection.js",.method=HTTP_GET,.handler=asset},
-        {.uri="/shortcut.js",.method=HTTP_GET,.handler=asset},{.uri="/Weather-Station-Location.shortcut",.method=HTTP_GET,.handler=shortcut_download},
         {.uri="/",.method=HTTP_GET,.handler=asset},{.uri="/app.js",.method=HTTP_GET,.handler=asset},
         {.uri="/style.css",.method=HTTP_GET,.handler=asset},{.uri="/location.js",.method=HTTP_GET,.handler=asset},
         {.uri="/api/status",.method=HTTP_GET,.handler=status_get},{.uri="/api/settings",.method=HTTP_POST,.handler=post},
