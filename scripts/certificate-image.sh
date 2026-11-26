@@ -15,8 +15,9 @@ registry=${registry_server%.azurecr.io}
 repository=tempo-certificates
 tag="$repository:$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 # --no-logs returns the completed ARM run object; no registry administrator credentials.
+# Azure CLI resolves --file from the working directory (repository root), not the context.
 az acr build --subscription "$AZURE_SUBSCRIPTION_ID" --registry "$registry" \
-  --image "$tag" --platform linux/amd64 --file Dockerfile --timeout 1200 \
+  --image "$tag" --platform linux/amd64 --file services/certificates/Dockerfile --timeout 1200 \
   --no-logs services/certificates -o json > build-host/certificate-build.json
 jq -e '.status == "Succeeded"' build-host/certificate-build.json >/dev/null
 digest=$(jq -er --arg registry "$registry_server" --arg repository "$repository" \

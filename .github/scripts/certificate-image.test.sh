@@ -4,6 +4,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/repo/scripts/infrastructure" "$tmp/repo/services/certificates/tempo_certificates" "$tmp/bin"
+touch "$tmp/repo/services/certificates/Dockerfile"
 cp "$root/scripts/certificate-image.sh" "$tmp/repo/scripts/"
 cp "$root/scripts/infrastructure/check-context.sh" "$tmp/repo/scripts/infrastructure/"
 cat > "$tmp/bin/git" <<'MOCK'
@@ -18,6 +19,8 @@ case "$1 $2" in
   'acr build')
     echo build >> "$BUILD_CALLS"
     [[ "$*" == *'--registry acrfresh12345'* && "$*" == *'--no-logs'* ]] || exit 90
+    # Real az checks --file relative to the working directory before uploading.
+    [[ "$*" == *'--file services/certificates/Dockerfile '* && -f services/certificates/Dockerfile ]] || exit 91
     [[ "${MOCK_FAIL:-0}" == 0 ]] || exit 1
     jq -n --arg status "${MOCK_STATUS:-Succeeded}" --arg digest "${MOCK_DIGEST:-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" \
       --arg tag "$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
