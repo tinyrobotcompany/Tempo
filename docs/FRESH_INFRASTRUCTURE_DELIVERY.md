@@ -99,13 +99,12 @@ the same Azure environment. No placeholder or public sample image is deployed.
 
 ## CA account bootstrap
 
-After compute is deployed, an operator configures the `tempo-infrastructure`
-GitHub environment once:
+After compute is deployed, an operator adds three repository secrets once:
 
-- secret `SPACESHIP_CREDENTIALS`: `{"key":"…","secret":"…"}`, a Spaceship API key
-  limited to DNS record read/write;
-- variable `ACME_CONTACT_EMAIL`: the CA account contact address;
-- variable `ACCEPTED_ACME_TERMS_URL`: the exact Let's Encrypt subscriber agreement
+- `SPACESHIP_CREDENTIALS`: `{"key":"…","secret":"…"}`, the generated Spaceship API
+  key and secret (not the key's display name), limited to DNS record read/write;
+- `ACME_CONTACT_EMAIL`: the CA account contact address;
+- `ACCEPTED_ACME_TERMS_URL`: the exact Let's Encrypt subscriber agreement
   URL the operator has read and accepts (the bootstrap fails if it differs from the
   CA's current agreement).
 

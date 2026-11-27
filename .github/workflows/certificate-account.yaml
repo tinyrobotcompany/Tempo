@@ -34,6 +34,6 @@ jobs:
       - name: Run one-shot CA account bootstrap
         env:
           SPACESHIP_CREDENTIALS: ${{ secrets.SPACESHIP_CREDENTIALS }}
-          ACME_CONTACT_EMAIL: ${{ vars.ACME_CONTACT_EMAIL }}
-          ACCEPTED_ACME_TERMS_URL: ${{ vars.ACCEPTED_ACME_TERMS_URL }}
+          ACME_CONTACT_EMAIL: ${{ secrets.ACME_CONTACT_EMAIL }}
+          ACCEPTED_ACME_TERMS_URL: ${{ secrets.ACCEPTED_ACME_TERMS_URL }}
         run: bash scripts/certificate-account.sh
