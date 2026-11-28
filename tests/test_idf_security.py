@@ -17,7 +17,8 @@ class SDKSecurityTests(unittest.TestCase):
             text=(ROOT/path).read_text()
             self.assertIn('ref: '+security.COMMIT,text)
             self.assertIn('scripts/check-idf-security.py',text)
-            self.assertLess(text.index('scripts/check-idf-security.py'),text.index('idf.py -C firmware'))
+            build='scripts/secure-build.py compile' if path.endswith('ota-release.yml') else 'idf.py -C firmware'
+            self.assertLess(text.index('scripts/check-idf-security.py'),text.index(build))
         deps=json.loads((ROOT/'tests/dependencies.json').read_text())
         self.assertIn(security.COMMIT,next(x['url'] for x in deps if x['name']=='embed.cmake'))
 

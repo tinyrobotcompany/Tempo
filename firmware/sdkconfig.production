@@ -1,0 +1,49 @@
+# Tempo production profile: Secure Boot v2 + flash encryption, Development mode.
+# Layered after sdkconfig.defaults and sdkconfig.rev3 by scripts/secure-build.py.
+# scripts/secure-build.py check-config fails the build unless every option
+# marked "required" below is present in the generated sdkconfig.
+# Reference: https://docs.espressif.com/projects/esp-idf/en/latest/esp32p4/security/secure-boot-v2.html
+
+# Secure Boot v2, RSA-3072 (RSA-PSS) scheme. Required.
+# Espressif recommends RSA on ESP32-P4 (verification ~14.8 ms vs ~61.1 ms for ECDSA-P256)
+# and marks ECDSA Secure Boot v2 as not recommended on this target.
+CONFIG_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_V2_ENABLED=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+# Images are signed after the build by espsecure; the private key never enters
+# the build directory or the generated sdkconfig.
+# CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES is not set
+# CONFIG_SECURE_BOOT_INSECURE is not set
+
+# Flash encryption, Development mode (USB re-flash stays possible). Required.
+CONFIG_SECURE_FLASH_ENC_ENABLED=y
+CONFIG_SECURE_FLASH_ENCRYPTION_KEY_SOURCE_EFUSES=y
+CONFIG_SECURE_FLASH_ENCRYPTION_AES128=y
+CONFIG_SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT=y
+CONFIG_SECURE_INSECURE_ALLOW_DL_MODE=y
+
+# Anti-rollback with an explicit secure version. Required.
+# Increase CONFIG_BOOTLOADER_APP_SECURE_VERSION only for security fixes: each
+# increase permanently burns one of 16 eFuse bits when the new app is confirmed.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK=y
+CONFIG_BOOTLOADER_APP_SECURE_VERSION=1
+CONFIG_BOOTLOADER_APP_SEC_VER_SIZE_EFUSE_FIELD=16
+
+# Layout ab-8mb-secure-v1: the larger signed+encrypting bootloader needs the
+# partition table moved from 0x8000 to 0x10000. App slot offsets are unchanged.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-secure.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x10000
+
+# Default NVS (Wi-Fi, settings, PRIM key) is encrypted with keys kept in the
+# flash-encrypted nvs_keys partition. The HMAC scheme is not used here because
+# it burns an eFuse key from firmware when the slot is empty.
+CONFIG_NVS_ENCRYPTION=y
+CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC=y
+
+# Device identity and cloud enrollment. Required.
+# The HMAC_UP key slot is a manufacturing decision; secure-build.py adds
+# CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID from --hmac-key-id and rejects -1.
+CONFIG_TEMPO_PRODUCTION_IDENTITY=y
+CONFIG_TEMPO_ENROLLMENT_URL="https://tempo-westeurope-api.politemushroom-8174e848.westeurope.azurecontainerapps.io/v1/device"

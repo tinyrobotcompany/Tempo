@@ -7,7 +7,10 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = spec_from_file_location('release', ROOT/'scripts/release.py')
 release = module_from_spec(spec); spec.loader.exec_module(release)
 TARGET = 'waveshare-p4-10.1-rev3-32mb'
-LAYOUT = 'ab-8mb-https-v1'
+LAYOUT = 'ab-8mb-secure-v1'  # Must equal secure-build.py LAYOUT and station_update.h.
+def secure_build():
+    spec = spec_from_file_location('secure_build', Path(__file__).resolve().with_name('secure-build.py'))
+    module = module_from_spec(spec); spec.loader.exec_module(module); return module
 def git(*args):
     return subprocess.check_output(['git', *args], cwd=ROOT, text=True).strip()
 def plan(destination):
@@ -38,7 +41,7 @@ def plan(destination):
         allocated_tag = 'v'+version
     release.version_tuple(version)
     body=f'# Tempo {version}\n\nSource: `{head}`\n\n'+('\n\n'.join(n[2] for n in notes) or 'Validated firmware and dependency updates.')
-    body+='\n\n## Installation and compatibility\n\nWaveshare ESP32-P4 10.1-inch, revision 3, 32 MB flash. Existing A/B 8 MB partition layout only. Initial OTA bootstrap requires USB. Credentials and settings remain on the device.\n\nAutomated tests/build/security gates passed before publication. Physical hardware acceptance is recorded separately; CI does not claim a hardware test.\n'
+    body+='\n\n## Installation and compatibility\n\nWaveshare ESP32-P4 10.1-inch, revision 3, 32 MB flash. Locked boards (Secure Boot v2 + flash encryption) with the `ab-8mb-secure-v1` A/B 8 MB layout only. Initial lockdown and bootstrap require USB. Credentials and settings remain on the device.\n\nAutomated tests/build/security gates passed before publication. Physical hardware acceptance is recorded separately; CI does not claim a hardware test.\n'
     destination.mkdir(parents=True,exist_ok=True)
     # previous is the predecessor used for release notes, never this release's own tag.
     (destination/'release.json').write_text(json.dumps({'version':version,'tag':allocated_tag,'commit':head,'previous':notes_base_tag},indent=2)+'\n')
@@ -50,6 +53,9 @@ def package(destination, image, version, key, public_key):
     blob=image.read_bytes()
     if not 1024<=len(blob)<=0x800000 or blob[0]!=0xe9:
         raise ValueError('Invalid ESP application image or OTA slot overflow')
+    # Locked boards reject unsigned images; never publish one. secure-build.py has
+    # already verified the signature with espsecure against the signing key.
+    secure_build().signature_block(blob)
     # ESP-IDF app descriptor is first segment data: magic + secure version + reserved,
     # then 32-byte version and 32-byte project name. Reject packaging another build.
     if int.from_bytes(blob[32:36],'little')!=0xabcd5432 or blob[48:80].split(b'\0')[0].decode()!=version or blob[80:112].split(b'\0')[0]!=b'weather_station':
