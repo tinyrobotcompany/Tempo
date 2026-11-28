@@ -43,7 +43,7 @@ jq -e --arg minimum "[variables('alerts')[copyIndex()].minimum]" '.template.reso
   || fail 'rule criteria do not count matching log events by name'
 # Language-neutral source: Container Apps console logs and Application Insights
 # traces (Functions), tolerating whichever table does not exist yet.
-jq -e '.template.variables.logs | test("^union isfuzzy=true ") and test("ContainerAppConsoleLogs_CL \\| project TimeGenerated, Message = Log_s") and test("AppTraces \\| project TimeGenerated, Message")' <<<"$ops" >/dev/null \
+jq -e '.template.variables.logs | test("^union isfuzzy=true \\(datatable\\(TimeGenerated:datetime, Message:string\\)\\[\\]\\), ") and test("ContainerAppConsoleLogs_CL \\| project TimeGenerated, Message = Log_s") and test("AppTraces \\| project TimeGenerated, Message")' <<<"$ops" >/dev/null \
   || fail 'alerts must read both console logs and Application Insights traces'
 # Event names are the cross-component contract: snake_case and documented.
 while IFS= read -r event; do

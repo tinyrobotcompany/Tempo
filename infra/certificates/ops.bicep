@@ -31,7 +31,8 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
 // https://learn.microsoft.com/azure/azure-monitor/reference/tables/apptraces Contract: the log message contains
 // the exact snake_case event name (see docs/DEVICE_CERTIFICATE_SERVICE.md).
 // Every rule is stateful: one email when it fires, one when it resolves.
-var logs = 'union isfuzzy=true (ContainerAppConsoleLogs_CL | project TimeGenerated, Message = Log_s), (AppTraces | project TimeGenerated, Message)'
+// The empty datatable leg keeps the query valid in a fresh workspace with neither table.
+var logs = 'union isfuzzy=true (datatable(TimeGenerated:datetime, Message:string)[]), (ContainerAppConsoleLogs_CL | project TimeGenerated, Message = Log_s), (AppTraces | project TimeGenerated, Message)'
 var alerts = [
   { name: 'worker-cycle-failed', severity: 1, events: ['worker_cycle_failed'], minimum: 1, window: 'PT30M', every: 'PT15M'
     text: 'A background worker cycle failed (store, Key Vault or DNS credentials unavailable).' }
