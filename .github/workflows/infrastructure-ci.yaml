@@ -26,3 +26,5 @@ jobs:
         run: bash .github/scripts/delegation.test.sh build-host/infrastructure/bootstrap.json
       - name: Check alert rules
         run: bash .github/scripts/infrastructure-alerts.test.sh build-host/infrastructure/template.json
+      - name: Check registry backup
+        run: bash .github/scripts/infrastructure-backup.test.sh build-host/infrastructure/template.json

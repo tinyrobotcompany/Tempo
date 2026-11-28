@@ -50,6 +50,8 @@ module data 'data.bicep' = {
     workerPrincipal: security.outputs.workerPrincipal
     factoryPrincipal: security.outputs.factoryPrincipal
     bootstrapPrincipal: security.outputs.bootstrapPrincipal
+    backupPrincipal: security.outputs.backupPrincipal
+    restorePrincipal: security.outputs.restorePrincipal
   }
 }
 module endpoints 'endpoints.bicep' = {
@@ -63,6 +65,8 @@ module endpoints 'endpoints.bicep' = {
     vaultZone: network.outputs.vaultZone
     storageId: data.outputs.storageId
     vaultId: security.outputs.vaultId
+    backupStorageId: data.outputs.backupStorageId
+    blobZone: network.outputs.blobZone
   }
 }
 module ops 'ops.bicep' = {
@@ -89,6 +93,12 @@ module compute 'compute.bicep' = if (deployCompute) {
     factoryClient: security.outputs.factoryClient
     bootstrapIdentity: security.outputs.bootstrapIdentity
     bootstrapClient: security.outputs.bootstrapClient
+    backupIdentity: security.outputs.backupIdentity
+    backupClient: security.outputs.backupClient
+    restoreIdentity: security.outputs.restoreIdentity
+    restoreClient: security.outputs.restoreClient
+    backupEndpoint: data.outputs.backupEndpoint
+    backupContainer: data.outputs.backupContainer
     tableEndpoint: data.outputs.endpoint
     vaultUrl: security.outputs.vaultUrl
     dnsDomain: dnsDomain
@@ -108,5 +118,7 @@ output containerRegistry string = data.outputs.registry
 
 output resourceGroups array = [for concern in concerns: 'rg-${project}-${location}-${concern}']
 output storageAccountName string = data.outputs.storageName
+output backupJob string = deployCompute ? '${prefix}-registry-backup' : ''
+output restoreJob string = deployCompute ? '${prefix}-registry-restore' : ''
 output apiName string = deployCompute ? '${prefix}-api' : ''
 output workerName string = deployCompute ? '${prefix}-worker' : ''

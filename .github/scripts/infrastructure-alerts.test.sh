@@ -23,7 +23,8 @@ jq -e --arg input "$input" '.parameters.alertEmail.value == $input' <<<"$ops" >/
 jq -e --arg input "$input" --arg count "[length(variables('alerts'))]" '.template.resources | (if type == "object" then [.[]] else . end) |
   (map(select(.type == "Microsoft.Insights/actionGroups")) | length == 1 and
      (.[0].properties.emailReceivers | length == 1 and .[0].emailAddress == $input)) and
-  (map(select(.type == "Microsoft.Insights/scheduledQueryRules")) | length == 1 and
+  (map(select(.type == "Microsoft.Insights/scheduledQueryRules")) | all(.properties.enabled == true and (.properties.actions.actionGroups | length == 1))) and
+  (map(select(.type == "Microsoft.Insights/scheduledQueryRules" and .copy != null)) | length == 1 and
      (.[0] | .copy.count == $count and .properties.enabled == true and .properties.autoMitigate == true and
       (.properties.actions.actionGroups | length == 1) and (.properties.scopes | length == 1)))' <<<"$ops" >/dev/null \
   || fail 'expected one email action group and one enabled, actioned rule loop'
@@ -35,10 +36,11 @@ expected='[
   {"events":["nonce_cleanup_failed"],"minimum":1,"window":"PT30M"},
   {"events":["nonce_cleanup_budget_reached"],"minimum":1,"window":"PT30M"},
   {"events":["certificate_expiring_soon","certificate_expiry_check_failed"],"minimum":1,"window":"PT2H"},
-  {"events":["ca_rate_limited"],"minimum":1,"window":"PT30M"}]'
+  {"events":["ca_rate_limited"],"minimum":1,"window":"PT30M"},
+  {"events":["registry_backup_failed"],"minimum":1,"window":"PT30M"}]'
 jq -e --argjson want "$expected" '[.template.variables.alerts[] | {events, minimum, window}] == $want' <<<"$ops" >/dev/null \
   || fail 'alert events/thresholds differ from the reviewed contract'
-jq -e --arg minimum "[variables('alerts')[copyIndex()].minimum]" '.template.resources | (if type == "object" then [.[]] else . end) | map(select(.type == "Microsoft.Insights/scheduledQueryRules"))[0].properties.criteria.allOf[0] |
+jq -e --arg minimum "[variables('alerts')[copyIndex()].minimum]" '.template.resources | (if type == "object" then [.[]] else . end) | map(select(.type == "Microsoft.Insights/scheduledQueryRules" and .copy != null))[0].properties.criteria.allOf[0] |
   .operator == "GreaterThanOrEqual" and .threshold == $minimum and (.query | test("ContainerAppConsoleLogs_CL") and test("contains_cs") and (test("has_any|\\bhas\\b") | not))' <<<"$ops" >/dev/null \
   || fail 'rule criteria do not count matching console log events'
 # Every alerted event is actually logged by the service, so names cannot drift.
