@@ -2,6 +2,7 @@
 #include "station_core.h"
 #include "station_update.h"
 #include "station_phone_types.h"
+#include "station_local_mode.h"
 #include "lvgl.h"
 #include "station_weather.h"
 #include "station_transport.h"
@@ -27,6 +28,8 @@ typedef struct {
     void (*phone_link)(station_phone_link_t *link);
     bool (*phone_take)(station_phone_command_t *command);
     void (*phone_publish)(const station_settings_t *settings, station_view_t view);
+    /* Local mode: called only after the on-screen confirmation. Returns STATION_LOCAL_* flags. */
+    unsigned (*phone_local_mode)(int request);
     void (*weather_status)(station_weather_snapshot_t *status);
     bool (*refresh_weather)(void);
     bool (*save)(const station_settings_t *settings);

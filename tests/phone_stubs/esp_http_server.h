@@ -4,7 +4,7 @@
 typedef struct {const char *uri; size_t content_len;const char *body,*auth,*type;size_t received;int code;char response[32768];size_t response_len;bool download;bool no_store,no_referrer;} httpd_req_t;
 typedef void *httpd_handle_t;
 typedef struct {const char *uri;int method;esp_err_t (*handler)(httpd_req_t *);} httpd_uri_t;
-typedef struct {int stack_size,max_open_sockets,recv_wait_timeout,send_wait_timeout,max_uri_handlers;bool lru_purge_enable;} httpd_config_t;
+typedef struct {int stack_size,max_open_sockets,recv_wait_timeout,send_wait_timeout,max_uri_handlers,server_port,ctrl_port;bool lru_purge_enable;} httpd_config_t;
 #define HTTPD_DEFAULT_CONFIG() ((httpd_config_t){0})
 #define HTTP_GET 0
 #define HTTP_POST 1

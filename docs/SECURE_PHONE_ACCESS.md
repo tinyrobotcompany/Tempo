@@ -32,8 +32,8 @@ has no production provisioning role.
    chain against public ISRG roots before committing it to NVS.
 5. The device submits address changes and renews halfway through the certificate's
    actual lifetime. Jobs survive backend restarts. Firmware retains its existing
-   certificate on network/CA/storage failures, backs off and never downgrades to
-   HTTP. HTTPS restarts after a replacement is durably installed. Pairing persists.
+   certificate on network/CA/storage failures, backs off and never switches to
+   HTTP automatically. HTTPS restarts after a replacement is durably installed. Pairing persists.
 
 Customers perform Wi-Fi setup and scan the pairing QR. They do not register a
 DNS/cloud account, manage certificates or provision private keys from a computer.
@@ -57,7 +57,47 @@ A record pointing at a private LAN address is not port forwarding. Some DNS
 resolvers/routers reject private-address responses. The QR remains hidden if the
 ESP's resolver does not return only its current IPv4 address; phones may use a
 different resolver. Test that boundary explicitly. Do not disable router security
-or bypass a browser warning to claim compatibility.
+or bypass a browser warning to claim compatibility. Customers on such networks can choose
+Local mode on the display (below).
+
+## No automatic HTTP fallback; user-chosen Local mode
+
+HTTPS is the default and the firmware never falls back to HTTP by itself. The only
+plain-HTTP path is **Local mode**, which the customer chooses by touch on the display
+(Settings > iPhone setup > "Local mode (not encrypted)", or "Can't open the page?"
+under the QR code). A confirmation screen states that traffic on the Wi-Fi is not
+encrypted. No phone, HTTP, cloud or OTA path can switch it on: there is no API route
+for it, phone payloads cannot carry it, and it is stored as its own NVS key
+(`station/local_mode`) outside the settings blob. `tests/test_local_mode_contract.py`
+and `tests/test_phone_local_mode.inc` pin this.
+
+The display offers Local mode (it never enables it) when HTTPS cannot start (no
+device identity, for example an unlocked development board), or when certificate
+renewal has been overdue for 7 days or more. Renewal starts at the certificate's
+midpoint, so for certificates of 14 days or longer this offer appears before expiry.
+
+While on, port 80 serves the same page and authenticated API as HTTPS, HTTPS keeps
+running if available, and the QR shows `http://<current IPv4>/#token=…`. The page
+shows a permanent "Local mode – not encrypted" banner and an extra warning on the
+transport-key form. Turning it off is done on the display, with confirmation; when a
+valid certificate is back the display suggests it but never does it alone. Off is
+saved first, then port 80 closes, then the pairing token is rotated because it was
+sent unencrypted. If power is lost in between, the next boot finishes the rotation
+with port 80 closed. The setting survives reboot and OTA; OTA and the trial-boot
+health check do not depend on it. Port 80 is closed on new devices.
+
+Risk accepted by the customer: anyone on the same Wi-Fi can read the pairing token
+and transport key and control the display while Local mode is on. It changes nothing
+about device identity, certificates or the cloud service.
+
+## End of life
+
+If Tiny Robot Company's certificate service ever stops, device certificates expire
+within about 90 days and the HTTPS page stops working. Every device keeps a working
+phone page forever through Local mode: once renewal has been overdue for 7 days the
+display offers it, and the customer can switch it on. Local mode needs no cloud
+service, DNS name or certificate. Weather, transport and the display keep working
+independently of the certificate service.
 
 ## Manufacturing and existing-device migration
 
@@ -83,7 +123,7 @@ have been programmed merely by building this branch.
 - Enroll a physically admitted device; deny unknown/revoked keys and replayed requests.
 - Confirm no private key crosses serial, HTTP, cloud storage, logs or build artifacts.
 - Issue a real trusted certificate; verify iOS Safari/Chrome and desktop browsers
-  connect with no warning. Port 80 must be closed.
+  connect with no warning. Port 80 must be closed while Local mode is off (the default).
 - Verify key/name/issuer/expiry rejection, bounded responses and redirect denial.
 - Test refresh, reboot, pairing revocation, location, transport-key save and controls.
 - Advance renewal eligibility; keep the previous certificate during CA/DNS outages,

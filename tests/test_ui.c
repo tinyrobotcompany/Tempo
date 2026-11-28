@@ -69,11 +69,48 @@ static unsigned forgot;static int forget_state;static bool dns_pending;
 static void phone_forget(void){forgot++;forget_state=1;}
 static char test_phone_url[160]="http://192.168.1.34/#token=0123456789abcdef0123456789abcdef";
 static void phone_link(station_phone_link_t *s){s->dns_pending=dns_pending;s->forget_state=forget_state;s->online=status.connected&&!dns_pending;snprintf(s->url,sizeof(s->url),"%s",test_phone_url);}
+/* Local mode: counts every request the display sends; flags are the phone server's reply. */
+static unsigned local_flags,local_requests[3];
+static unsigned phone_local_mode(int r){assert(r>=0&&r<3);local_requests[r]++;return local_flags;}
 static bool phone_take(station_phone_command_t *c){if(!phone_pending)return false;*c=phone_command;phone_pending=false;return true;}
 static bool contains_text(lv_obj_t *obj,const char *text){
  if(lv_obj_check_type(obj,&lv_label_class)&&strstr(lv_label_get_text(obj),text))return true;
  for(unsigned i=0;i<lv_obj_get_child_count(obj);i++)if(contains_text(lv_obj_get_child(obj,i),text))return true;
  return false;
+}
+static void phone_ticks(void){for(unsigned i=0;i<12;i++)tick();}
+static bool hidden_button(const char *t){lv_obj_t *l=find(lv_screen_active(),t);assert(l);return lv_obj_has_flag(lv_obj_get_parent(l),LV_OBJ_FLAG_HIDDEN);}
+static void local_mode_ui_tests(void)
+{
+ click("Settings");click("iPhone setup");phone_ticks();
+ /* Offered under the QR code and in Phone setup; viewing never switches it. */
+ assert(!hidden_button("Can't open the page?")&&find(lv_screen_active(),"Local mode (not encrypted)"));
+ assert(!local_requests[STATION_LOCAL_REQUEST_ON]&&!local_requests[STATION_LOCAL_REQUEST_OFF]);
+ click("Can't open the page?");assert(contains_text(lv_screen_active(),"Traffic on your Wi-Fi is NOT encrypted"));shot("phone-local-confirm");
+ assert(!local_requests[STATION_LOCAL_REQUEST_ON]);click("Cancel");assert(find(lv_screen_active(),"Forget all phones")&&!local_requests[STATION_LOCAL_REQUEST_ON]);
+ click("Local mode (not encrypted)");assert(find(lv_screen_active(),"Local mode (not encrypted)"));
+ click("Confirm: turn on Local mode");assert(local_requests[STATION_LOCAL_REQUEST_ON]==1&&find(lv_screen_active(),"Forget all phones"));
+ local_flags=STATION_LOCAL_BUSY;phone_ticks();
+ lv_obj_t *busy=find(lv_screen_active(),"Please wait…");assert(busy&&lv_obj_has_state(lv_obj_get_parent(busy),LV_STATE_DISABLED));
+ /* While on: warning caption, no help button, and the switch reads Turn off. */
+ local_flags=STATION_LOCAL_ON;phone_ticks();
+ assert(contains_text(lv_screen_active(),"LOCAL MODE – NOT ENCRYPTED")&&find(lv_screen_active(),"Turn off Local mode")&&hidden_button("Can't open the page?"));
+ assert(!lv_obj_has_flag(widget(&lv_qrcode_class,0),LV_OBJ_FLAG_HIDDEN));shot("phone-local-on");
+ /* A valid certificate again: offered, never switched off without confirmation. */
+ local_flags=STATION_LOCAL_ON|STATION_LOCAL_HTTPS_READY;phone_ticks();
+ assert(contains_text(lv_screen_active(),"Secure HTTPS works again")&&!local_requests[STATION_LOCAL_REQUEST_OFF]);
+ click("Turn off Local mode");assert(contains_text(lv_screen_active(),"pairing code is replaced")&&!contains_text(lv_screen_active(),"not available right now"));
+ click("Cancel");assert(!local_requests[STATION_LOCAL_REQUEST_OFF]);
+ local_flags=STATION_LOCAL_ON;click("Turn off Local mode");assert(contains_text(lv_screen_active(),"not available right now"));
+ click("Confirm: turn off");assert(local_requests[STATION_LOCAL_REQUEST_OFF]==1);
+ dns_pending=true;phone_ticks();assert(contains_text(lv_screen_active(),"Opening Local mode"));
+ local_flags=STATION_LOCAL_BUSY;phone_ticks();assert(contains_text(lv_screen_active(),"Replacing the pairing code"));
+ /* Automatic offers: no identity, or renewal failing for 7 days. */
+ dns_pending=false;local_flags=STATION_LOCAL_OFFER_NO_HTTPS;phone_ticks();assert(contains_text(lv_screen_active(),"Secure HTTPS is not available on this display"));
+ local_flags=STATION_LOCAL_OFFER_RENEWAL;phone_ticks();assert(contains_text(lv_screen_active(),"could not renew its certificate for 7 days"));
+ local_flags=STATION_LOCAL_FAILED;phone_ticks();assert(contains_text(lv_screen_active(),"Could not change Local mode"));
+ status.connected=false;local_flags=0;phone_ticks();assert(hidden_button("Can't open the page?"));status.connected=true;phone_ticks();
+ assert(local_requests[STATION_LOCAL_REQUEST_ON]==1&&local_requests[STATION_LOCAL_REQUEST_OFF]==1);
 }
 int main(int argc,char **argv){
  lv_init();lv_display_t*d=lv_display_create(1280,800);lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB888);
@@ -87,7 +124,7 @@ int main(int argc,char **argv){
   if(strcmp(argv[1],"--boot-day")==0)boot.tm_hour=12;
   test_now=mktime(&boot);boot_level=65;
  }
- station_ui_start(&initial,(station_ui_actions_t){.update_status=updates,.update_request=request_update,.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_forget=phone_forget,.phone_link=phone_link,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});
+ station_ui_start(&initial,(station_ui_actions_t){.update_status=updates,.update_request=request_update,.transport_search=search_station,.transport_search_status=search_status,.transport_search_select=search_select,.transport_line_stop_select=line_select,.transport_line_map=line_map,.transport_line_map_status=line_status,.map_tile_acquire=tile_acquire,.map_tile_release=tile_release,.transport_nearby_reset=nearby_reset,.transport_status=transport_snapshot,.transport_select=transport_select,.transport_refresh=transport_refresh,.phone_forget=phone_forget,.phone_link=phone_link,.phone_local_mode=phone_local_mode,.phone_take=phone_take,.weather_status=weather_status,.refresh_weather=refresh_weather,.save=save,.save_state=save_state,.brightness=dim,.scan_wifi=scan_wifi,.wifi_scan_status=wifi_scan_status,.connect_wifi=connect_wifi,.set_city=city,.network_status=snapshot});
  if(argc>1){assert(brightness_calls==1&&backlight==boot_level);tick();assert(brightness_calls==1&&backlight==boot_level);printf("PASS: %s starts directly at %u%% with no normal-brightness flash\n",argv[1],boot_level);lv_deinit();free(buf);return 0;}
  tick();
  const lv_font_t *text_fonts[]={&station_text_18,&station_text_24,&station_text_32,&station_text_48};
@@ -230,6 +267,7 @@ int main(int argc,char **argv){
  click("Forget all phones");assert(forgot==2);click("Confirm: forget all phones");assert(forgot==3);
  click("Settings");click("iPhone setup");assert(contains_text(lv_screen_active(),"Revoking access"));
  forget_state=3;for(unsigned i=0;i<12;i++)tick();assert(contains_text(lv_screen_active(),"Could not revoke"));
+ local_mode_ui_tests();
  click("Settings");click("iPhone setup");assert(!contains_text(lv_screen_active(),"Could not revoke"));
  phone_command=(station_phone_command_t){.change_settings=true,.settings=station_defaults(),.change_view=true,.view=VIEW_CLOCK};
  strcpy(phone_command.settings.user_name,"Phone user");phone_command.settings.brightness=37;phone_pending=true;tick();

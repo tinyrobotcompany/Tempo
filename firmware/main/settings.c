@@ -47,6 +47,34 @@ esp_err_t station_settings_save(const station_settings_t *settings)
     return err;
 }
 
+esp_err_t station_local_mode_load(station_local_mode_t *mode)
+{
+    *mode = STATION_LOCAL_MODE_OFF;
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("station", NVS_READONLY, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (err != ESP_OK) return err;
+    uint8_t value = 0;
+    err = nvs_get_u8(handle, "local_mode", &value);
+    nvs_close(handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (err != ESP_OK) return err;
+    /* Unknown values fail closed to off, but still force a token rotation. */
+    *mode = value == STATION_LOCAL_MODE_ON ? STATION_LOCAL_MODE_ON : value == STATION_LOCAL_MODE_OFF ? STATION_LOCAL_MODE_OFF : STATION_LOCAL_MODE_ROTATE;
+    return ESP_OK;
+}
+esp_err_t station_local_mode_save(station_local_mode_t mode)
+{
+    if (mode > STATION_LOCAL_MODE_ROTATE) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("station", NVS_READWRITE, &handle);
+    if (err != ESP_OK) return err;
+    err = nvs_set_u8(handle, "local_mode", (uint8_t)mode);
+    if (err == ESP_OK) err = nvs_commit(handle);
+    nvs_close(handle);
+    return err;
+}
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
