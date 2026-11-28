@@ -18,6 +18,10 @@ var deployCompute = !empty(imageDigest)
 param acmeEnvironment string = 'staging'
 param dnsDomain string = 'tinyrobotcompany.io'
 param deviceSuffix string = 'tempo.tinyrobotcompany.io'
+@secure()
+@minLength(6)
+@description('Alert email recipient. The deployment workflow supplies it from the ALERT_EMAIL repository secret.')
+param alertEmail string
 var prefix = '${project}-${location}'
 var unique = uniqueString(subscription().id, project, location, generation)
 var concerns = ['network', 'data', 'security', 'ops', 'compute']
@@ -64,7 +68,7 @@ module endpoints 'endpoints.bicep' = {
 module ops 'ops.bicep' = {
   name: '${prefix}-ops'
   scope: groups[3]
-  params: { location: location, prefix: prefix }
+  params: { location: location, prefix: prefix, alertEmail: alertEmail }
 }
 module compute 'compute.bicep' = if (deployCompute) {
   name: '${prefix}-compute'

@@ -38,12 +38,18 @@ jobs:
       - name: Verify deployment context
         run: bash scripts/infrastructure/check-context.sh
       - name: Preview Bicep deployment
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
         run: |
           set -euo pipefail
           mkdir -p build-host/infrastructure
+          # Recipient from the environment into the runner temp dir, never the uploaded plan.
+          : "${ALERT_EMAIL:?Create the ALERT_EMAIL repository secret before deploying}"
+          (umask 077; jq -n '{contentVersion: "1.0.0.0", parameters: {alertEmail: {value: env.ALERT_EMAIL}}}' > "$RUNNER_TEMP/alert.parameters.json")
           az bicep build --file infra/certificates/main.bicep --outfile build-host/infrastructure/template.json
           az deployment sub what-if --subscription "$AZURE_SUBSCRIPTION_ID" \
             --location "$AZURE_LOCATION" --name tempo-infrastructure \
+            --parameters @"$RUNNER_TEMP/alert.parameters.json" \
             --template-file build-host/infrastructure/template.json --result-format ResourceIdOnly --no-pretty-print -o json > build-host/infrastructure/preview.json
           jq -e ' .status == "Succeeded" and all(.changes[]; .changeType != "Delete")' build-host/infrastructure/preview.json
           jq -r '.changes[] | "\(.changeType): \(.resourceId)"' build-host/infrastructure/preview.json >> "$GITHUB_STEP_SUMMARY"
@@ -84,11 +90,17 @@ jobs:
       - name: Verify deployment context
         run: bash scripts/infrastructure/check-context.sh
       - name: Deploy approved Bicep
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
         run: |
           set -euo pipefail
           sha256sum -c build-host/infrastructure/template.sha256
+          # Recipient from the environment into the runner temp dir, never the uploaded plan.
+          : "${ALERT_EMAIL:?Create the ALERT_EMAIL repository secret before deploying}"
+          (umask 077; jq -n '{contentVersion: "1.0.0.0", parameters: {alertEmail: {value: env.ALERT_EMAIL}}}' > "$RUNNER_TEMP/alert.parameters.json")
           az deployment sub create --subscription "$AZURE_SUBSCRIPTION_ID" \
             --location "$AZURE_LOCATION" --name tempo-infrastructure \
+            --parameters @"$RUNNER_TEMP/alert.parameters.json" \
             --template-file build-host/infrastructure/template.json \
             --query properties.outputs -o json > build-host/infrastructure/outputs.json
           bash scripts/infrastructure/verify.sh build-host/infrastructure/outputs.json

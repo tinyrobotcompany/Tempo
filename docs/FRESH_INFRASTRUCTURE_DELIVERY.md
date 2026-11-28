@@ -64,6 +64,19 @@ these values. If the identity survives, its client ID stays unchanged. The subje
 is `repo:tinyrobotcompany@326183923/Tempo@1458582269:environment:tempo-infrastructure`.
 Keep the main-only environment policy, required reviewer and disabled admin bypass.
 
+## Alert recipient
+
+Before merging the first Bicep change after alerts were added, create the
+repository secret `ALERT_EMAIL` containing one email address (Settings → Secrets
+and variables → Actions → New repository secret). Preview and apply both fail
+with "Create the ALERT_EMAIL repository secret" while it is missing, so no
+deployment can silently drop alert delivery. The address is passed to Bicep as
+the secure `alertEmail` parameter through a parameters file in the runner's
+temporary directory. It is never in the repository, a command line, the
+uploaded plan or the deployment outputs. Azure sends a "you have been added to
+an action group" email to it after the first apply. To change the recipient,
+update the secret, then merge any reviewed Bicep change (or wait for the next).
+
 ## Normal deployment
 
 1. Open a PR changing Bicep. PR checks compile templates and test the delivery

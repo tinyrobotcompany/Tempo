@@ -114,9 +114,36 @@ burn eFuses during an ordinary update.
   work or issuance quota consumption. Investigate `device_job_invalid` events;
   existing certificates are retained. After the one-day error cooldown, a corrected
   signed request can create a new job.
-- Alert on `worker_cycle_failed`, repeated `device_job_failed`, near-expiry devices,
-  CA rate limits, and DNS credential rotation failures. Log events omit private
-  material. Configure alert recipients and budgets before production activation.
+- Log alert rules in `infra/certificates/ops.bicep` match service log events
+  **by name**, whatever language or host emits them. They read Container Apps
+  console output (`ContainerAppConsoleLogs_CL`) and Application Insights traces
+  (`AppTraces`, e.g. Azure Functions) in the ops workspace, and email the
+  `tempo-westeurope-alerts` action group (recipient: `ALERT_EMAIL` secret, see
+  `FRESH_INFRASTRUCTURE_DELIVERY.md`). Each rule emails once when it fires and
+  once when it resolves.
+
+  **Log-event contract.** A service emits one log line (or trace) per event,
+  and its message contains the exact snake_case name below, case-sensitive.
+  Extra `key=value` fields may follow. No private material, request bodies,
+  hostnames, addresses or provider error text may appear.
+
+  | Event | Emitted when | Alert fires when | Severity |
+  | --- | --- | --- | --- |
+  | `worker_cycle_failed` | a background worker cycle fails as a whole | any, in 30 minutes | 1 |
+  | `device_job_failed` | one certificate/DNS job attempt fails (retryable) | 3 or more in 1 hour | 2 |
+  | `device_job_invalid` | a persisted job is invalid and stopped | any, in 30 minutes | 2 |
+  | `nonce_cleanup_failed` | an expired-nonce sweep fails | any, in 30 minutes | 2 |
+  | `nonce_cleanup_budget_reached` | a sweep hits its deletion cap | any, in 30 minutes | 3 |
+  | `certificate_expiring_soon` | hourly: at least one enabled device's certificate expires within 14 days (log only a count) | any, in 2 hours | 1 |
+  | `certificate_expiry_check_failed` | the hourly expiry check itself fails | any, in 2 hours | 1 |
+  | `ca_rate_limited` | the CA returns ACME `urn:ietf:params:acme:error:rateLimited` | any, in 30 minutes | 1 |
+
+  The current Python service emits the first five. `certificate_expiring_soon`,
+  `certificate_expiry_check_failed` and `ca_rate_limited` are for the
+  replacement backend. Until it emits them, those rules cannot fire. Devices
+  renew halfway through the certificate lifetime, so an expiry alert means
+  renewal has been failing for weeks. Budgets are not configured by this
+  template.
 - Host tests exercise signatures, replay, cross-device/name denial, malformed CSR,
   address policy, provider mutation scoping, worker recovery and API bounds.
   Run `bash scripts/test-certificates.sh`. Infrastructure validation belongs to
@@ -174,10 +201,10 @@ The worker sweeps expired nonces before enumerating jobs, so a job failure canno
 skip that sweep. Azure Table Storage itself supplies no TTL deletion.
 
 `nonce_cleanup_failed` warns of failed sweeps/admission and
-`nonce_cleanup_budget_reached` identifies a capped sweep/backlog. Configure log
-alerts for either event before activation, alongside worker/job failures and
-certificate expiry. No live Azure alert rules or recipients are configured by this
-PR; rollout must verify those operational controls before customers use the service.
+`nonce_cleanup_budget_reached` identifies a capped sweep/backlog. Both have log
+alert rules (see "Operations and validation"). After the first deployment with
+alerts, confirm the action group's confirmation email arrived before customers
+use the service.
 
 Registry identity fields are intentionally read from DeviceRegistry on every
 request, not copied into writable state. Certificate and DNS jobs have distinct
