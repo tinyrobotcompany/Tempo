@@ -16,20 +16,20 @@ the chip: once burned they can never be un-burned.
 | Tool | What it does | Touches the board? |
 | --- | --- | --- |
 | `scripts/factory-backup.sh` | Copies the whole flash to a file and proves the copy is complete. Can restore it. | Only with `--execute`, and only after you type the confirmation for each step. |
-| `scripts/factory-lockdown.py` | Checks the build, then burns the eFuses in Espressif's order and flashes the signed firmware. Also reads the identity key from a boot log. | Only with `--execute`. Each step needs its own typed phrase. espefuse then asks you to type `BURN` again. |
+| `scripts/factory-lockdown.mjs` (Node.js 22+) | Checks the build, then burns the eFuses in Espressif's order and flashes the signed firmware. Also reads the identity key from a boot log. | Only with `--execute`. Each step needs its own typed phrase. espefuse then asks you to type `BURN` again. |
 | `scripts/factory-register.sh` | Adds the PUBLIC identity key to the cloud `DeviceRegistry`. | No. It talks to Azure only. |
 
 Without `--execute`, both device tools only print what they would do (dry run).
 No private key is ever printed, sent over serial or saved. The flash-encryption
-and HMAC keys are made inside `factory-lockdown.py` and passed to espefuse
-through a pipe. They never exist as files, so there is nothing to delete.
+and HMAC keys are made inside `factory-lockdown.mjs` and passed to espefuse
+through an inherited file descriptor (`/dev/fd/3`). They never exist as files, so there is nothing to delete.
 
 ## Before you start
 
 You need:
 
 - The board, its USB cable and the power supply from the kit.
-- A Mac with the pinned ESP-IDF 6.1.1 installed.
+- A Mac with the pinned ESP-IDF 6.1.1 and Node.js 22 or newer installed.
 - The **signed** production build. The firmware owner makes it with
   `python3 scripts/secure-build.py build --hmac-key-id 5 --signing-key /outside/the/repo/release.pem`
   (see `docs/RELEASING.md`). This writes the compiled build to
@@ -45,7 +45,7 @@ Its offsets are: bootloader at `0x2000` (the signed bootloader is about `0xD000`
 bytes), partition table at `0x10000`, NVS at `0x11000`, otadata at `0x17000`,
 encrypted `nvs_keys` at `0x1A000`, and app at `0x20000`.
 
-`factory-lockdown.py` checks the following and refuses to start if any is wrong:
+`factory-lockdown.mjs` checks the following and refuses to start if any is wrong:
 
 1. Secure Boot v2 with RSA-3072 keys (`SECURE_SIGNED_APPS_RSA_SCHEME`). Espressif
    says ECDSA Secure Boot "is not functional for certain input vectors" on the ESP32-P4.
@@ -96,7 +96,7 @@ the key on the chip at first boot ("If no key is found, a key is generated
 internally"). Tempo's firmware deliberately never burns eFuses
 (`firmware/main/identity_store.c`), so using that scheme would mean changing a
 reviewed security rule. This runbook keeps the firmware rule. It makes a fresh
-random key for each unit and passes it to espefuse through a pipe, so the key is
+random key for each unit and passes it to espefuse through an inherited file descriptor, so the key is
 never on disk. espefuse read-protects `HMAC_UP` keys by default, so software
 cannot read the key back. Only the HMAC hardware can use it.
 
@@ -110,11 +110,11 @@ against a pretend chip.
 You should see the ESP-IDF environment message. If you see "No such file", install ESP-IDF 6.1.1 first.
 
 0.2. Create a blank pretend P4:
-`python scripts/factory-lockdown.py --virtual-efuse build-host/factory-practice/efuse.bin --init-virtual`
+`node scripts/factory-lockdown.mjs --virtual-efuse build-host/factory-practice/efuse.bin --init-virtual`
 You should see `Created a blank virtual esp32p4 v3.0 eFuse file`.
 
 0.3. Run the full sequence on it:
-`python scripts/factory-lockdown.py --virtual-efuse build-host/factory-practice/efuse.bin --record-dir build-host/factory-practice --signing-public-key RELEASE-public.pem --backup-signing-public-key BACKUP-public.pem --execute`
+`node scripts/factory-lockdown.mjs --virtual-efuse build-host/factory-practice/efuse.bin --record-dir build-host/factory-practice --signing-public-key RELEASE-public.pem --backup-signing-public-key BACKUP-public.pem --execute`
 Type each phrase it asks for. Esptool steps are skipped. At the end you should see `eFuses match the plan.`
 If anything else appears, stop and report it. Delete `build-host/factory-practice` afterwards.
 
@@ -184,13 +184,13 @@ Secure Boot's final step (write-protecting `RD_DIS`) stops any further key from
 being read-protected, so all secret keys must be burned before it.
 
 3.1. Dry run with your inputs:
-`python scripts/factory-lockdown.py --signing-public-key RELEASE-public.pem --backup-signing-public-key BACKUP-public.pem --record-dir UNIT`
+`node scripts/factory-lockdown.mjs --signing-public-key RELEASE-public.pem --backup-signing-public-key BACKUP-public.pem --record-dir UNIT`
 You should see `Host checks passed` and 12 numbered steps, nine marked `IRREVERSIBLE`.
 (A build that uses Secure Download Mode adds a last 13th step, which blocks espefuse afterwards.)
 If you see `REFUSED`, the message names what is wrong with the build or key. Do not continue.
 
 3.2. Start the real run:
-`python scripts/factory-lockdown.py --signing-public-key RELEASE-public.pem --backup-signing-public-key BACKUP-public.pem --record-dir UNIT --port PORT --execute`
+`node scripts/factory-lockdown.mjs --signing-public-key RELEASE-public.pem --backup-signing-public-key BACKUP-public.pem --record-dir UNIT --port PORT --execute`
 It prints the two keys' fingerprints and asks you to type
 `I HAVE VERIFIED OFFLINE BACKUPS OF <release> AND <backup>`. Type it only if step 2 is done.
 It then reads the eFuses. It stops if this board is not rev 3 or newer, or if
@@ -291,7 +291,7 @@ After this, firmware with a lower secure version will never boot on this unit.
 
 ## 5. Verify, then read the public key
 
-5.1. Save the boot log: `python scripts/factory-lockdown.py --capture-log UNIT/boot.log --port PORT`.
+5.1. Save the boot log: `node scripts/factory-lockdown.mjs --capture-log UNIT/boot.log --port PORT`.
 Type `yes`, then press reset within a few seconds. It records 40 seconds.
 
 5.2. Check the log: `grep -E "secure boot|flash encryption|Flash encryption mode" UNIT/boot.log`.
@@ -303,7 +303,7 @@ shows `secure boot check fail` or `invalid header`, go to section 7.
 It should show Secure Boot enabled and flash encryption enabled. Afterwards,
 reset the board again.
 
-5.4. Extract the identity: `python scripts/factory-lockdown.py --extract-identity UNIT/boot.log --out UNIT`.
+5.4. Extract the identity: `node scripts/factory-lockdown.mjs --extract-identity UNIT/boot.log --out UNIT`.
 You should see `Device ID`, `Hostname` (`d-<id>.tempo.tinyrobotcompany.io`), and
 one long line of base64 text. It saves `UNIT/identity-public.pem`. This is a
 public key and is safe to share. If it says it found 0 identities, the firmware

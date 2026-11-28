@@ -7,6 +7,11 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/repo/scripts" "$tmp/bin"
 cp "$root/scripts/factory-backup.sh" "$tmp/repo/scripts/"
+# Repository tooling is POSIX shell or Node.js only (PROTOCOL.md): no Python here.
+for file in "$root"/scripts/factory-* "$root"/.github/scripts/factory-*; do
+  if grep -q -E '(^|[^.-])python3?( |$)' "$file"; then echo "Python used in ${file#$root/}" >&2; exit 1; fi
+done
+[[ ! -e "$root/scripts/factory-lockdown.py" ]] || { echo 'factory-lockdown.py must be the Node.js version' >&2; exit 1; }
 cat > "$tmp/bin/esptool" <<'MOCK'
 #!/usr/bin/env bash
 echo "esptool $*" >> "$CALLS"
@@ -37,12 +42,12 @@ grep -q 'read-flash 0x0 0x2000000' <<<"$out"
 : > "$CALLS"
 yes4 | bash "$run" --port /dev/cu.mock --unit p4-proto-1 --execute >/dev/null
 dir=$(echo build-host/factory-units/p4-proto-1-*)
-python3 - "$dir/manifest.json" <<'PY'
-import json, sys
-m = json.load(open(sys.argv[1]))
-assert m['verified'] is True and m['usb_mode'] == 'USB-Serial/JTAG' and m['flash_size'] == '32MB', m
-assert m['mac'] == '30:ed:a0:00:00:01' and len(m['sha256']) == 64, m
-PY
+node - "$dir/manifest.json" <<'JS'
+const assert = require('node:assert');
+const m = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
+assert(m.verified === true && m.usb_mode === 'USB-Serial/JTAG' && m.flash_size === '32MB', JSON.stringify(m));
+assert(m.mac === '30:ed:a0:00:00:01' && m.sha256.length === 64, JSON.stringify(m));
+JS
 [[ $(stat -f %Lp "$dir") == 700 && $(stat -f %Lp "$dir/flash.bin") == 600 ]] || { echo 'Backup is not owner-only' >&2; exit 1; }
 grep -q 'verify-flash 0x0' "$CALLS"
 

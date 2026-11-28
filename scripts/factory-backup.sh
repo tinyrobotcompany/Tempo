@@ -39,19 +39,18 @@ sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 if [[ -n "$restore" ]]; then
   manifest="$restore/manifest.json"
   [[ -f "$manifest" && -f "$restore/flash.bin" ]] || { echo "No backup in $restore" >&2; exit 2; }
-  want=$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m["sha256"] if m.get("verified") is True else "")' "$manifest")
+  want=$(node -e 'const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log(m.verified === true ? m.sha256 : "")' "$manifest")
   [[ -n "$want" && "$(sha "$restore/flash.bin")" == "$want" ]] || { echo 'Backup is unverified or changed since it was taken. Not restoring.' >&2; exit 2; }
   ((execute)) || echo 'DRY RUN: nothing will be sent to the board.'
   check="$restore/efuse-before-restore.json"
   step yes 'Read the eFuses to check this board can still take a plaintext image' -- \
     espefuse --chip "$chip" --port "$port" summary --format json --file "$check"
   if ((execute)); then
-    python3 - "$check" <<'PY' || { echo 'Flash encryption or Secure Boot is on: this plaintext backup can no longer boot. See "Failed-unit recovery".' >&2; exit 4; }
-import json, sys
-s = json.load(open(sys.argv[1]))
-on = int(s['SPI_BOOT_CRYPT_CNT']['raw_value'], 16) or int(s['SECURE_BOOT_EN']['raw_value'], 16)
-sys.exit(1 if on else 0)
-PY
+    node - "$check" <<'JS' || { echo 'Flash encryption or Secure Boot is on: this plaintext backup can no longer boot. See "Failed-unit recovery".' >&2; exit 4; }
+const s = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'));
+const on = BigInt(s.SPI_BOOT_CRYPT_CNT.raw_value) || BigInt(s.SECURE_BOOT_EN.raw_value);
+process.exit(on ? 1 : 0);
+JS
   fi
   step 'RESTORE FLASH' 'Write the whole backup back to the board (replaces everything on it)' -- \
     esptool --chip "$chip" --port "$port" write-flash 0x0 "$restore/flash.bin"
@@ -77,27 +76,20 @@ step yes "Read the whole $size_name flash to a file (read-only, takes several mi
 step yes 'Compare the file against the board to prove the backup is complete (read-only)' -- \
   esptool --chip "$chip" --port "$port" verify-flash 0x0 "$dir/flash.bin"
 ((execute)) || exit 0
-python3 - "$dir" "$unit" "$chip" "$port" "$size" "$size_name" "$(sha "$dir/flash.bin")" <<'PY'
-import json, re, sys, time
-from pathlib import Path
-folder, unit, chip, port, size, size_name, digest = sys.argv[1:]
-info = Path(folder, 'flash-id.txt').read_text()
-def field(pattern):
-    found = re.search(pattern, info, re.M)
-    return found.group(1).strip() if found else None
-problems = []
-if Path(folder, 'flash.bin').stat().st_size != int(size, 16):
-    problems.append('backup file has the wrong size')
-if field(r'^Detected flash size:\s*(\S+)') != size_name:
-    problems.append('flash is not ' + size_name)
-if 'ESP32-P4' not in (field(r'^Chip type:\s*(.+)$') or ''):
-    problems.append('chip is not an ESP32-P4')
-manifest = dict(unit=unit, chip=chip, port=port, created=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-                chip_description=field(r'^Chip type:\s*(.+)$'), mac=field(r'^MAC:\s*(\S+)'),
-                usb_mode=field(r'^USB mode:\s*(.+)$') or 'UART', flash_size=size_name,
-                sha256=digest, verified=not problems)
-Path(folder, 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-if problems:
-    sys.exit('Backup NOT verified: ' + '; '.join(problems))
-print(f'Backup verified: {folder} (sha256 {digest[:16]}..., USB mode {manifest["usb_mode"]}).')
-PY
+node - "$dir" "$unit" "$chip" "$port" "$size" "$size_name" "$(sha "$dir/flash.bin")" <<'JS'
+const fs = require('node:fs');
+const path = require('node:path');
+const [folder, unit, chip, port, size, sizeName, digest] = process.argv.slice(2);
+const info = fs.readFileSync(path.join(folder, 'flash-id.txt'), 'utf8');
+const field = pattern => { const found = info.match(pattern); return found ? found[1].trim() : null; };
+const problems = [];
+if (fs.statSync(path.join(folder, 'flash.bin')).size !== parseInt(size, 16)) problems.push('backup file has the wrong size');
+if (field(/^Detected flash size:\s*(\S+)/m) !== sizeName) problems.push('flash is not ' + sizeName);
+if (!(field(/^Chip type:\s*(.+)$/m) ?? '').includes('ESP32-P4')) problems.push('chip is not an ESP32-P4');
+const manifest = { unit, chip, port, created: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
+  chip_description: field(/^Chip type:\s*(.+)$/m), mac: field(/^MAC:\s*(\S+)/m),
+  usb_mode: field(/^USB mode:\s*(.+)$/m) ?? 'UART', flash_size: sizeName, sha256: digest, verified: problems.length === 0 };
+fs.writeFileSync(path.join(folder, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+if (problems.length) { console.error('Backup NOT verified: ' + problems.join('; ')); process.exit(1); }
+console.log(`Backup verified: ${folder} (sha256 ${digest.slice(0, 16)}..., USB mode ${manifest.usb_mode}).`);
+JS

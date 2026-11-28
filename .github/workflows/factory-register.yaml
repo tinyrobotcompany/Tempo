@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       public_key_base64:
-        description: Base64 public key printed by factory-lockdown.py --extract-identity
+        description: Base64 public key printed by factory-lockdown.mjs --extract-identity
         required: true
         type: string
       serial:

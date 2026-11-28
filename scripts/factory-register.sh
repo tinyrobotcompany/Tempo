@@ -37,7 +37,7 @@ if [[ -n "$key_file" ]]; then
   pem=$(cat "$key_file")
 else
   b64=${MANUFACTURING_PUBLIC_KEY_B64:-}
-  [[ "$b64" =~ ^[A-Za-z0-9+/=]+$ && ${#b64} -ge 100 && ${#b64} -le 1400 ]] || { echo 'Set MANUFACTURING_PUBLIC_KEY_B64 to the base64 PEM printed by factory-lockdown.py' >&2; exit 1; }
+  [[ "$b64" =~ ^[A-Za-z0-9+/=]+$ && ${#b64} -ge 100 && ${#b64} -le 1400 ]] || { echo 'Set MANUFACTURING_PUBLIC_KEY_B64 to the base64 PEM printed by factory-lockdown.mjs' >&2; exit 1; }
   pem=$(base64 -d <<<"$b64" 2>/dev/null) || { echo 'Public key is not valid base64' >&2; exit 1; }
 fi
 # Only a single P-256 PUBLIC key is accepted; anything private is refused unread.
