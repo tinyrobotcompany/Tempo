@@ -56,6 +56,9 @@ jobs:
           persist-credentials: false
       - name: Recheck release commit after approval
         run: bash .github/scripts/ota-release-head.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
       # Check out ESP-IDF before planning so no later checkout runs after release metadata exists.
       - name: Checkout pinned ESP-IDF
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -71,6 +74,7 @@ jobs:
           git fetch origin '+refs/tags/*:refs/tags/*'
           version=$(python3 scripts/ota-release.py plan)
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # Production profile: Secure Boot v2 + flash encryption (firmware/sdkconfig.production).
       - name: Build credential-free release firmware
         env:
           TEMPO_RELEASE_VERSION: ${{ steps.plan.outputs.version }}
@@ -82,10 +86,24 @@ jobs:
           .artifacts/esp-idf/install.sh esp32p4
           source .artifacts/esp-idf/export.sh
           python3 scripts/check-idf-security.py "$IDF_PATH"
-          idf.py -C firmware build
+          node scripts/secure-build.mjs compile --build-dir firmware/build
           python3 scripts/check-transport-memory.py
           mkdir -p build-host/release
           cp firmware/dependencies.lock build-host/release/dependencies.lock
+      # Secure Boot signature first: espsecure verifies it and proves that tampered and
+      # wrong-key images are rejected. Only then is the OTA manifest signed.
+      - name: Secure Boot sign and verify application
+        env:
+          SECURE_BOOT_SIGNING_KEY: ${{ secrets.SECURE_BOOT_SIGNING_KEY }}
+        run: |
+          set +x
+          test -n "$SECURE_BOOT_SIGNING_KEY"
+          source .artifacts/esp-idf/export.sh
+          umask 077
+          signing_key=$(mktemp)
+          trap 'rm -f "$signing_key"' EXIT
+          printf '%s\n' "$SECURE_BOOT_SIGNING_KEY" > "$signing_key"
+          node scripts/secure-build.mjs sign --signing-key "$signing_key" --build-dir firmware/build --output build-host/secure-release
       - name: Sign and verify release manifest
         env:
           OTA_SIGNING_PRIVATE_KEY: ${{ secrets.OTA_SIGNING_PRIVATE_KEY }}
@@ -97,7 +115,7 @@ jobs:
           signing_key=$(mktemp)
           trap 'rm -f "$signing_key"' EXIT
           printf '%s\n' "$OTA_SIGNING_PRIVATE_KEY" > "$signing_key"
-          python3 scripts/ota-release.py package --image firmware/build/weather_station.bin --version "$RELEASE_VERSION" --key "$signing_key"
+          python3 scripts/ota-release.py package --image build-host/secure-release/weather_station.bin --version "$RELEASE_VERSION" --key "$signing_key"
       - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}

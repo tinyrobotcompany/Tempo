@@ -1,0 +1,45 @@
+# Host-test espsecure only (macOS x86_64/arm64, CPython 3.13/3.14). Release builds use the
+# pinned ESP-IDF environment. Regenerate deliberately; never relax --require-hashes.
+cffi==2.1.1 \
+    --hash=sha256:9d2055050ea716bd38b7f7f1579c275386646b4894c155a3e2f3cd62ed41b7c6 \
+    --hash=sha256:19ee6127ee34de7d83ce3d371ebc5ed91addbdcc39f9ab15ce4eb35a4e534971 \
+    --hash=sha256:d28630f5854ab07ab1fd4aba756de52326c82e6be15d414b12793f1975048b54 \
+    --hash=sha256:661c298b4821edebead0c91edd2b00374d67ad7c5a1f7a91d4442633b79d6a72
+click==8.5.1 \
+    --hash=sha256:8bb5376d2006950386f8c6427613334a2acadc5f559cb80e638d00b4df957e37
+cryptography==48.0.1 \
+    --hash=sha256:3e4a1a3232eef2e6c732827d5722db29a0cc8b27af2a4d865b094cf954be9ca1
+esp-pylib==1.2.1 \
+    --hash=sha256:fb05017676200e38dc182013c994e62d9088d377081c88562e14a2f5aaae6456
+esptool==5.7.0 \
+    --hash=sha256:cc5e66bfa7e0e01ac814c12618abf56e2d793d92827820f65755c6c128034da5
+intelhex==2.3.0 \
+    --hash=sha256:87cc5225657524ec6361354be928adfd56bcf2a3dcc646c40f8f094c39c07db4
+markdown-it-py==4.3.0 \
+    --hash=sha256:7aa1511a46c39138de78d9eba92ce47e63124d8003fc98b3a351909e04239efa
+mdurl==0.1.2 \
+    --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8
+pycparser==3.12 \
+    --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e
+pygments==2.21.0 \
+    --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9
+pyserial==3.5 \
+    --hash=sha256:c4451db6ba391ca6ca299fb3ec7bae67a5c55dde170964c7a14ceefec02f2cf0
+pyyaml==6.0.4 \
+    --hash=sha256:61eef2f08e977b725f37a8d1663f5a222c6f09207ac0794030d5fca062e7c96e \
+    --hash=sha256:9d4211f080920629a90c9e31c51e326fb70cfae38f18d4128b9913c23642bace \
+    --hash=sha256:4a329472db6c8858ebd94f2214a54c8bff8f035a6cc7af1ab39cc1b33a5f0e56 \
+    --hash=sha256:7335809813ec838d9cd334b1744cda33deb141c9ef23a9c0df371c37980d3851
+reedsolo==1.7.0 \
+    --hash=sha256:2b6a3e402a1ee3e1eea3f932f81e6c0b7bbc615588074dca1dbbcdeb055002bd
+rich==15.0.0 \
+    --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb
+rich-click==1.9.9 \
+    --hash=sha256:365e7a9d0adb42e41ea832a0a12e02c44c079a26536dee688125eb9814f97274
+setuptools==80.9.0 \
+    --hash=sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922
+websockets==17.4 \
+    --hash=sha256:156221ad7638b5abccefd6f798916bf3f8ffd6ac51480eb4ba5b05df914ccbf3 \
+    --hash=sha256:74e46409666c358b93fce0d8c6f4cb107d8dd7cba1302a38d49adf6fa8193c7e \
+    --hash=sha256:2fd562372d4afaf18d1c7f1c68e39bd32818bb16d5f57f778a4a4ed88eedcaae \
+    --hash=sha256:a0457561e8a87a6a3b509e21c35084d7d207ced262139de3f738e9676a476bbd

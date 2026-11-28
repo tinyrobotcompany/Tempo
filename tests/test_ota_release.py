@@ -1,7 +1,13 @@
-import importlib.util, json, os, subprocess, tempfile, unittest
+import hashlib, importlib.util, json, os, subprocess, tempfile, unittest, zlib
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('ota_release',ROOT/'scripts/ota-release.py');ota=importlib.util.module_from_spec(spec);spec.loader.exec_module(ota)
+def signed(image):
+ # Shape of an RSA Secure Boot v2 signature sector (espsecure output); the real
+ # espsecure round trip is covered by .github/scripts/secure-build.test.mjs.
+ image=bytes(image)+b'\xff'*(-len(image)%4096)
+ block=b'\xe7\x02\x00\x00'+hashlib.sha256(image).digest();block+=bytes(1196-len(block))
+ return image+block+zlib.crc32(block).to_bytes(4,'little')+b'\xff'*(4096-1200)
 class ReleaseTests(unittest.TestCase):
  def test_workflow_fails_closed_without_runtime(self):
   workflow=(ROOT/'.github/workflows/ota-release.yml').read_text()
@@ -9,7 +15,7 @@ class ReleaseTests(unittest.TestCase):
   self.assertIn('test -f firmware/main/credentials.c',build)
   self.assertIn('test -f firmware/main/update_service.c',build)
   self.assertIn('test ! -f scripts/generate_transport_config.py',build)
-  self.assertLess(build.index('test ! -f scripts/generate_transport_config.py'),build.index('idf.py -C firmware build'))
+  self.assertLess(build.index('test ! -f scripts/generate_transport_config.py'),build.index('scripts/secure-build.mjs compile'))
   self.assertNotIn('OTA_SIGNING_PRIVATE_KEY',build)
   self.assertIn('needs: [validation, security, prerequisites]',workflow)
   copy_commands='\n'.join(line.strip() for line in build.splitlines() if line.strip().startswith(('mkdir -p build-host/release','cp firmware/dependencies.lock')))
@@ -91,15 +97,16 @@ class ReleaseTests(unittest.TestCase):
    root=Path(folder);key=root/'private.pem';public=root/'public.pem';image=root/'app.bin';out=root/'release'
    subprocess.run(['openssl','genpkey','-algorithm','EC','-pkeyopt','ec_paramgen_curve:P-256','-out',str(key)],check=True,capture_output=True)
    subprocess.run(['openssl','pkey','-in',str(key),'-pubout','-out',str(public)],check=True,capture_output=True)
-   binary=bytearray(1024);binary[0]=0xe9;binary[32:36]=(0xabcd5432).to_bytes(4,'little');binary[48:53]=b'1.0.0';binary[80:95]=b'weather_station';image.write_bytes(binary)
+   binary=bytearray(1024);binary[0]=0xe9;binary[32:36]=(0xabcd5432).to_bytes(4,'little');binary[48:53]=b'1.0.0';binary[80:95]=b'weather_station';image.write_bytes(signed(binary))
    ota.package(out,image,'1.0.0',key,public)
-   manifest=json.loads((out/'tempo-manifest.json').read_text());self.assertEqual(manifest['size'],1024);self.assertEqual(manifest['version'],'1.0.0')
+   manifest=json.loads((out/'tempo-manifest.json').read_text());self.assertEqual(manifest['size'],8192);self.assertEqual(manifest['version'],'1.0.0')
+   self.assertEqual(manifest['layout'],'ab-8mb-secure-v1')
    with self.assertRaises(ValueError):ota.package(out,image,'1.0.1',key,public)
    (out/'tempo-manifest.json').write_text('{}')
    checked=subprocess.run(['openssl','dgst','-sha256','-verify',str(public),'-signature',str(out/'tempo-manifest.sig'),str(out/'tempo-manifest.json')],capture_output=True)
    self.assertNotEqual(checked.returncode,0)
-   binary.extend(b'-----BEGIN PRIVATE KEY-----\n'+b'A'*80+b'\n-----END PRIVATE KEY-----');image.write_bytes(binary)
-   with self.assertRaises(ValueError):ota.package(out,image,'1.0.0',key,public)
+   binary.extend(b'-----BEGIN PRIVATE KEY-----\n'+b'A'*80+b'\n-----END PRIVATE KEY-----');image.write_bytes(signed(binary))
+   with self.assertRaisesRegex(ValueError,'Private key'):ota.package(out,image,'1.0.0',key,public)
    image.write_bytes(b'bad')
    with self.assertRaises(ValueError):ota.package(out,image,'1.0.0',key,public)
  def test_second_release_retry_preserves_metadata_and_notes_without_existing_output(self):
