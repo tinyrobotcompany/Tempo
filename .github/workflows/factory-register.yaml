@@ -1,0 +1,52 @@
+name: Factory device registration
+# Manual, approval-gated, main only. Admits ONE device's PUBLIC identity key to
+# DeviceRegistry through the private factory job. Inputs are public values; never
+# paste anything that says PRIVATE. See docs/FACTORY_RUNBOOK.md.
+on:
+  workflow_dispatch:
+    inputs:
+      public_key_base64:
+        description: Base64 public key printed by factory-lockdown.py --extract-identity
+        required: true
+        type: string
+      serial:
+        description: Manufacturing serial (1-64 letters, digits, . _ -)
+        required: true
+        type: string
+      device_id:
+        description: Device ID printed with the key (32 hex characters)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: tempo-infrastructure-live
+  cancel-in-progress: false
+jobs:
+  register:
+    if: github.ref == 'refs/heads/main' && github.repository == 'tinyrobotcompany/Tempo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: tempo-infrastructure
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Register one device
+        env:
+          MANUFACTURING_PUBLIC_KEY_B64: ${{ inputs.public_key_base64 }}
+          MANUFACTURING_SERIAL: ${{ inputs.serial }}
+          EXPECTED_DEVICE_ID: ${{ inputs.device_id }}
+        run: bash scripts/factory-register.sh
