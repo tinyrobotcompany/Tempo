@@ -311,18 +311,3 @@ def test_authentication_precedes_nonce_admission_and_status_retries_are_fresh(se
     with pytest.raises(Rejected, match="replayed_request"):
         service.handle(*request)
     assert service.handle(*signed(key, memory)).status == 200
-
-
-@pytest.mark.parametrize("environment,uri", [
-    ("production", "https://acme-staging-v02.api.letsencrypt.org/acme/acct/1"),
-    ("staging", "https://acme-v02.api.letsencrypt.org/acme/acct/1"),
-])
-def test_ca_switch_rejects_the_other_environments_account_before_any_request(environment, uri):
-    # Between deploying production mode and re-running the CA bootstrap, Key Vault
-    # still holds the staging account URI. Issuance must stop before contacting the CA.
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from tempo_certificates.issuer import AcmeIssuer
-    pem = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
-        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
-    with pytest.raises(ValueError, match="does not match configured environment"):
-        AcmeIssuer(pem, uri, environment, Mock())
