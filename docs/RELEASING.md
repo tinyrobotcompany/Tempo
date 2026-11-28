@@ -31,7 +31,9 @@ Locked boards run Secure Boot v2 and flash encryption in **Development** mode. T
 
 Secrets, both in the main-only **production-ota** environment:
 
-- `SECURE_BOOT_SIGNING_KEY`: the RSA-3072 Secure Boot private key in PEM form. It is written to a runner temporary file only for the signing step and deleted on exit. Losing it means locked boards can never be updated again; keep an offline backup.
+- `SECURE_BOOT_SIGNING_KEY`: the RSA-3072 Secure Boot private key in PEM form. It is written to a runner temporary file only for the signing step and deleted on exit. Releases are signed with this release key only.
+
+Backup Secure Boot key: a second, separate RSA-3072 key whose public-key digest the factory lockdown burns into eFuse `SECURE_BOOT_DIGEST1` (PR #59). It is kept offline and stored separately from the release key (never in GitHub, this repository or `build-host/`), never signs a normal release, and is used only to recover locked boards if the release key is lost.
 - `OTA_SIGNING_PRIVATE_KEY`: unchanged.
 
 Pull requests build and sign the production profile in the pinned ESP-IDF 6.1.1 firmware CI job with a disposable key generated for that run, so the release path is exercised before merge.
