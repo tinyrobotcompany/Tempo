@@ -42,6 +42,9 @@ CONFIG_PARTITION_TABLE_OFFSET=0x10000
 CONFIG_NVS_ENCRYPTION=y
 CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC=y
 
+# Local mode runs a second web server on port 80; keep enough sockets.
+CONFIG_LWIP_MAX_SOCKETS=16
+
 # Device identity and cloud enrollment. Required.
 # The HMAC_UP key slot is a manufacturing decision; secure-build.py adds
 # CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID from --hmac-key-id and rejects -1.

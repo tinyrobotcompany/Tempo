@@ -102,6 +102,9 @@ class ProductionProfileTests(unittest.TestCase):
                      '# CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES is not set', 'CONFIG_BOOTLOADER_APP_SECURE_VERSION=1',
                      'CONFIG_TEMPO_ENROLLMENT_URL="https://tempo-westeurope-api.politemushroom-8174e848.westeurope.azurecontainerapps.io/v1/device"'):
             self.assertIn(line + '\n', profile)
+        # Local mode's second web server needs the extra sockets in both profiles.
+        for name in ('sdkconfig.defaults', 'sdkconfig.production'):
+            self.assertEqual(sb.read_config(ROOT / 'firmware' / name)['CONFIG_LWIP_MAX_SOCKETS'], '16')
         self.assertFalse(any(line.startswith('CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID') for line in profile.splitlines()))
         self.assertNotIn('SECURE_BOOT_SIGNING_KEY', profile)
         for name in sb.PROFILE:
