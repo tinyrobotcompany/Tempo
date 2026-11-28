@@ -58,5 +58,5 @@ awk '/ALERT_EMAIL:\?Create/ { emit=1 } emit { print } /alert\.parameters\.json"\
 if RUNNER_TEMP="$work" ALERT_EMAIL='' bash -eu "$work/parameters.sh" 2>/dev/null; then fail 'empty ALERT_EMAIL accepted'; fi
 RUNNER_TEMP="$work" ALERT_EMAIL='ops@example.invalid' bash -eu "$work/parameters.sh"
 jq -e '.parameters.alertEmail.value == "ops@example.invalid"' "$work/alert.parameters.json" >/dev/null || fail 'parameter file content'
-[[ $(stat -f %Lp "$work/alert.parameters.json" 2>/dev/null || stat -c %a "$work/alert.parameters.json") == 600 ]] || fail 'parameter file is not private'
+[[ $(stat -c %a "$work/alert.parameters.json" 2>/dev/null || stat -f %Lp "$work/alert.parameters.json") == 600 ]] || fail 'parameter file is not private'
 echo 'PASS: alert rules cover service events with reviewed thresholds; recipient is a required secret input'
