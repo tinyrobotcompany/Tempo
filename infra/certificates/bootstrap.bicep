@@ -17,6 +17,8 @@ var delegableRoles = {
     '76199698-9eea-4c19-bc75-cec21354c6b6' // Storage Table Data Reader
     '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3' // Storage Table Data Contributor
     '7f951dda-4ed3-4680-a7ca-43fe172d538d' // AcrPull
+    'ba92f5b4-2d11-453d-a403-e96b0029c9fe' // Storage Blob Data Contributor (backup container, delete denied)
+    '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1' // Storage Blob Data Reader (restore job)
   ]
   security: [
     '4633458b-17de-408a-b874-0445c86b69e6' // Key Vault Secrets User

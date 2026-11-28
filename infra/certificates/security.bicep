@@ -6,7 +6,7 @@ param unique string
 @maxLength(8)
 param project string
 param prefix string
-resource identities 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = [for role in ['api', 'worker', 'factory', 'bootstrap']: {
+resource identities 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = [for role in ['api', 'worker', 'factory', 'bootstrap', 'backup', 'restore']: {
   name: '${prefix}-${role}'
   location: location
 }]
@@ -56,3 +56,9 @@ resource bootstrapSecrets 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 output bootstrapIdentity string = identities[3].id
 output bootstrapClient string = identities[3].properties.clientId
 output bootstrapPrincipal string = identities[3].properties.principalId
+output backupIdentity string = identities[4].id
+output backupClient string = identities[4].properties.clientId
+output backupPrincipal string = identities[4].properties.principalId
+output restoreIdentity string = identities[5].id
+output restoreClient string = identities[5].properties.clientId
+output restorePrincipal string = identities[5].properties.principalId

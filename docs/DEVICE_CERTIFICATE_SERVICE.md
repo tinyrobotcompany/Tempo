@@ -101,9 +101,13 @@ burn eFuses during an ordinary update.
 
 ## Operations and validation
 
-- Preserve DeviceRegistry independently of app deployments. Export/back up public
-  registry entries under operator controls; do not assume Table storage supplies
-  point-in-time recovery. Never reconstruct manufacturing trust from client claims.
+- Preserve DeviceRegistry independently of app deployments. Table storage has no
+  point-in-time recovery, so `tempo_certificates.backup` exports it daily to a
+  private, write-once (90-day) blob container, and restores only missing rows
+  through a manual dry-run-first job. See "DeviceRegistry backup and restore" in
+  `FRESH_INFRASTRUCTURE_DELIVERY.md`. Never reconstruct manufacturing trust from
+  client claims: restore rejects any row whose ID or hostname does not derive
+  from its public key.
 - Disable a device in the registry to deny future enrollment/address requests.
   This alone does not revoke a certificate already issued by the CA; incident
   response must separately revoke the leaf and remove its DNS address.
@@ -129,6 +133,8 @@ burn eFuses during an ordinary update.
   | `nonce_cleanup_budget_reached` | any, in 30 minutes | 3 |
   | `certificate_expiring_soon` or `certificate_expiry_check_failed` | any, in 2 hours | 1 |
   | `ca_rate_limited` | any, in 30 minutes | 1 |
+  | `registry_backup_failed` | any, in 30 minutes | 2 |
+  | no `registry_backup_completed` | none in 24 hours | 2 |
 
   The worker's device lane counts enabled devices whose certificate expires
   within 14 days once an hour and logs only that count. Devices renew halfway

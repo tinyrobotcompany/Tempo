@@ -5,9 +5,12 @@ param storageId string
 param vaultId string
 param tableZone string
 param vaultZone string
+param backupStorageId string
+param blobZone string
 var targets = [
   { name: 'table', id: storageId, zone: tableZone }
   { name: 'vault', id: vaultId, zone: vaultZone }
+  { name: 'blob', id: backupStorageId, zone: blobZone }
 ]
 resource endpoints 'Microsoft.Network/privateEndpoints@2024-05-01' = [for target in targets: {
   name: '${prefix}-${target.name}-endpoint'

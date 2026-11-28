@@ -100,6 +100,71 @@ failed eligible run while its commit remains current main; a stale run requires
 a new reviewed Bicep merge. Native GitHub path filters have a 300-file limit, so
 keep infrastructure changes focused.
 
+## DeviceRegistry backup and restore
+
+`DeviceRegistry` holds the manufacturing admissions (public identity keys,
+hostnames, serials, enabled flags). It cannot be rebuilt from devices, so it is
+exported daily to a separate account:
+
+- `stbk<project><unique>` in the data group: geo-redundant (GRS), public network
+  access disabled, shared keys disabled, reachable only through the
+  `tempo-westeurope-blob-endpoint` private endpoint and the `privatelink.blob`
+  DNS zone;
+- container `device-registry`: a time-based immutability policy keeps every
+  backup write-once (no overwrite or delete) for 90 days; lifecycle management
+  deletes backups after 365 days; blob and container soft delete keep 30 days;
+- `tempo-westeurope-registry-backup` job runs `03:17 UTC` daily as the `backup`
+  identity: Table Data Reader on `DeviceRegistry` and Blob Data Contributor on
+  that one container, with an ABAC condition removing blob delete. It cannot
+  write the registry or remove older backups;
+- `tempo-westeurope-registry-restore` is a manual job under a separate `restore`
+  identity: Blob Data Reader on the container and Table Data Contributor on
+  `DeviceRegistry`. It is a dry run unless told otherwise and only ever adds
+  missing rows.
+
+Alerts: `registry_backup_failed` (any failed export) and "no
+`registry_backup_completed` in 24 hours". The second fires until the first
+export succeeds, so expect it after the first deployment.
+
+**Activation order.** These need two new runtime roles in the data group
+(Storage Blob Data Contributor and Reader), added to `delegableRoles` in
+`bootstrap.bicep`. After merging, and before approving the infrastructure
+preview, an authorised operator re-runs bootstrap as described above; the
+deployment's role assignments otherwise fail. The jobs run the backup module
+from the image, so they work only after an image built from this code is
+selected through a reviewed `imageDigest` change.
+
+The immutability policy is left **unlocked** so a mistaken setting can still be
+corrected. Locking it is irreversible (the account cannot then be deleted until
+the newest backup is 90 days old); do it manually only after the first backups
+are verified.
+
+### Restore procedure
+
+Restore is an operator action on the live service. Run each command with
+`--subscription 923dd002-44bc-431c-b986-464d2ca524a2 -g rg-tempo-westeurope-compute
+-n tempo-westeurope-registry-restore`, and read the job output in Log Analytics:
+`ContainerAppConsoleLogs_CL | where ContainerJobName_s == 'tempo-westeurope-registry-restore'`.
+
+1. If the storage account or table itself was deleted, first let the normal
+   reviewed deployment recreate it (an empty `DeviceRegistry`).
+2. List backups: `az containerapp job start …`. With no backup selected the job
+   prints the ten newest backup names and changes nothing.
+3. Dry run: `az containerapp job update … --set-env-vars RESTORE_BLOB=<name>`,
+   then `az containerapp job start …`. The output gives `missing`, `differing`
+   and `identical` counts. Before using any row, the job checks that each ID and
+   hostname derives from its public key, and rejects the whole backup if any
+   does not.
+4. Apply: `az containerapp job update … --set-env-vars RESTORE_APPLY=yes`, then
+   start it again. Only missing rows are created. Existing rows always win, so a
+   device disabled after the backup stays disabled. `differing` rows are
+   reported for a manual decision and never changed.
+5. Reset: `az containerapp job update … --set-env-vars RESTORE_BLOB= RESTORE_APPLY=no`.
+   The next infrastructure deployment also resets both values.
+
+Restore does not touch `DeviceState`. Devices request their certificate and
+address state again on their next check-in.
+
 ## Foundation, application image and activation
 
 An empty `imageDigest` in main.bicep deploys the foundation only. The initial fresh
