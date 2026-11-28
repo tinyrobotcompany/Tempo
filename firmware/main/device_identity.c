@@ -23,7 +23,7 @@ _Static_assert(DEVICE_HOSTNAME_MAX <= SAN_SHORT_FORM_NAME_MAX,
                "CSR SAN encoder requires short-form DER lengths");
 static char identifier[33], device_hostname[DEVICE_HOSTNAME_MAX+1];
 static atomic_bool changed;
-static int64_t renewal;
+static int64_t renewal,expiry;
 static bool public_identity_logged;
 extern const char device_roots_start[] __asm__("_binary_device_roots_pem_start");
 extern const char device_roots_end[] __asm__("_binary_device_roots_pem_end");
@@ -128,7 +128,7 @@ esp_err_t station_identity_init(void)
         if(pem&&nvs_get_str(handle,"cert",pem,&length)==ESP_OK){
             mbedtls_x509_crt cert;mbedtls_x509_crt_init(&cert);
             if(mbedtls_x509_crt_parse(&cert,(unsigned char *)pem,length)==0)
-                renewal=epoch(&cert.valid_from)+(epoch(&cert.valid_to)-epoch(&cert.valid_from))/2;
+                {renewal=epoch(&cert.valid_from)+(epoch(&cert.valid_to)-epoch(&cert.valid_from))/2;expiry=epoch(&cert.valid_to);}
             mbedtls_x509_crt_free(&cert);
         }
         free(pem);nvs_close(handle);
@@ -139,6 +139,7 @@ const char *station_identity_id(void){return identifier;}
 const char *station_identity_hostname(void){return device_hostname;}
 bool station_identity_changed(void){return atomic_exchange(&changed,false);}
 int64_t station_identity_renew_after(void){return renewal;}
+int64_t station_identity_expires_at(void){return expiry;}
 
 esp_err_t station_identity_csr(char *output,size_t capacity)
 {
@@ -206,14 +207,14 @@ esp_err_t station_identity_install(const char *chain,int64_t *renew_after)
             bool same=existing&&nvs_get_str(handle,"cert",existing,&previous_length)==ESP_OK&&!strcmp(existing,chain);
             free(existing);
             if(same){
-                renewal=start+(end-start)/2;*renew_after=renewal;
+                renewal=start+(end-start)/2;expiry=end;*renew_after=renewal;
                 nvs_close(handle);mbedtls_pk_free(&key);mbedtls_x509_crt_free(&cert);mbedtls_x509_crt_free(&roots);
                 return ESP_OK;
             }
             /* One NVS value + commit: interrupted renewal leaves old cert usable. */
             err=nvs_set_str(handle,"cert",chain);if(err==ESP_OK)err=nvs_commit(handle);nvs_close(handle);
         }
-        if(err==ESP_OK){renewal=start+(end-start)/2;*renew_after=renewal;atomic_store(&changed,true);}
+        if(err==ESP_OK){renewal=start+(end-start)/2;expiry=end;*renew_after=renewal;atomic_store(&changed,true);}
     }
     mbedtls_pk_free(&key);mbedtls_x509_crt_free(&cert);mbedtls_x509_crt_free(&roots);return err;
 }

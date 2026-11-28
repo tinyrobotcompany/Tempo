@@ -42,12 +42,13 @@ static unsigned preview_level;
 static void update_power(void);
 
 static station_view_t view;
-typedef enum { PAGE_DISPLAY, PAGE_WIFI, PAGE_HOME, PAGE_PROFILE, PAGE_COLOR, PAGE_PHONE, PAGE_HOTSPOT, PAGE_POWER, PAGE_UPDATES } page_t;
+typedef enum { PAGE_DISPLAY, PAGE_WIFI, PAGE_HOME, PAGE_PROFILE, PAGE_COLOR, PAGE_PHONE, PAGE_HOTSPOT, PAGE_POWER, PAGE_UPDATES, PAGE_LOCAL } page_t;
 static page_t page;
 static lv_obj_t *content, *date_label, *clock_text, *wifi_icon, *welcome, *settings_status, *header_clock;
 static lv_obj_t *phone_forget_status, *phone_forget_button;
 static bool forget_confirm, forget_feedback;
 static lv_obj_t *phone_qr, *phone_caption, *phone_wait, *tap_notice;
+static lv_obj_t *phone_help_button, *phone_local_button, *phone_local_status;
 static uint64_t tap_notice_until;
 static char phone_url[160];
 static lv_obj_t *segments[4][7], *nav[4], *theme_buttons[4], *theme_preview;
@@ -745,9 +746,56 @@ static void show_hotspot(lv_event_t *e)
     label(content,"Your location stays saved. Use iPhone setup to change it after moving.",60,475,&station_text_24);
     label(content,"The display uses 2.4 GHz Wi-Fi. Hotspot data uses your mobile plan.",60,545,&station_text_18);
 }
+/* Local mode controls. The display offers it; only a confirmed tap switches it. */
+static void update_local_controls(unsigned local)
+{
+    if(!actions.phone_local_mode){lv_obj_add_flag(phone_help_button,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(phone_local_button,LV_OBJ_FLAG_HIDDEN);return;}
+    bool on=local&STATION_LOCAL_ON,busy=local&STATION_LOCAL_BUSY;
+    if(on||!network.connected)lv_obj_add_flag(phone_help_button,LV_OBJ_FLAG_HIDDEN);else lv_obj_remove_flag(phone_help_button,LV_OBJ_FLAG_HIDDEN);
+    if(busy){lv_obj_add_state(phone_local_button,LV_STATE_DISABLED);lv_obj_add_state(phone_help_button,LV_STATE_DISABLED);}
+    else {lv_obj_remove_state(phone_local_button,LV_STATE_DISABLED);lv_obj_remove_state(phone_help_button,LV_STATE_DISABLED);}
+    set_label_if_changed(lv_obj_get_child(phone_local_button,0),busy?"Please wait…":on?"Turn off Local mode":"Local mode (not encrypted)");
+    const char *text="";
+    if(local&STATION_LOCAL_FAILED)text="Could not change Local mode. Please retry.";
+    else if(on&&(local&STATION_LOCAL_HTTPS_READY))text="Secure HTTPS works again. You can turn off Local mode.";
+    else if(!on&&(local&STATION_LOCAL_OFFER_EXPIRED))text="Tempo's security certificate has expired.\nIf your phone can't open the page, use Local mode.";
+    else if(!on&&(local&STATION_LOCAL_OFFER_NO_HTTPS))text="Secure HTTPS is not available on this display.\nYou can use Local mode (not encrypted) instead.";
+    else if(!on&&(local&STATION_LOCAL_OFFER_RENEWAL))text="Tempo could not renew its certificate for 7 days.\nIf your phone can't open the page, use Local mode.";
+    set_label_if_changed(phone_local_status,text);
+}
+static void show_phone(lv_event_t *e);
+static void confirm_local(lv_event_t *e)
+{
+    int request=(int)(uintptr_t)lv_event_get_user_data(e);
+    if(actions.phone_local_mode)actions.phone_local_mode(request);
+    show_phone(NULL);
+}
+static void show_local(lv_event_t *e)
+{
+    (void)e;unsigned local=actions.phone_local_mode?actions.phone_local_mode(STATION_LOCAL_QUERY):0;
+    bool on=local&STATION_LOCAL_ON;
+    page_header(on?"Turn off Local mode":"Local mode (not encrypted)",PAGE_LOCAL);
+    box(content,32,94,1216,520,CARD);
+    lv_obj_t *text=label(content,on?
+        "Your phone will use the secure HTTPS page again.\n\n"
+        "The unencrypted page closes and the pairing code is replaced,\n"
+        "because it was sent without encryption. Scan the new QR code on each phone.":
+        "Local mode opens the phone page without HTTPS, at this display's\naddress on your Wi-Fi.\n\n"
+        "Traffic on your Wi-Fi is NOT encrypted. Anyone on the same Wi-Fi\n"
+        "could read what you send, including the pairing code and transport key,\n"
+        "and could control this display.\n\n"
+        "Use it only on a Wi-Fi network you trust. When you turn it off,\nthe pairing code is replaced.",60,125,&station_text_24);
+    lv_obj_set_width(text,1160);
+    if(on&&!(local&STATION_LOCAL_HTTPS_READY))label(content,"Secure HTTPS is not available right now, so the phone page will stay unavailable until it is.",60,420,&station_text_18);
+    button(content,on?"Confirm: turn off":"Confirm: turn on Local mode",60,520,500,confirm_local,(void *)(uintptr_t)(on?STATION_LOCAL_REQUEST_OFF:STATION_LOCAL_REQUEST_ON));
+    button(content,"Cancel",590,520,300,show_phone,NULL);
+}
 static void update_phone(void)
 {
     station_phone_link_t link={0};if(actions.phone_link)actions.phone_link(&link);
+    unsigned local=actions.phone_local_mode?actions.phone_local_mode(STATION_LOCAL_QUERY):0;
+    bool local_on=local&STATION_LOCAL_ON,local_busy=local&STATION_LOCAL_BUSY;
+    update_local_controls(local);
     /* A result belongs to this page visit; an in-flight request survives navigation. */
     if(link.forget_state==1)forget_feedback=true;
     bool blocked=link.forget_state==1||(forget_feedback&&link.forget_state==2);
@@ -765,10 +813,12 @@ static void update_phone(void)
             snprintf(phone_url,sizeof(phone_url),"%s",link.url);
         }
         lv_obj_remove_flag(phone_qr,LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(phone_caption,"Scan with your phone camera.\nYour phone and display must share Wi-Fi.\n\nThe connection uses HTTPS.\nKeep this QR code private: it controls your display.");
+        lv_label_set_text(phone_caption,local_on?"LOCAL MODE – NOT ENCRYPTED\nScan with your phone camera.\nYour phone and display must share Wi-Fi.\nOthers on this Wi-Fi could see or change what you send.\nKeep this QR code private: it controls your display.":
+            "Scan with your phone camera.\nYour phone and display must share Wi-Fi.\n\nThe connection uses HTTPS.\nKeep this QR code private: it controls your display.");
     } else {
         phone_url[0]=0;lv_obj_add_flag(phone_qr,LV_OBJ_FLAG_HIDDEN);lv_obj_remove_flag(phone_wait,LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(phone_caption,link.dns_pending?"Waiting for this network to find Tempo.\nPairing will appear automatically when ready.\nIf this continues, try another Wi-Fi network.":network.connected?"Preparing secure phone access.\nKeep Tempo connected to Wi-Fi.\nYour pairing code will appear automatically.":"Connect the display to Wi-Fi first.\n\nNo home Wi-Fi? Use your iPhone hotspot.\nOpen Settings > Wi-Fi on the display.\n\nThis page will show a QR code when connected.");
+        lv_label_set_text(phone_caption,local_busy&&!local_on?"Turning off Local mode.\nReplacing the pairing code, because it was\nsent without encryption. Scan the new QR code.":
+            local_on&&network.connected?"Opening Local mode.\nYour QR code will appear automatically.":link.dns_pending?"Waiting for this network to find Tempo.\nPairing will appear automatically when ready.\nIf this continues, try another Wi-Fi network.":network.connected?"Preparing secure phone access.\nKeep Tempo connected to Wi-Fi.\nYour pairing code will appear automatically.":"Connect the display to Wi-Fi first.\n\nNo home Wi-Fi? Use your iPhone hotspot.\nOpen Settings > Wi-Fi on the display.\n\nThis page will show a QR code when connected.");
     }
 }
 static void forget_phones(lv_event_t *e)
@@ -790,7 +840,10 @@ static void show_phone(lv_event_t *e)
     lv_obj_set_pos(phone_qr,80,155);
     phone_wait=lv_spinner_create(content);lv_obj_set_size(phone_wait,64,64);lv_obj_set_pos(phone_wait,193,265);lv_spinner_set_anim_params(phone_wait,1000,200);
     phone_caption=label(content,"",440,150,&station_text_24);lv_obj_set_width(phone_caption,750);
-    button(content,"Wi-Fi settings",440,430,370,show_network,NULL);
+    button(content,"Wi-Fi settings",440,430,280,show_network,NULL);
+    phone_local_button=button(content,"Local mode (not encrypted)",740,430,350,show_local,NULL);
+    phone_help_button=button(content,"Can't open the page?",80,510,330,show_local,NULL);
+    phone_local_status=label(content,"",440,335,&station_text_18);lv_obj_set_width(phone_local_status,750);
     phone_forget_button=button(content,"Forget all phones",440,510,650,forget_phones,NULL);
     phone_forget_status=label(content,"",60,630,&station_text_24);lv_obj_set_width(phone_forget_status,1160);
     phone_url[0]=0;update_phone();

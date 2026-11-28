@@ -10,13 +10,19 @@ Tempo serves its control page directly over HTTPS on the home network. The certi
 
 Location remains saved across restarts and network changes. Changing Wi-Fi does not move the saved location. Address lookup targets France and sends the requested address/coordinates to IGN; map loading sends the viewed area to OpenStreetMap. The page discloses these external services.
 
-The obsolete Apple Shortcut callback, signed installer and hosted HTTP helper have been retired. Old callback URLs are not interpreted as location commands. There is no HTTP fallback or instruction to bypass a certificate warning. Previously installed Shortcuts can be removed from the phone.
+The obsolete Apple Shortcut callback, signed installer and hosted HTTP helper have been retired. Old callback URLs are not interpreted as location commands. There is no automatic HTTP fallback and no instruction to bypass a certificate warning. The only plain-HTTP path is user-chosen Local mode, below. Previously installed Shortcuts can be removed from the phone.
 
 The current pairing credential is scoped to the device origin and persists in browser storage. Revoking phones on the display invalidates it. This remains a shared bearer, not individual per-phone sessions; see the security documentation for that limitation. Static assets contain no device settings, and API writes require pairing and bounded, validated JSON.
 
-The panel reconnects automatically with capped backoff, pauses background polling when hidden and retains unsaved edits during connection loss. Writes are not replayed automatically: a lost reply may mean the device already saved. A pairing error requires the current QR. DNS/router reachability and browser certificate trust remain necessary for HTTPS access.
+The panel reconnects automatically with capped backoff, pauses background polling when hidden and retains unsaved edits during connection loss. Writes are not replayed automatically: a lost reply may mean the device already saved. A pairing error requires the current QR. DNS/router reachability and browser certificate trust remain necessary for HTTPS access; Local mode needs neither.
 
-For an iPhone hotspot, enable the hotspot and connect Tempo using its touchscreen. The hotspot-hosting phone's ability to reach another client must be tested; internet access alone does not establish local reachability. No Bluetooth, SoftAP or HTTP workaround is provided.
+For an iPhone hotspot, enable the hotspot and connect Tempo using its touchscreen. The hotspot-hosting phone's ability to reach another client must be tested; internet access alone does not establish local reachability. No Bluetooth or SoftAP workaround is provided. If the hotspot or router blocks the HTTPS name, Local mode can be chosen on the display.
+
+## Local mode (not encrypted)
+
+If the phone cannot open the HTTPS page, tap **Can't open the page?** under the QR code, or **Local mode (not encrypted)** in Phone setup. The display explains that traffic on your Wi-Fi is not encrypted and asks for confirmation. Nothing else can turn it on: not the phone page, the API, the cloud service or an update.
+
+While Local mode is on, the QR code opens `http://<display address>/` with the pairing code, the page shows a permanent "Local mode – not encrypted" banner, and the transport-key form shows an extra warning. Browser location permission needs HTTPS, so on the plain-HTTP page use the address search to set your location. Turn Local mode off on the display (it asks for confirmation); the pairing code is then replaced, so scan the new QR code on each phone.
 
 ## Verification
 

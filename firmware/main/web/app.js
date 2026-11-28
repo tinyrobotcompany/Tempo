@@ -11,6 +11,13 @@ if(token)for(const name of ['localStorage','sessionStorage']){try{const storage=
 history.replaceState(null,'',location.pathname+(!tokenStored&&token?'#token='+token:''));
 let state=null,initialised=false,savePending=false,locationPending=false,pendingPoint=null;
 let updateEdited=false,updateBusy=false,credentialBusy=false;
+// Local mode is chosen on the display only; this page just says so, permanently, over plain HTTP.
+const plainHttp=location.protocol==='http:';
+function showLocalMode(on){const local=plainHttp||on;$('localBanner').hidden=!local;
+ $('localDetail').textContent=plainHttp?'This page is not encrypted. Others on your Wi-Fi could see or change what you send. Turn off Local mode on the display when you no longer need it.':'This connection is encrypted, but the display also serves this page without encryption. Turn off Local mode on the display when you no longer need it.';
+ $('credentialLocalWarning').hidden=!plainHttp;
+ if(plainHttp)$('credentialTransport').textContent='This page is NOT encrypted (Local mode).';}
+showLocalMode(false);
 function message(text,id='message',error=false){$(id).textContent=text;$(id).classList.toggle('error',error);if(id==='locationMessage'){$('locationSaveStatus').textContent=text;$('locationSaveStatus').classList.toggle('error',error);}}
 const appearanceDirty=new Set();
 const appearanceKeys=['name','brightness','theme','font','color','rotate','dwell','dimAfter','offAfter','dimBrightness'];
@@ -64,7 +71,7 @@ function fill(s){
  for(const kind of ['dim','off'])syncIdlePreset(kind);
  $('brightnessValue').textContent=$('brightness').value+'%';
 }
-function applyStatus(next){state=next;
+function applyStatus(next){state=next;showLocalMode(next.localMode===true);
  if(next.update){const u=next.update;
   const titles={1:'Checking for updates…',2:u.countdown?'Your update is ready to install':'A new update is available',3:'Downloading update',4:'Verifying update',5:'Restarting Tempo — reconnecting automatically',6:'Update needs attention',7:'Preparing to install'};
   $('updateTitle').textContent=titles[u.state]||(u.upToDate?'No new updates — Tempo is up to date':'Ready to check for updates');
