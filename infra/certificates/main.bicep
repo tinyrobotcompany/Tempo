@@ -15,7 +15,7 @@ param generation string = '1'
 param imageDigest string = '30bdf6688868aad851b0387ba015eb1ea89de00fd9d04e647a9c764fca10d628'
 var deployCompute = !empty(imageDigest)
 @allowed(['staging', 'production'])
-param acmeEnvironment string = 'staging'
+param acmeEnvironment string = 'production'
 param dnsDomain string = 'tinyrobotcompany.io'
 param deviceSuffix string = 'tempo.tinyrobotcompany.io'
 var prefix = '${project}-${location}'

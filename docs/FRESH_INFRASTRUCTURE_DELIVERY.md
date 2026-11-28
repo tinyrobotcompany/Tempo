@@ -114,9 +114,45 @@ it and the ACME account in Key Vault. The credential is removed from the job
 afterwards, also on failure. Re-run it after switching `acmeEnvironment` or
 rotating the DNS credential; the account key is reused.
 
+### Switching to production Let's Encrypt
+
+`acmeEnvironment` is `production`. Firmware trusts only ISRG Root X1/X2, so
+devices reject staging certificates. Production is a separate CA with its own
+account. The bootstrap job reuses the existing account key from Key Vault,
+registers it with the production CA and **replaces `acme-account-uri`**. The
+worker refuses to issue with an account URI from the other CA, so certificate
+jobs fail (and alert as `device_job_failed`) until the bootstrap re-run below
+has succeeded. Do the steps back to back:
+
+1. Confirm `ACCEPTED_ACME_TERMS_URL` still equals the production directory's
+   `meta.termsOfService` (`https://acme-v02.api.letsencrypt.org/directory`).
+   On 28 Nov 2026 staging and production both gave
+   `https://letsencrypt.org/documents/LE-SA-v1.8-July-06-2026.pdf`. If it
+   differs, read the new agreement and update the secret first.
+   `SPACESHIP_CREDENTIALS` and `ACME_CONTACT_EMAIL` stay as they are.
+2. Merge the reviewed change, then approve preview and apply. For this change alone, preview shows
+   updates to the worker and bootstrap job (`ACME_ENVIRONMENT`), nothing else.
+3. Immediately start **Certificate CA account bootstrap** from `main` and
+   approve it. It must succeed once.
+4. Verify read-only: the bootstrap job execution `Succeeded`; the worker logs
+   no `worker_cycle_failed`/`device_job_failed`; a test device's status shows a
+   certificate whose issuer chains to ISRG Root X1 or X2.
+5. Jobs that failed in the window back off (5 minutes and up) and retry by
+   themselves. A device that used all four attempts sends a fresh signed
+   request after the one-day error cooldown.
+
+**No working rollback yet.** A bootstrap re-run against a CA where the key is
+already registered fails: acme's `new_account` raises `ConflictError`, which
+`bootstrap.py` does not handle. That covers going back to staging, and also a
+second production run (for example, rotating the DNS credential: the new
+credential is stored, then the job fails). Key Vault is private, so an operator
+cannot restore the earlier `acme-account-uri` version by hand. Make the
+bootstrap idempotent (use the existing account's URI on conflict) before
+relying on a rollback or a re-run.
+
 ACME `staging` means test certificates, not an additional Azure environment. Live
-certificate issuance requires DNS credentials, CA account/terms setup and a
-reviewed change to production CA mode. These secrets are not workflow inputs or
+certificate issuance requires DNS credentials, CA account/terms setup and the
+production CA mode above. These secrets are not workflow inputs or
 Bicep outputs. Application startup, private access, issuance, renewal and actual
 phone/device acceptance must be verified before declaring HTTPS operational.
 
