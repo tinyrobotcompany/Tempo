@@ -29,25 +29,36 @@ PROFILES = {
     'esp32p4': {
         'min_revision': 3,
         'flash_key': ('BLOCK_KEY0', 'XTS_AES_128_KEY', 32),
-        'digest': ('BLOCK_KEY2', 'SECURE_BOOT_DIGEST0'),
+        # DIGEST0 is the release signing key, DIGEST1 an independent backup key
+        # kept separately for rotation; only the third slot is revoked.
+        'digests': [('BLOCK_KEY2', 'SECURE_BOOT_DIGEST0'), ('BLOCK_KEY3', 'SECURE_BOOT_DIGEST1')],
+        # Layout ab-8mb-secure-v1 (firmware/partitions-secure.csv): table moved to 0x10000.
+        'offsets': {'bootloader.bin': 0x2000, 'partition-table.bin': 0x10000},
         'hmac': ('BLOCK_KEY5', 'HMAC_UP', 32),
         # Mirrors ESP-IDF v6.1 esp32p4 secure-features defaults, minus the
         # Release-only DIS_DOWNLOAD_MANUAL_ENCRYPT so USB re-flashing stays possible.
         'hardening': [('DIS_DIRECT_BOOT', 1), ('DIS_PAD_JTAG', 1), ('DIS_USB_JTAG', 1),
                       ('SOFT_DIS_JTAG', 7), ('SPI_DOWNLOAD_MSPI_DIS', 1)],
-        'revoke': ['SECURE_BOOT_KEY_REVOKE1', 'SECURE_BOOT_KEY_REVOKE2'],
+        'revoke': ['SECURE_BOOT_KEY_REVOKE2'],
     },
 }
 UNREVIEWED = {'esp32s3', 'esp32c6'}
+# The production profile from scripts/secure-build.py (layout ab-8mb-secure-v1).
 REQUIRED_CONFIG = {
-    'SECURE_BOOT': True, 'SECURE_BOOT_V2_ENABLED': True, 'SECURE_BOOT_V2_RSA_ENABLED': True,
+    'SECURE_BOOT': True, 'SECURE_BOOT_V2_ENABLED': True, 'SECURE_SIGNED_APPS_RSA_SCHEME': True,
     'SECURE_FLASH_ENC_ENABLED': True, 'SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT': True,
-    'SECURE_FLASH_ENCRYPTION_AES128': True, 'TEMPO_PRODUCTION_IDENTITY': True,
+    'SECURE_FLASH_ENCRYPTION_AES128': True, 'SECURE_FLASH_ENCRYPTION_KEY_SOURCE_EFUSES': True,
+    'SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC': True, 'TEMPO_PRODUCTION_IDENTITY': True,
+    'NVS_ENCRYPTION': True, 'NVS_SEC_KEY_PROTECT_USING_FLASH_ENC': True,
+    'PARTITION_TABLE_CUSTOM_FILENAME': 'partitions-secure.csv',
 }
 FORBIDDEN_CONFIG = ['SECURE_FLASH_ENCRYPTION_MODE_RELEASE', 'SECURE_DISABLE_ROM_DL_MODE',
-                    'SECURE_FLASH_ENCRYPTION_KEY_SOURCE_KEY_MGR', 'SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS']
-RECOMMENDED_CONFIG = ['SECURE_FLASH_REQUIRE_ALREADY_ENABLED', 'SECURE_BOOT_REQUIRE_ALREADY_ENABLED',
-                      'SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC']
+                    'SECURE_FLASH_ENCRYPTION_KEY_SOURCE_KEY_MGR', 'SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS',
+                    'SECURE_BOOT_INSECURE', 'SECURE_BOOT_BUILD_SIGNED_BINARIES', 'SECURE_BOOT_ALLOW_JTAG',
+                    'EFUSE_VIRTUAL', 'SECURE_BOOT_V2_FORCE_ENABLE_ECDSA']
+# SECURE_BOOT_REQUIRE_ALREADY_ENABLED depends on SECURE_BOOT_INSECURE, so it is not asked for.
+RECOMMENDED_CONFIG = ['SECURE_FLASH_REQUIRE_ALREADY_ENABLED']
+SIGNED_SET = ('bootloader.bin', 'partition-table.bin', 'ota_data_initial.bin', 'weather_station.bin')
 PEM_RE = re.compile(r'-----BEGIN PUBLIC KEY-----\n(?:[A-Za-z0-9+/=]{1,64}\n){2,12}-----END PUBLIC KEY-----\n?')
 IDENTITY_RE = re.compile(r'Manufacturing PUBLIC identity for ([0-9a-f]{32}):\s*\n(' + PEM_RE.pattern + ')')
 ANSI_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
@@ -113,6 +124,8 @@ def check_build(args, profile):
     if config.get('IDF_TARGET') != args.chip:
         raise Refused(f"Build target {config.get('IDF_TARGET')!r} does not match --chip {args.chip}.")
     wrong = [k for k, v in REQUIRED_CONFIG.items() if config.get(k) != v]
+    if config.get('PARTITION_TABLE_OFFSET') not in (0x10000, '0x10000'):
+        wrong.append('PARTITION_TABLE_OFFSET (must be 0x10000)')
     wrong += [k for k in FORBIDDEN_CONFIG if config.get(k)]
     hmac_id = block_index(profile['hmac'][0])
     if config.get('TEMPO_IDENTITY_HMAC_KEY_ID') != hmac_id:
@@ -120,21 +133,47 @@ def check_build(args, profile):
     if wrong:
         raise Refused('Build is not a Development-mode Secure Boot v2 build for this plan: ' + ', '.join(wrong))
     notes += [f'Recommended build option not set: CONFIG_{k}' for k in RECOMMENDED_CONFIG if not config.get(k)]
-    flasher = json.loads((build / 'flasher_args.json').read_text()) if (build / 'flasher_args.json').is_file() else None
-    if not flasher or not (build / 'encrypted_flash_args').is_file():
-        raise Refused('flasher_args.json/encrypted_flash_args missing: not a Development-mode encrypted build.')
-    spans = sorted((int(offset, 16), (build / name).stat().st_size, name)
-                   for offset, name in flasher['flash_files'].items())
-    for (start, size, name), (following, _, other) in zip(spans, spans[1:]):
-        if start + size > following:
-            raise Refused(f'{name} overlaps {other}; move the partition table (bootloader too large?).')
-    signed = [flasher['bootloader']['file'], flasher['app']['file']]
-    for image in signed:
+    if not (build / 'encrypted_flash_args').is_file():
+        raise Refused('encrypted_flash_args missing: not a Development-mode encrypted build.')
+    signed = args.signed_dir
+    sums = signed / 'SHA256SUMS'
+    if not sums.is_file():
+        raise Refused(f'{sums} is missing; run scripts/secure-build.py build first.')
+    listed = dict(reversed(line.split('  ', 1)) for line in sums.read_text().splitlines() if line)
+    if sorted(listed) != sorted(SIGNED_SET):
+        raise Refused('SHA256SUMS does not list exactly the signed release set.')
+    for name, want in listed.items():
+        if hashlib.sha256((signed / name).read_bytes()).hexdigest() != want:
+            raise Refused(f'{name} does not match SHA256SUMS; rebuild the signed set.')
+    for image in ('bootloader.bin', 'weather_station.bin'):
         run_host(args, ['espsecure', 'verify-signature', '--version', '2', '--keyfile',
-                        str(args.signing_public_key), str(build / image)],
+                        str(args.signing_public_key), str(signed / image)],
                  f'{image} is not signed by the given Secure Boot key.')
+    flash = flash_arguments(build, signed, profile)
     secure_download = bool(config.get('SECURE_ENABLE_SECURE_ROM_DL_MODE'))
-    return config, notes, secure_download
+    return config, notes, secure_download, flash
+
+
+def flash_arguments(build, signed, profile):
+    """encrypted_flash_args from the build, with every image swapped for its signed copy."""
+    tokens, images = (build / 'encrypted_flash_args').read_text().split(), []
+    for i, token in enumerate(tokens):
+        if re.fullmatch(r'0x[0-9a-fA-F]+', token) and i + 1 < len(tokens):
+            name = Path(tokens[i + 1]).name
+            if name not in SIGNED_SET:
+                raise Refused(f'encrypted_flash_args lists {name}, which is not in the signed set.')
+            tokens[i + 1] = str((signed / name).resolve())
+            images.append((int(token, 16), (signed / name).stat().st_size, name))
+    if sorted(name for _, _, name in images) != sorted(SIGNED_SET):
+        raise Refused('encrypted_flash_args does not flash exactly the signed release set.')
+    for name, offset in profile['offsets'].items():
+        if (offset, name) not in [(o, n) for o, _, n in images]:
+            raise Refused(f'{name} must be flashed at {offset:#x} (layout ab-8mb-secure-v1).')
+    images.sort()
+    for (start, size, name), (following, _, other) in zip(images, images[1:]):
+        if start + size > following:
+            raise Refused(f'{name} ({size:#x} bytes at {start:#x}) overlaps {other} at {following:#x}.')
+    return tokens
 
 
 def run_host(args, command, failure):
@@ -170,13 +209,12 @@ def check_start_state(summary, profile):
     if major < profile['min_revision']:
         raise Refused(f'Chip revision v{major}.x is below the v{profile["min_revision"]}.0 this firmware targets.')
     for name in ('DIS_DOWNLOAD_MANUAL_ENCRYPT', 'ENABLE_SECURITY_DOWNLOAD', 'DIS_DOWNLOAD_MODE',
-                 'SECURE_BOOT_KEY_REVOKE0', 'SECURE_BOOT_AGGRESSIVE_REVOKE'):
+                 'SECURE_BOOT_KEY_REVOKE0', 'SECURE_BOOT_KEY_REVOKE1', 'SECURE_BOOT_AGGRESSIVE_REVOKE'):
         if raw(summary, name):
             raise Refused(f'{name} is already burned; this unit needs failed-unit review, not this script.')
     if raw(summary, 'SPI_BOOT_CRYPT_CNT') not in (0, 1):
         raise Refused('SPI_BOOT_CRYPT_CNT is not 0 or 1: flash encryption was toggled outside this plan.')
-    for key in ('flash_key', 'digest', 'hmac'):
-        block, want = profile[key][0], profile[key][1]
+    for block, want, *_ in (profile['flash_key'], profile['hmac'], *profile['digests']):
         if not block_empty(summary, block) and purpose(summary, block) != want:
             raise Refused(f'{block} already holds {purpose(summary, block)}; expected empty or {want}.')
 
@@ -200,11 +238,9 @@ def key_pipe(length):
     return read
 
 
-def plan(args, profile, secure_download):
+def plan(args, profile, secure_download, flash):
     fe_block, fe_purpose, fe_len = profile['flash_key']
-    sb_block, sb_purpose = profile['digest']
     hm_block, hm_purpose, hm_len = profile['hmac']
-    digest = args.record_dir / 'secure-boot-digest0.bin'
 
     def has(block, want):
         return lambda s: purpose(s, block) == want
@@ -218,9 +254,10 @@ def plan(args, profile, secure_download):
         Step(f'Burn a new random identity HMAC key into {hm_block} ({hm_purpose}, read-protected)',
              espefuse(args, 'burn-key', hm_block, '<KEY-PIPE>', hm_purpose),
              f'BURN {hm_block} {hm_purpose}', True, done=has(hm_block, hm_purpose), before=('key', hm_len)),
-        Step(f'Burn the Secure Boot public-key digest into {sb_block} ({sb_purpose})',
-             espefuse(args, 'burn-key', sb_block, str(digest), sb_purpose),
-             f'BURN {sb_block} {sb_purpose}', True, done=has(sb_block, sb_purpose), before=('digest', digest)),
+        *[Step(f'Burn the {role} Secure Boot public-key digest into {block} ({want})',
+               espefuse(args, 'burn-key', block, str(args.record_dir / f'secure-boot-digest{n}.bin'), want),
+               f'BURN {block} {want}', True, done=has(block, want))
+          for n, ((block, want), role) in enumerate(zip(profile['digests'], ('release', 'backup')))],
         Step('Enable flash encryption in Development mode (SPI_BOOT_CRYPT_CNT = 1)',
              espefuse(args, 'burn-efuse', 'SPI_BOOT_CRYPT_CNT', '1'), 'BURN SPI_BOOT_CRYPT_CNT 1', True,
              done=lambda s: raw(s, 'SPI_BOOT_CRYPT_CNT') == 1),
@@ -228,7 +265,7 @@ def plan(args, profile, secure_download):
              espefuse(args, 'burn-efuse', *[str(x) for pair in profile['hardening'] for x in pair]),
              'BURN HARDENING', True,
              done=lambda s: all(raw(s, name) == value for name, value in profile['hardening'])),
-        Step('Revoke the two unused Secure Boot key slots',
+        Step('Revoke the unused third Secure Boot key slot',
              espefuse(args, 'burn-efuse', *[x for name in profile['revoke'] for x in (name, '1')]),
              'BURN REVOKE UNUSED', True, done=lambda s: all(raw(s, n) for n in profile['revoke'])),
         Step('Enable Secure Boot v2 (SECURE_BOOT_EN)', espefuse(args, 'burn-efuse', 'SECURE_BOOT_EN', '1'),
@@ -238,8 +275,8 @@ def plan(args, profile, secure_download):
              done=lambda s: raw(s, 'WR_DIS') & 1),
         Step('Read the eFuses back and verify the whole plan', ['<VERIFY>'], 'yes', False),
         Step('Flash the signed firmware, encrypting it on the chip',
-             esptool(args, '--before', 'default-reset', '--after', 'no-reset', 'write-flash', '@encrypted_flash_args'),
-             'FLASH SIGNED', False, cwd=args.build_dir),
+             esptool(args, '--before', 'default-reset', '--after', 'no-reset', 'write-flash', *flash),
+             'FLASH SIGNED', False),
     ]
     if secure_download:
         steps.append(Step('Switch ROM download mode to Secure Download Mode (blocks espefuse from now on)',
@@ -252,23 +289,25 @@ def plan(args, profile, secure_download):
     return steps
 
 
-def verify(summary, profile, digest):
+def verify(summary, profile, digests):
     fe_block, fe_purpose, _ = profile['flash_key']
-    sb_block, sb_purpose = profile['digest']
     hm_block, hm_purpose, _ = profile['hmac']
     problems = []
     rd_dis = raw(summary, 'RD_DIS')
-    for block, want, readable in ((fe_block, fe_purpose, False), (hm_block, hm_purpose, False), (sb_block, sb_purpose, True)):
+    blocks = [(fe_block, fe_purpose, False), (hm_block, hm_purpose, False)]
+    blocks += [(block, want, True) for block, want in profile['digests']]
+    for block, want, readable in blocks:
         if purpose(summary, block) != want:
             problems.append(f'{block} purpose is {purpose(summary, block)}, expected {want}')
         if bool(rd_dis >> block_index(block) & 1) == readable:
             problems.append(f'{block} read protection is wrong')
         if summary[block]['writeable']:
             problems.append(f'{block} is not write-protected')
-    if raw(summary, sb_block).to_bytes(32, 'big') != digest:
-        problems.append(f'{sb_block} does not hold the Secure Boot key digest')
-    expected = dict(profile['hardening'], SPI_BOOT_CRYPT_CNT=1, SECURE_BOOT_EN=1,
-                    DIS_DOWNLOAD_MANUAL_ENCRYPT=0, SECURE_BOOT_KEY_REVOKE0=0)
+    for (block, want), digest in zip(profile['digests'], digests):
+        if raw(summary, block).to_bytes(32, 'big') != digest:
+            problems.append(f'{block} does not hold the expected {want} value')
+    expected = dict(profile['hardening'], SPI_BOOT_CRYPT_CNT=1, SECURE_BOOT_EN=1, DIS_DOWNLOAD_MANUAL_ENCRYPT=0,
+                    SECURE_BOOT_KEY_REVOKE0=0, SECURE_BOOT_KEY_REVOKE1=0)
     expected.update({name: 1 for name in profile['revoke']})
     problems += [f'{n} is {raw(summary, n)}, expected {v}' for n, v in expected.items() if raw(summary, n) != v]
     if not raw(summary, 'WR_DIS') & 1:
@@ -287,12 +326,12 @@ def confirm(step, number):
         raise Refused(f'Stopped before step {number}. Nothing in this step was run.')
 
 
-def confirm_signing_backup(args, digest):
-    fingerprint = digest.hex()[:16]
-    print('\nThe Secure Boot signing key cannot be replaced after this. Without its private key no new')
-    print('firmware will ever boot on this unit. Check your offline backup now.')
-    print(f'Secure Boot key digest fingerprint: {fingerprint}')
-    phrase = f'I HAVE A VERIFIED OFFLINE BACKUP OF {fingerprint}'
+def confirm_signing_backup(args, digests):
+    release, backup = (d.hex()[:16] for d in digests)
+    print('\nOnly firmware signed by one of these two keys will ever boot on this unit. Without either')
+    print('private key no new firmware can be installed. Check both offline backups now.')
+    print(f'Release key fingerprint: {release}\nBackup key fingerprint:  {backup} (stored separately)')
+    phrase = f'I HAVE VERIFIED OFFLINE BACKUPS OF {release} AND {backup}'
     try:
         answer = input(f'Type "{phrase}" to continue: ')
     except EOFError:
@@ -301,7 +340,7 @@ def confirm_signing_backup(args, digest):
         raise Refused('Signing key backup not confirmed. Nothing was changed.')
 
 
-def execute(args, steps, profile, digest):
+def execute(args, steps, profile, digests):
     summary = read_summary(args, 'efuse-start.json')
     check_start_state(summary, profile)
     for number, step in enumerate(steps, 1):
@@ -314,7 +353,7 @@ def execute(args, steps, profile, digest):
         confirm(step, number)
         if step.command == ['<VERIFY>']:
             summary = read_summary(args, 'efuse-after.json')
-            problems = verify(summary, profile, digest)
+            problems = verify(summary, profile, digests)
             if problems:
                 raise Refused('Verification failed; do not flash. Follow the failed-unit section:\n  ' + '\n  '.join(problems))
             print('  eFuses match the plan.')
@@ -384,8 +423,12 @@ def parse(argv):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--chip', default='esp32p4')
     p.add_argument('--port')
-    p.add_argument('--build-dir', type=Path, default=ROOT / 'firmware' / 'build')
-    p.add_argument('--signing-public-key', type=Path, help='Secure Boot RSA-3072 PUBLIC key (PEM)')
+    p.add_argument('--build-dir', type=Path, default=ROOT / 'build-host' / 'secure-build',
+                   help='Compiled production build (scripts/secure-build.py --build-dir)')
+    p.add_argument('--signed-dir', type=Path, default=ROOT / 'build-host' / 'secure-release',
+                   help='Signed images and SHA256SUMS (scripts/secure-build.py --output)')
+    p.add_argument('--signing-public-key', type=Path, help='Release Secure Boot RSA-3072 PUBLIC key (PEM)')
+    p.add_argument('--backup-signing-public-key', type=Path, help='Independent backup RSA-3072 PUBLIC key (PEM)')
     p.add_argument('--record-dir', type=Path, help='The unit folder made by factory-backup.sh')
     p.add_argument('--virtual-efuse', type=Path, help='Rehearse against an espefuse virtual eFuse file')
     p.add_argument('--execute', action='store_true', help='Run steps (each needs typed confirmation)')
@@ -419,9 +462,13 @@ def main(argv=None):
             if not args.virtual_efuse:
                 raise Refused('--init-virtual needs --virtual-efuse FILE.')
             return init_virtual(args)
-        if not args.signing_public_key or not args.signing_public_key.is_file():
-            raise Refused('--signing-public-key must name the Secure Boot PUBLIC key file.')
-        check_public_pem(args.signing_public_key.read_text(errors='replace'), 'rsa3072')
+        keys = [args.signing_public_key, args.backup_signing_public_key]
+        if not all(key and key.is_file() for key in keys):
+            raise Refused('Give both --signing-public-key and --backup-signing-public-key (PUBLIC key files).')
+        for key in keys:
+            check_public_pem(key.read_text(errors='replace'), 'rsa3072')
+        if len({openssl(['pkey', '-pubin', '-outform', 'DER'], k.read_bytes()) for k in keys}) != 2:
+            raise Refused('The backup signing key must be a different, independent key.')
         if args.execute and not args.virtual_efuse:
             if not args.port:
                 raise Refused('--execute needs --port (or --virtual-efuse for a rehearsal).')
@@ -437,16 +484,19 @@ def main(argv=None):
                 raise Refused('--execute needs --record-dir.')
             args.record_dir = ROOT / 'build-host' / 'factory-plan'
         args.record_dir.mkdir(parents=True, exist_ok=True)
-        config, notes, secure_download = check_build(args, profile)
-        digest_path = args.record_dir / 'secure-boot-digest0.bin'
-        run_host(args, ['espsecure', 'digest-sbv2-public-key', '--keyfile', str(args.signing_public_key),
-                        '--output', str(digest_path)], 'Could not compute the Secure Boot key digest.')
-        digest = digest_path.read_bytes()
-        if len(digest) != 32:
-            raise Refused('Secure Boot digest has the wrong length.')
+        config, notes, secure_download, flash = check_build(args, profile)
+        digests = []
+        for n, key in enumerate(keys):
+            path = args.record_dir / f'secure-boot-digest{n}.bin'
+            path.unlink(missing_ok=True)
+            run_host(args, ['espsecure', 'digest-sbv2-public-key', '--keyfile', str(key), '--output', str(path)],
+                     'Could not compute a Secure Boot key digest.')
+            digests.append(path.read_bytes())
+        if any(len(d) != 32 for d in digests) or digests[0] == digests[1]:
+            raise Refused('Secure Boot digests are malformed or identical.')
         for note in notes:
             print('NOTE: ' + note)
-        steps = plan(args, profile, secure_download)
+        steps = plan(args, profile, secure_download, flash)
         if not args.execute:
             print(f'DRY RUN for {args.chip}. Nothing was sent to any device. Host checks passed.')
             for number, step in enumerate(steps, 1):
@@ -454,8 +504,8 @@ def main(argv=None):
                 print(f'{number:2}. {mark}{step.title}\n    {shlex.join(step.command)}')
             print('Re-run with --execute --port PORT --record-dir DIR to perform it, one confirmed step at a time.')
             return 0
-        confirm_signing_backup(args, digest)
-        execute(args, steps, profile, digest)
+        confirm_signing_backup(args, digests)
+        execute(args, steps, profile, digests)
         return 0
     except Refused as error:
         print('REFUSED: ' + str(error), file=sys.stderr)

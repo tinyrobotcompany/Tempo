@@ -30,15 +30,15 @@ elif command == 'burn-key':
     block, path, purpose = rest
     index = int(block[-1])
     data = open(path, 'rb').read()
-    if purpose != 'SECURE_BOOT_DIGEST0':
+    digest = purpose.startswith('SECURE_BOOT_DIGEST')
+    if not digest:
         # Keys must arrive through a pipe, never a regular file.
         if not stat.S_ISFIFO(os.stat(path).st_mode) or len(data) != 32:
             sys.exit(41)
         with open(os.environ['KEYS'], 'a') as keys:
             keys.write(data.hex() + '\n')
         put('RD_DIS', int(state['RD_DIS']['raw_value'], 16) | 1 << index)
-    put(block, int.from_bytes(data, 'big') if purpose == 'SECURE_BOOT_DIGEST0' else 0,
-        readable=purpose == 'SECURE_BOOT_DIGEST0', writeable=False)
+    put(block, int.from_bytes(data, 'big') if digest else 0, readable=digest, writeable=False)
     state['KEY_PURPOSE_%d' % index]['value'] = purpose
 elif command == 'burn-efuse':
     for name, value in zip(rest[::2], rest[1::2]):
@@ -59,7 +59,7 @@ cat > "$tmp/bin/espsecure" <<'MOCK'
 #!/usr/bin/env bash
 case "$1" in
   verify-signature) [[ -z "${MOCK_BADSIG:-}" || "$*" != *"$MOCK_BADSIG"* ]] ;;
-  digest-sbv2-public-key) printf '\x5a%.0s' $(seq 32) > "${@: -1}" ;;
+  digest-sbv2-public-key) shasum -a 256 "$3" | cut -c1-64 | xxd -r -p > "${@: -1}" ;;
   *) exit 99 ;;
 esac
 MOCK
@@ -91,46 +91,59 @@ openssl pkey -in "$tmp/sign.pem" -pubout -out "$tmp/sign-pub.pem"
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$tmp/id.pem" 2>/dev/null
 openssl pkey -in "$tmp/id.pem" -pubout -out "$tmp/id-pub.pem"
 openssl pkey -in "$tmp/id.pem" -pubout -out "$tmp/ec-sign-pub.pem"
-b=$tmp/build
-head -c 24576 /dev/zero > "$b/bootloader/bootloader.bin"
-head -c 3072 /dev/zero > "$b/partition_table/partition-table.bin"
-head -c 65536 /dev/zero > "$b/tempo.bin"
-echo '--encrypt-files 0x2000 bootloader/bootloader.bin' > "$b/encrypted_flash_args"
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 2>/dev/null | openssl pkey -pubout > "$tmp/backup-pub.pem"
+b=$tmp/build sg=$tmp/signed
+mkdir -p "$sg"
 write_build() {
-  python3 - "$b" "$@" <<'PY'
-import json, sys
-build, changes = sys.argv[1], sys.argv[2:]
-config = dict(IDF_TARGET='esp32p4', SECURE_BOOT=True, SECURE_BOOT_V2_ENABLED=True, SECURE_BOOT_V2_RSA_ENABLED=True,
+  python3 - "$b" "$sg" "$@" <<'PY'
+import hashlib, json, sys
+build, signed, changes = sys.argv[1], sys.argv[2], sys.argv[3:]
+config = dict(IDF_TARGET='esp32p4', SECURE_BOOT=True, SECURE_BOOT_V2_ENABLED=True, SECURE_SIGNED_APPS_RSA_SCHEME=True,
               SECURE_FLASH_ENC_ENABLED=True, SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT=True,
-              SECURE_FLASH_ENCRYPTION_AES128=True, TEMPO_PRODUCTION_IDENTITY=True, TEMPO_IDENTITY_HMAC_KEY_ID=5,
-              SECURE_FLASH_REQUIRE_ALREADY_ENABLED=True, SECURE_BOOT_REQUIRE_ALREADY_ENABLED=True,
-              SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC=True)
-files = {'0x2000': 'bootloader/bootloader.bin', '0x8000': 'partition_table/partition-table.bin', '0x20000': 'tempo.bin'}
+              SECURE_FLASH_ENCRYPTION_AES128=True, SECURE_FLASH_ENCRYPTION_KEY_SOURCE_EFUSES=True,
+              SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC=True, TEMPO_PRODUCTION_IDENTITY=True,
+              TEMPO_IDENTITY_HMAC_KEY_ID=5, NVS_ENCRYPTION=True, NVS_SEC_KEY_PROTECT_USING_FLASH_ENC=True,
+              PARTITION_TABLE_CUSTOM_FILENAME='partitions-secure.csv', PARTITION_TABLE_OFFSET=0x10000,
+              SECURE_FLASH_REQUIRE_ALREADY_ENABLED=True)
+# Layout ab-8mb-secure-v1: a 0xD000-byte signed bootloader fits below the table at 0x10000.
+images = {'bootloader.bin': [0x2000, 0xD000, 'bootloader/'], 'partition-table.bin': [0x10000, 0xC00, 'partition_table/'],
+          'ota_data_initial.bin': [0x17000, 0x2000, ''], 'weather_station.bin': [0x20000, 0x10000, '']}
+tamper = extra = False
 for change in changes:
     key, value = change.split('=')
-    if key == 'BOOTLOADER_AT':
-        files = {value: files.pop('0x2000'), **files}
-    else:
-        config[key] = json.loads(value)
+    if key == 'BOOTLOADER_SIZE': images['bootloader.bin'][1] = int(value, 16)
+    elif key == 'TABLE_AT': images['partition-table.bin'][0] = int(value, 16)
+    elif key == 'TAMPER': tamper = True
+    elif key == 'EXTRA': extra = True
+    else: config[key] = json.loads(value)
 json.dump(config, open(build + '/config/sdkconfig.json', 'w'))
-json.dump({'flash_files': files, 'bootloader': {'file': 'bootloader/bootloader.bin'}, 'app': {'file': 'tempo.bin'}},
-          open(build + '/flasher_args.json', 'w'))
+args = '--flash-mode dio --flash-size 32MB --encrypt ' + ' '.join(
+    f'{offset:#x} {folder}{name}' for name, (offset, _, folder) in images.items())
+open(build + '/encrypted_flash_args', 'w').write(args + (' 0x30000 storage.bin' if extra else '') + '\n')
+sums = ''
+for name, (_, size, _) in images.items():
+    open(f'{signed}/{name}', 'wb').write(bytes(size))
+    sums += hashlib.sha256(bytes(size)).hexdigest() + '  ' + name + '\n'
+open(signed + '/SHA256SUMS', 'w').write(sums)
+if tamper:
+    open(signed + '/weather_station.bin', 'ab').write(b'x')
 PY
 }
 manifest() { printf '{"verified": %s, "usb_mode": "%s"}\n' "${1:-true}" "${2:-USB-Serial/JTAG}" > "$tmp/unit/manifest.json"; }
-common=(--build-dir "$b" --signing-public-key "$tmp/sign-pub.pem")
+common=(--build-dir "$b" --signed-dir "$sg" --signing-public-key "$tmp/sign-pub.pem" --backup-signing-public-key "$tmp/backup-pub.pem")
 device=(--port /dev/cu.mock --record-dir "$tmp/unit" --execute)
-fingerprint=$(printf '5a%.0s' $(seq 8))
-answers() { printf '%s\n' "I HAVE A VERIFIED OFFLINE BACKUP OF $fingerprint" "$@"; }
+fp() { shasum -a 256 "$1" | cut -c1-16; }
+answers() { printf '%s\n' "I HAVE VERIFIED OFFLINE BACKUPS OF $(fp "$tmp/sign-pub.pem") AND $(fp "$tmp/backup-pub.pem")" "$@"; }
 all_answers=('ERASE FLASH' 'BURN BLOCK_KEY0 XTS_AES_128_KEY' 'BURN BLOCK_KEY5 HMAC_UP' 'BURN BLOCK_KEY2 SECURE_BOOT_DIGEST0'
-  'BURN SPI_BOOT_CRYPT_CNT 1' 'BURN HARDENING' 'BURN REVOKE UNUSED' 'BURN SECURE_BOOT_EN' 'PROTECT RD_DIS' yes 'FLASH SIGNED')
+  'BURN BLOCK_KEY3 SECURE_BOOT_DIGEST1' 'BURN SPI_BOOT_CRYPT_CNT 1' 'BURN HARDENING' 'BURN REVOKE UNUSED'
+  'BURN SECURE_BOOT_EN' 'PROTECT RD_DIS' yes 'FLASH SIGNED')
 device_calls() { grep -c -E '^(espefuse|esptool)' "$CALLS" || true; }
 
 # 1. The default is a dry run that never runs a device tool.
 write_build; blank_state; : > "$CALLS"
 out=$(python3 "$run" "${common[@]}" --record-dir "$tmp/plan")
 [[ $(device_calls) == 0 ]] || fail 'dry run touched a device tool'
-grep -q 'DRY RUN' <<<"$out" && [[ $(grep -c IRREVERSIBLE <<<"$out") == 8 ]] || fail 'dry run plan incomplete'
+grep -q 'DRY RUN' <<<"$out" && [[ $(grep -c IRREVERSIBLE <<<"$out") == 9 ]] || fail 'dry run plan incomplete'
 grep -q 'burn-key BLOCK_KEY5 .<KEY-PIPE>. HMAC_UP' <<<"$out" || fail 'HMAC step missing from plan'
 if grep -q ENABLE_SECURITY_DOWNLOAD <<<"$out"; then fail 'secure download step without config'; fi
 write_build SECURE_ENABLE_SECURE_ROM_DL_MODE=true
@@ -144,15 +157,26 @@ refuse() { # refuse NAME SETUP...
   [[ $(device_calls) == 0 ]] || fail "device touched despite: $name"
 }
 base='args=("${common[@]}" "${device[@]}")'
-refuse private-key "$base; args[3]=$tmp/sign.pem"
-refuse ecdsa-signing-key "$base; args[3]=$tmp/ec-sign-pub.pem"
+refuse private-key "$base; args[5]=$tmp/sign.pem"
+refuse ecdsa-signing-key "$base; args[5]=$tmp/ec-sign-pub.pem"
 refuse release-mode "$base; write_build SECURE_FLASH_ENCRYPTION_MODE_RELEASE=true"
 refuse no-dev-mode "$base; write_build SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT=false"
 refuse rom-download-disabled "$base; write_build SECURE_DISABLE_ROM_DL_MODE=true"
 refuse wrong-hmac-slot "$base; write_build TEMPO_IDENTITY_HMAC_KEY_ID=-1"
 refuse wrong-target "$base; write_build 'IDF_TARGET=\"esp32s3\"'"
-refuse bootloader-overlap "$base; write_build BOOTLOADER_AT=0x3000"
-refuse bad-signature "$base; export MOCK_BADSIG=tempo.bin"
+refuse bootloader-overlap "$base; write_build BOOTLOADER_SIZE=0xF000"
+refuse old-table-offset "$base; write_build TABLE_AT=0x8000"
+refuse table-offset-config "$base; write_build PARTITION_TABLE_OFFSET=32768"
+refuse old-layout "$base; write_build 'PARTITION_TABLE_CUSTOM_FILENAME=\"partitions.csv\"'"
+refuse no-nvs-encryption "$base; write_build NVS_ENCRYPTION=false"
+refuse insecure-boot "$base; write_build SECURE_BOOT_INSECURE=true"
+refuse tampered-signed-image "$base; write_build TAMPER=1"
+refuse unsigned-extra-image "$base; write_build EXTRA=1"
+refuse no-signed-set "$base; rm $sg/SHA256SUMS"
+refuse no-backup-key "$base; args=(\"\${args[@]:0:6}\" \"\${args[@]:8}\")"
+refuse same-backup-key "$base; args[7]=$tmp/sign-pub.pem"
+refuse ecdsa-backup-key "$base; args[7]=$tmp/ec-sign-pub.pem"
+refuse bad-signature "$base; export MOCK_BADSIG=weather_station.bin"
 refuse no-encrypted-args "$base; mv $b/encrypted_flash_args $b/x"; mv "$b/x" "$b/encrypted_flash_args"
 refuse no-backup "$base; rm $tmp/unit/manifest.json"
 refuse unverified-backup "$base; manifest false"
@@ -166,7 +190,7 @@ if printf 'yes\n' | python3 "$run" "${common[@]}" "${device[@]}" >/dev/null 2>&1
 [[ $(device_calls) == 0 ]] || fail 'device touched without backup phrase'
 
 # 4. Chips that are already partly secured, or too old, are refused before burning.
-for preset in DIS_DOWNLOAD_MANUAL_ENCRYPT ENABLE_SECURITY_DOWNLOAD SECURE_BOOT_KEY_REVOKE0; do
+for preset in DIS_DOWNLOAD_MANUAL_ENCRYPT ENABLE_SECURITY_DOWNLOAD SECURE_BOOT_KEY_REVOKE0 SECURE_BOOT_KEY_REVOKE1; do
   blank_state 3 "$preset"; : > "$CALLS"
   if answers "${all_answers[@]}" | python3 "$run" "${common[@]}" "${device[@]}" >/dev/null 2>&1; then fail "accepted preset $preset"; fi
   if grep -q -E 'burn|erase' "$CALLS"; then fail "burned despite $preset"; fi
@@ -177,9 +201,11 @@ if answers "${all_answers[@]}" | python3 "$run" "${common[@]}" "${device[@]}" >/
 # 5. Full confirmed run: Espressif order, keys via pipe only, verify before flash.
 blank_state; : > "$CALLS"; : > "$KEYS"
 out=$(answers "${all_answers[@]}" | python3 "$run" "${common[@]}" "${device[@]}" 2>&1) || fail "full run failed: $out"
-order=$(grep -o -E 'erase-flash|burn-key BLOCK_KEY[0-9]|SPI_BOOT_CRYPT_CNT 1|DIS_DIRECT_BOOT|REVOKE1|SECURE_BOOT_EN|write-protect-efuse RD_DIS|write-flash' "$CALLS" | tr '\n' ,)
-[[ "$order" == 'erase-flash,burn-key BLOCK_KEY0,burn-key BLOCK_KEY5,burn-key BLOCK_KEY2,SPI_BOOT_CRYPT_CNT 1,DIS_DIRECT_BOOT,REVOKE1,SECURE_BOOT_EN,write-protect-efuse RD_DIS,write-flash,' ]] || fail "wrong order: $order"
-grep -q "write-flash @encrypted_flash_args (cwd $(cd "$b" && pwd -P))" "$CALLS" || fail 'flash not run from build dir'
+order=$(grep -o -E 'erase-flash|burn-key BLOCK_KEY[0-9]|SPI_BOOT_CRYPT_CNT 1|DIS_DIRECT_BOOT|REVOKE[0-9]|SECURE_BOOT_EN|write-protect-efuse RD_DIS|write-flash' "$CALLS" | tr '\n' ,)
+[[ "$order" == 'erase-flash,burn-key BLOCK_KEY0,burn-key BLOCK_KEY5,burn-key BLOCK_KEY2,burn-key BLOCK_KEY3,SPI_BOOT_CRYPT_CNT 1,DIS_DIRECT_BOOT,REVOKE2,SECURE_BOOT_EN,write-protect-efuse RD_DIS,write-flash,' ]] || fail "wrong order: $order"
+signed_real=$(cd "$sg" && pwd -P)
+grep -q "write-flash --flash-mode dio --flash-size 32MB --encrypt 0x2000 $signed_real/bootloader.bin 0x10000 $signed_real/partition-table.bin 0x17000 $signed_real/ota_data_initial.bin 0x20000 $signed_real/weather_station.bin" "$CALLS" || fail 'signed images not flashed at the secure layout offsets'
+if grep 'write-flash' "$CALLS" | grep -q "$b"; then fail 'flashed an unsigned build image'; fi
 [[ $(sort -u "$KEYS" | grep -c .) == 2 && $(grep -c . "$KEYS") == 2 ]] || fail "expected two distinct piped keys: $(cat $KEYS)"
 while read -r key; do
   if grep -r -q "$key" "$tmp/unit" "$CALLS" <<<"$out"; then fail 'key material leaked to disk, log or output'; fi
@@ -207,7 +233,7 @@ if grep -q write-flash "$CALLS"; then fail 'flashed after failed verification'; 
 
 # 9. Rehearsal on virtual eFuses never runs esptool.
 blank_state; : > "$CALLS"
-answers "${all_answers[@]:1:9}" | python3 "$run" "${common[@]}" --virtual-efuse "$tmp/virt.bin" --record-dir "$tmp/virt" --execute >/dev/null 2>&1 || fail 'virtual rehearsal failed'
+answers "${all_answers[@]:1:10}" | python3 "$run" "${common[@]}" --virtual-efuse "$tmp/virt.bin" --record-dir "$tmp/virt" --execute >/dev/null 2>&1 || fail 'virtual rehearsal failed'
 if grep -q esptool "$CALLS"; then fail 'virtual rehearsal ran esptool'; fi
 grep -q -- '--virt --path-efuse-file' "$CALLS" || fail 'virtual rehearsal used a port'
 
