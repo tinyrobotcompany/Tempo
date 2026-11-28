@@ -24,7 +24,11 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
 }
 // Alerts match service log events by NAME, whatever emits them: Container Apps
 // console output or Application Insights traces (e.g. Azure Functions). isfuzzy
-// tolerates a table that does not exist yet. Contract: the log message contains
+// tolerates a table that does not exist yet. These rules are scoped to the Log
+// Analytics WORKSPACE, where workspace-based Application Insights stores traces
+// in `AppTraces` (column `Message`); `traces` is only the name inside a classic
+// Application Insights resource query and does not exist in a workspace.
+// https://learn.microsoft.com/azure/azure-monitor/reference/tables/apptraces Contract: the log message contains
 // the exact snake_case event name (see docs/DEVICE_CERTIFICATE_SERVICE.md).
 // Every rule is stateful: one email when it fires, one when it resolves.
 var logs = 'union isfuzzy=true (ContainerAppConsoleLogs_CL | project TimeGenerated, Message = Log_s), (AppTraces | project TimeGenerated, Message)'
