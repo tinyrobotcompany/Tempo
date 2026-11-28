@@ -41,7 +41,7 @@ expected='[
 jq -e --argjson want "$expected" '[.template.variables.alerts[] | {events, minimum, window}] == $want' <<<"$ops" >/dev/null \
   || fail 'alert events/thresholds differ from the reviewed contract'
 jq -e --arg minimum "[variables('alerts')[copyIndex()].minimum]" '.template.resources | (if type == "object" then [.[]] else . end) | map(select(.type == "Microsoft.Insights/scheduledQueryRules" and .copy != null))[0].properties.criteria.allOf[0] |
-  .operator == "GreaterThanOrEqual" and .threshold == $minimum and (.query | test("ContainerAppConsoleLogs_CL") and test("has_any"))' <<<"$ops" >/dev/null \
+  .operator == "GreaterThanOrEqual" and .threshold == $minimum and (.query | test("ContainerAppConsoleLogs_CL") and test("contains_cs") and (test("has_any|\\bhas\\b") | not))' <<<"$ops" >/dev/null \
   || fail 'rule criteria do not count matching console log events'
 # Every alerted event is actually logged by the service, so names cannot drift.
 while IFS= read -r event; do
