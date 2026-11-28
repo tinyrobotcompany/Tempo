@@ -72,11 +72,9 @@ jobs:
           version=$(python3 scripts/ota-release.py plan)
           echo "version=$version" >> "$GITHUB_OUTPUT"
       # Production profile: Secure Boot v2 + flash encryption (firmware/sdkconfig.production).
-      # The HMAC_UP slot is a non-secret manufacturing constant in the environment.
       - name: Build credential-free release firmware
         env:
           TEMPO_RELEASE_VERSION: ${{ steps.plan.outputs.version }}
-          TEMPO_IDENTITY_HMAC_KEY_ID: ${{ vars.TEMPO_IDENTITY_HMAC_KEY_ID }}
         run: |
           test ! -f .env
           test -f firmware/main/credentials.c
@@ -85,8 +83,7 @@ jobs:
           .artifacts/esp-idf/install.sh esp32p4
           source .artifacts/esp-idf/export.sh
           python3 scripts/check-idf-security.py "$IDF_PATH"
-          test -n "$TEMPO_IDENTITY_HMAC_KEY_ID"
-          python3 scripts/secure-build.py compile --build-dir firmware/build --hmac-key-id "$TEMPO_IDENTITY_HMAC_KEY_ID"
+          python3 scripts/secure-build.py compile --build-dir firmware/build
           python3 scripts/check-transport-memory.py
           mkdir -p build-host/release
           cp firmware/dependencies.lock build-host/release/dependencies.lock

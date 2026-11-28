@@ -26,6 +26,8 @@ LOCK = ROOT / 'tests/esptool-requirements.txt'
 
 def espsecure_venv():
     """Hash-locked espsecure for host tests; release builds use the pinned ESP-IDF one."""
+    if os.environ.get('TEMPO_ESPSECURE_FROM_PATH') == '1':  # CI firmware job: pinned ESP-IDF 6.1.1.
+        return Path(shutil.which('espsecure')).parent
     cache = Path(os.environ.get('TEMPO_TEST_CACHE', ROOT / 'build-host/dependencies'))
     venv = cache / ('espsecure-' + hashlib.sha256(LOCK.read_bytes()).hexdigest()[:16])
     python = venv / 'bin/python'
@@ -48,8 +50,7 @@ def espsecure_venv():
 def profile_config(**changes):
     """The generated-sdkconfig view of sdkconfig.production plus build-time inputs."""
     values = sb.read_config(ROOT / 'firmware/sdkconfig.production')
-    values.update({'CONFIG_SECURE_SIGNED_ON_BOOT': 'y', 'CONFIG_SECURE_SIGNED_ON_UPDATE': 'y',
-                   'CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID': '2'})
+    values.update({'CONFIG_SECURE_SIGNED_ON_BOOT': 'y', 'CONFIG_SECURE_SIGNED_ON_UPDATE': 'y'})
     for key, value in changes.items():
         if value is None:
             values.pop(key, None)
@@ -91,8 +92,11 @@ class ProductionProfileTests(unittest.TestCase):
         self.rejected('SECURE_VERSION', CONFIG_BOOTLOADER_APP_SECURE_VERSION=None)
         self.rejected('SECURE_VERSION', CONFIG_BOOTLOADER_APP_SECURE_VERSION='0')
         self.rejected('SECURE_VERSION', CONFIG_BOOTLOADER_APP_SECURE_VERSION='17')
-        self.rejected('mode', CONFIG_SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT=None)
-        self.rejected('mode', CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE='y')
+        self.rejected('HMAC', CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID='2')
+        self.rejected('MODE_DEVELOPMENT', CONFIG_SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT=None)
+        self.rejected('MODE_RELEASE', CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE='y')
+        self.rejected('REQUIRE_ALREADY', CONFIG_SECURE_BOOT_REQUIRE_ALREADY_ENABLED=None)
+        self.rejected('REQUIRE_ALREADY', CONFIG_SECURE_FLASH_REQUIRE_ALREADY_ENABLED=None)
         for key in sb.FORBIDDEN:
             self.rejected(key, **{key: 'y'})
 
@@ -105,7 +109,12 @@ class ProductionProfileTests(unittest.TestCase):
         # Local mode's second web server needs the extra sockets in both profiles.
         for name in ('sdkconfig.defaults', 'sdkconfig.production'):
             self.assertEqual(sb.read_config(ROOT / 'firmware' / name)['CONFIG_LWIP_MAX_SOCKETS'], '16')
-        self.assertFalse(any(line.startswith('CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID') for line in profile.splitlines()))
+        for line in ('CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID=5', 'CONFIG_SECURE_BOOT_REQUIRE_ALREADY_ENABLED=y',
+                     'CONFIG_SECURE_FLASH_REQUIRE_ALREADY_ENABLED=y', 'CONFIG_SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC=y'):
+            self.assertIn(line + '\n', profile)
+        # The insecure menu is open only for REQUIRE_ALREADY_ENABLED; nothing else in it is enabled.
+        self.assertFalse(set(sb.INSECURE_GATED) & set(sb.read_config(ROOT / 'firmware/sdkconfig.production')))
+        self.assertIn('CONFIG_LWIP_MAX_SOCKETS=16\n', (ROOT / 'firmware/sdkconfig').read_text())
         self.assertNotIn('SECURE_BOOT_SIGNING_KEY', profile)
         for name in sb.PROFILE:
             self.assertTrue((ROOT / 'firmware' / name).is_file())
@@ -121,19 +130,16 @@ class ProductionProfileTests(unittest.TestCase):
                 calls.append(Path(command[1]).name if command[-1] == directory else command[-1])
                 if command[-1] == 'reconfigure':
                     defaults = next(c for c in command if c.startswith('SDKCONFIG_DEFAULTS='))
-                    slot = Path(defaults.rsplit(';', 1)[1]).read_text().split('=')[1].strip()
-                    (build / 'sdkconfig').write_text(profile_config(CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID=slot))
+                    self.assertEqual([Path(p).name for p in defaults.split('=', 1)[1].split(';')], list(sb.PROFILE))
+                    (build / 'sdkconfig').write_text(profile_config())
             with patch.dict(os.environ, {'IDF_PATH': directory}), patch.object(sb.subprocess, 'run', fake_run):
-                with self.assertRaisesRegex(ValueError, 'slot 0-5'):
-                    sb.compile_firmware(build, -1)
-                self.assertEqual(sb.compile_firmware(build, 3), 1)
+                self.assertEqual(sb.compile_firmware(build), 1)
                 self.assertEqual(calls, ['check-idf-security.py', 'reconfigure', 'build'])
                 calls.clear()
                 with patch.object(sb, 'REQUIRED', {**sb.REQUIRED, 'CONFIG_TEMPO_TEST_ONLY': 'y'}):
                     with self.assertRaisesRegex(ValueError, 'CONFIG_TEMPO_TEST_ONLY'):
-                        sb.compile_firmware(build, 3)
+                        sb.compile_firmware(build)
                 self.assertNotIn('build', calls)
-            self.assertEqual((build / 'tempo-identity.defaults').read_text(), 'CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID=3\n')
 
     def test_secure_layout_keeps_app_slots_and_encrypts_nvs_keys(self):
         def table(name):
@@ -218,7 +224,10 @@ class SigningProofTests(unittest.TestCase):
         for name in ('bootloader', 'partition_table'):
             (build / name).mkdir(parents=True)
         repo.mkdir()
-        (build / 'sdkconfig').write_text(profile_config())
+        (build / 'sdkconfig').write_text(profile_config(CONFIG_BOOTLOADER_OFFSET_IN_FLASH='0x2000'))
+        (build / 'flash_args').write_text('--flash-mode dio --flash-freq 80m --flash-size 32MB\n'
+                                          '0x10000 partition_table/partition-table.bin\n0x17000 ota_data_initial.bin\n'
+                                          f'0x20000 {sb.APP}\n')
         (build / sb.APP).write_bytes(app_image())
         (build / 'bootloader/bootloader.bin').write_bytes(b'\xe9' + bytes(0x2fff))
         (build / 'partition_table/partition-table.bin').write_bytes(b'table')
@@ -240,9 +249,17 @@ class SigningProofTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'secure version'):
                 sb.sign_build(build, self.key, output)
         self.assertEqual(sorted(p.name for p in output.iterdir()),
-                         ['SHA256SUMS', 'bootloader.bin', 'ota_data_initial.bin', 'partition-table.bin', sb.APP])
+                         sorted(['SHA256SUMS', 'bootloader.bin', 'flash_args', 'ota_data_initial.bin',
+                                 'partition-table.bin', sb.PUBLIC_KEY, sb.APP]))
+        self.assertEqual((output / 'flash_args').read_text(), '--flash-mode dio --flash-freq 80m --flash-size 32MB\n'
+                         '0x2000 bootloader.bin\n0x10000 partition-table.bin\n0x17000 ota_data_initial.bin\n'
+                         f'0x20000 {sb.APP}\n')
+        public = (output / sb.PUBLIC_KEY).read_text()
+        self.assertTrue(public.startswith('-----BEGIN PUBLIC KEY-----'))
+        sb.must(self.tool, 'verify-signature', '--version', '2', '--keyfile', output / sb.PUBLIC_KEY, image)
+        self.assertIn(sb.PUBLIC_KEY, (output / 'SHA256SUMS').read_text())
         sb.signature_block((output / 'bootloader.bin').read_bytes())
-        self.assertNotIn(b'PRIVATE KEY', b''.join(p.read_bytes() for p in output.iterdir()))
+        self.assertNotIn(b'PRIVATE', b''.join(p.read_bytes() for p in output.iterdir()))
         ota_key, ota_public = self.root / 'ota.pem', self.root / 'ota-public.pem'
         subprocess.run(['openssl', 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', str(ota_key)], check=True, capture_output=True)
         subprocess.run(['openssl', 'pkey', '-in', str(ota_key), '-pubout', '-out', str(ota_public)], check=True, capture_output=True)
@@ -259,8 +276,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
         build = step('Build credential-free release firmware')
         sign = step('Secure Boot sign and verify application')
         manifest = step('Sign and verify release manifest')
-        self.assertIn('scripts/secure-build.py compile --build-dir firmware/build --hmac-key-id', build)
-        self.assertIn('vars.TEMPO_IDENTITY_HMAC_KEY_ID', build)
+        self.assertIn('scripts/secure-build.py compile --build-dir firmware/build\n', build)
+        self.assertNotIn('TEMPO_IDENTITY_HMAC_KEY_ID', workflow)
         self.assertNotIn('secrets.', build)
         self.assertIn('SECURE_BOOT_SIGNING_KEY: ${{ secrets.SECURE_BOOT_SIGNING_KEY }}', sign)
         self.assertIn('scripts/secure-build.py sign', sign)
@@ -272,6 +289,16 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertLess(workflow.index('- name: Secure Boot sign and verify application'), workflow.index('- name: Sign and verify release manifest'))
         self.assertEqual(workflow.count('secrets.SECURE_BOOT_SIGNING_KEY'), 1)
         self.assertNotIn('idf.py -C firmware build', workflow)
+
+    def test_pull_requests_build_and_sign_production_profile_on_pinned_sdk(self):
+        ci = (ROOT / '.github/workflows/ci.yaml').read_text()
+        job = ci.split('\n  firmware:\n', 1)[1].split('\n  changeset:\n', 1)[0]
+        step = job.split('- name: Build and Secure Boot sign the production profile', 1)[1]
+        self.assertIn('ref: 051e4c4eb20346e043cdd47bc388fde75ff8af63', job)
+        self.assertIn('TEMPO_ESPSECURE_FROM_PATH=1 python3 tests/test_secure_build.py', step)
+        self.assertIn('generate-signing-key --version 2 --scheme rsa3072 "$key_dir/disposable.pem"', step)
+        self.assertIn('scripts/secure-build.py build --build-dir build-host/secure-build --signing-key "$key_dir/disposable.pem"', step)
+        self.assertNotIn('secrets.', job)
 
 
 if __name__ == '__main__':

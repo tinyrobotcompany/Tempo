@@ -90,7 +90,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.firmware == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -115,6 +115,17 @@ jobs:
           bash scripts/test-identity-real.sh
           TEMPO_CI_BUILD=1 idf.py -C firmware build
           python3 scripts/check-transport-memory.py
+      - name: Build and Secure Boot sign the production profile with a disposable key
+        shell: bash
+        run: |
+          test ! -f .env
+          source .artifacts/esp-idf/export.sh
+          TEMPO_ESPSECURE_FROM_PATH=1 python3 tests/test_secure_build.py
+          umask 077
+          key_dir=$(mktemp -d)
+          trap 'rm -rf "$key_dir"' EXIT
+          espsecure generate-signing-key --version 2 --scheme rsa3072 "$key_dir/disposable.pem"
+          python3 scripts/secure-build.py build --build-dir build-host/secure-build --signing-key "$key_dir/disposable.pem" --output build-host/secure-release
   changeset:
     name: Changeset Check
     runs-on: ubuntu-24.04

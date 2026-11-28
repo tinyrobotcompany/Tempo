@@ -13,7 +13,12 @@ CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
 # Images are signed after the build by espsecure; the private key never enters
 # the build directory or the generated sdkconfig.
 # CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES is not set
-# CONFIG_SECURE_BOOT_INSECURE is not set
+# The factory lockdown script enables Secure Boot in eFuse; the bootloader must
+# refuse to boot an unlocked board instead of burning eFuses itself. ESP-IDF only
+# offers this option under "Allow potentially insecure options"; secure-build.py
+# rejects every other option in that menu.
+CONFIG_SECURE_BOOT_INSECURE=y
+CONFIG_SECURE_BOOT_REQUIRE_ALREADY_ENABLED=y
 
 # Flash encryption, Development mode (USB re-flash stays possible). Required.
 CONFIG_SECURE_FLASH_ENC_ENABLED=y
@@ -21,6 +26,10 @@ CONFIG_SECURE_FLASH_ENCRYPTION_KEY_SOURCE_EFUSES=y
 CONFIG_SECURE_FLASH_ENCRYPTION_AES128=y
 CONFIG_SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT=y
 CONFIG_SECURE_INSECURE_ALLOW_DL_MODE=y
+# Flash encryption is also enabled by the factory script, never by the bootloader.
+CONFIG_SECURE_FLASH_REQUIRE_ALREADY_ENABLED=y
+# Development mode: ROM download mode may still write encrypted flash (USB re-flash).
+CONFIG_SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC=y
 
 # Anti-rollback with an explicit secure version. Required.
 # Increase CONFIG_BOOTLOADER_APP_SECURE_VERSION only for security fixes: each
@@ -46,7 +55,7 @@ CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC=y
 CONFIG_LWIP_MAX_SOCKETS=16
 
 # Device identity and cloud enrollment. Required.
-# The HMAC_UP key slot is a manufacturing decision; secure-build.py adds
-# CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID from --hmac-key-id and rejects -1.
+# HMAC_UP identity key: eFuse BLOCK_KEY5, burned by the factory lockdown.
+CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID=5
 CONFIG_TEMPO_PRODUCTION_IDENTITY=y
 CONFIG_TEMPO_ENROLLMENT_URL="https://tempo-westeurope-api.politemushroom-8174e848.westeurope.azurecontainerapps.io/v1/device"
