@@ -114,9 +114,31 @@ burn eFuses during an ordinary update.
   work or issuance quota consumption. Investigate `device_job_invalid` events;
   existing certificates are retained. After the one-day error cooldown, a corrected
   signed request can create a new job.
-- Alert on `worker_cycle_failed`, repeated `device_job_failed`, near-expiry devices,
-  CA rate limits, and DNS credential rotation failures. Log events omit private
-  material. Configure alert recipients and budgets before production activation.
+- Log alert rules in `infra/certificates/ops.bicep` count these service log
+  events in the workspace's `ContainerAppConsoleLogs_CL` table and email the
+  `tempo-westeurope-alerts` action group (recipient: `ALERT_EMAIL` secret, see
+  `FRESH_INFRASTRUCTURE_DELIVERY.md`). Each rule emails once when it fires and
+  once when it resolves.
+
+  | Event | Fires when | Severity |
+  | --- | --- | --- |
+  | `worker_cycle_failed` | any, in 30 minutes | 1 |
+  | `device_job_failed` | 3 or more in 1 hour | 2 |
+  | `device_job_invalid` | any, in 30 minutes | 2 |
+  | `nonce_cleanup_failed` | any, in 30 minutes | 2 |
+  | `nonce_cleanup_budget_reached` | any, in 30 minutes | 3 |
+  | `certificate_expiring_soon` or `certificate_expiry_check_failed` | any, in 2 hours | 1 |
+  | `ca_rate_limited` | any, in 30 minutes | 1 |
+
+  The worker's device lane counts enabled devices whose certificate expires
+  within 14 days once an hour and logs only that count. Devices renew halfway
+  through the lifetime, so this means renewal has been failing for weeks.
+  `ca_rate_limited` is logged when Let's Encrypt returns an ACME `rateLimited`
+  error; the CA's detail text is not logged. Both events need an image built
+  from this code and a reviewed `imageDigest` change; until then those two
+  rules cannot fire. DNS credential rotation failures surface as
+  `worker_cycle_failed` / `device_job_failed`. Log events omit private material.
+  Budgets are not configured by this template.
 - Host tests exercise signatures, replay, cross-device/name denial, malformed CSR,
   address policy, provider mutation scoping, worker recovery and API bounds.
   Run `bash scripts/test-certificates.sh`. Infrastructure validation belongs to
@@ -174,10 +196,10 @@ The worker sweeps expired nonces before enumerating jobs, so a job failure canno
 skip that sweep. Azure Table Storage itself supplies no TTL deletion.
 
 `nonce_cleanup_failed` warns of failed sweeps/admission and
-`nonce_cleanup_budget_reached` identifies a capped sweep/backlog. Configure log
-alerts for either event before activation, alongside worker/job failures and
-certificate expiry. No live Azure alert rules or recipients are configured by this
-PR; rollout must verify those operational controls before customers use the service.
+`nonce_cleanup_budget_reached` identifies a capped sweep/backlog. Both have log
+alert rules (see "Operations and validation"). After the first deployment with
+alerts, confirm the action group's confirmation email arrived before customers
+use the service.
 
 Registry identity fields are intentionally read from DeviceRegistry on every
 request, not copied into writable state. Certificate and DNS jobs have distinct

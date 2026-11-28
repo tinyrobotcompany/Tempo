@@ -24,3 +24,5 @@ jobs:
           jq -e '.parameters.imageDigest.defaultValue | . == "" or test("^[a-f0-9]{64}$")' build-host/infrastructure/template.json
       - name: Check delivery role delegation
         run: bash .github/scripts/delegation.test.sh build-host/infrastructure/bootstrap.json
+      - name: Check alert rules
+        run: bash .github/scripts/infrastructure-alerts.test.sh build-host/infrastructure/template.json

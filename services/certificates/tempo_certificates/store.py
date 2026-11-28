@@ -84,6 +84,16 @@ class TableStore:
             LOG.warning("nonce_cleanup_budget_reached limit=%d", limit)
         return deleted
 
+    def expiring_certificates(self, now, horizon):
+        # Enabled devices whose current certificate lapses within (now, horizon].
+        query = "RowKey eq 'device' and expires_at gt @now and expires_at le @horizon"
+        count = 0
+        for entity in self.table.query_entities(query, parameters={"now": now, "horizon": horizon},
+                                                results_per_page=100):
+            row = self.get(entity["PartitionKey"])
+            if row and row["enabled"]:
+                count += 1
+        return count
 
     def register(self, row):
         try:
