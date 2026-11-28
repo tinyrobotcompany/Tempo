@@ -4,7 +4,7 @@ ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('ota_release',ROOT/'scripts/ota-release.py');ota=importlib.util.module_from_spec(spec);spec.loader.exec_module(ota)
 def signed(image):
  # Shape of an RSA Secure Boot v2 signature sector (espsecure output); the real
- # espsecure round trip is covered by tests/test_secure_build.py.
+ # espsecure round trip is covered by .github/scripts/secure-build.test.mjs.
  image=bytes(image)+b'\xff'*(-len(image)%4096)
  block=b'\xe7\x02\x00\x00'+hashlib.sha256(image).digest();block+=bytes(1196-len(block))
  return image+block+zlib.crc32(block).to_bytes(4,'little')+b'\xff'*(4096-1200)
@@ -15,7 +15,7 @@ class ReleaseTests(unittest.TestCase):
   self.assertIn('test -f firmware/main/credentials.c',build)
   self.assertIn('test -f firmware/main/update_service.c',build)
   self.assertIn('test ! -f scripts/generate_transport_config.py',build)
-  self.assertLess(build.index('test ! -f scripts/generate_transport_config.py'),build.index('scripts/secure-build.py compile'))
+  self.assertLess(build.index('test ! -f scripts/generate_transport_config.py'),build.index('scripts/secure-build.mjs compile'))
   self.assertNotIn('OTA_SIGNING_PRIVATE_KEY',build)
   self.assertIn('needs: [validation, security, prerequisites]',workflow)
   copy_commands='\n'.join(line.strip() for line in build.splitlines() if line.strip().startswith(('mkdir -p build-host/release','cp firmware/dependencies.lock')))

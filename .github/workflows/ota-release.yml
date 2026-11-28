@@ -56,6 +56,9 @@ jobs:
           persist-credentials: false
       - name: Recheck release commit after approval
         run: bash .github/scripts/ota-release-head.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
       # Check out ESP-IDF before planning so no later checkout runs after release metadata exists.
       - name: Checkout pinned ESP-IDF
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -83,7 +86,7 @@ jobs:
           .artifacts/esp-idf/install.sh esp32p4
           source .artifacts/esp-idf/export.sh
           python3 scripts/check-idf-security.py "$IDF_PATH"
-          python3 scripts/secure-build.py compile --build-dir firmware/build
+          node scripts/secure-build.mjs compile --build-dir firmware/build
           python3 scripts/check-transport-memory.py
           mkdir -p build-host/release
           cp firmware/dependencies.lock build-host/release/dependencies.lock
@@ -100,7 +103,7 @@ jobs:
           signing_key=$(mktemp)
           trap 'rm -f "$signing_key"' EXIT
           printf '%s\n' "$SECURE_BOOT_SIGNING_KEY" > "$signing_key"
-          python3 scripts/secure-build.py sign --signing-key "$signing_key" --build-dir firmware/build --output build-host/secure-release
+          node scripts/secure-build.mjs sign --signing-key "$signing_key" --build-dir firmware/build --output build-host/secure-release
       - name: Sign and verify release manifest
         env:
           OTA_SIGNING_PRIVATE_KEY: ${{ secrets.OTA_SIGNING_PRIVATE_KEY }}

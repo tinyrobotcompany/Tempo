@@ -7,10 +7,10 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = spec_from_file_location('release', ROOT/'scripts/release.py')
 release = module_from_spec(spec); spec.loader.exec_module(release)
 TARGET = 'waveshare-p4-10.1-rev3-32mb'
-LAYOUT = 'ab-8mb-secure-v1'  # Must equal secure-build.py LAYOUT and station_update.h.
-def secure_build():
-    spec = spec_from_file_location('secure_build', Path(__file__).resolve().with_name('secure-build.py'))
-    module = module_from_spec(spec); spec.loader.exec_module(module); return module
+LAYOUT = 'ab-8mb-secure-v1'  # Must equal secure-build.mjs LAYOUT and station_update.h.
+def require_secure_boot_signature(image):
+    checked=subprocess.run(['node',str(Path(__file__).resolve().with_name('secure-build.mjs')),'check-signature',str(image)],capture_output=True,text=True)
+    if checked.returncode:raise ValueError(checked.stderr.strip().removeprefix('FAIL: ') or 'Missing Secure Boot v2 signature')
 def git(*args):
     return subprocess.check_output(['git', *args], cwd=ROOT, text=True).strip()
 def plan(destination):
@@ -53,9 +53,9 @@ def package(destination, image, version, key, public_key):
     blob=image.read_bytes()
     if not 1024<=len(blob)<=0x800000 or blob[0]!=0xe9:
         raise ValueError('Invalid ESP application image or OTA slot overflow')
-    # Locked boards reject unsigned images; never publish one. secure-build.py has
+    # Locked boards reject unsigned images; never publish one. secure-build.mjs has
     # already verified the signature with espsecure against the signing key.
-    secure_build().signature_block(blob)
+    require_secure_boot_signature(image)
     # ESP-IDF app descriptor is first segment data: magic + secure version + reserved,
     # then 32-byte version and 32-byte project name. Reject packaging another build.
     if int.from_bytes(blob[32:36],'little')!=0xabcd5432 or blob[48:80].split(b'\0')[0].decode()!=version or blob[80:112].split(b'\0')[0]!=b'weather_station':

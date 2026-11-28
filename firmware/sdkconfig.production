@@ -1,6 +1,6 @@
 # Tempo production profile: Secure Boot v2 + flash encryption, Development mode.
-# Layered after sdkconfig.defaults and sdkconfig.rev3 by scripts/secure-build.py.
-# scripts/secure-build.py check-config fails the build unless every option
+# Layered after sdkconfig.defaults and sdkconfig.rev3 by scripts/secure-build.mjs.
+# scripts/secure-build.mjs check-config fails the build unless every option
 # marked "required" below is present in the generated sdkconfig.
 # Reference: https://docs.espressif.com/projects/esp-idf/en/latest/esp32p4/security/secure-boot-v2.html
 
@@ -15,7 +15,7 @@ CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
 # CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES is not set
 # The factory lockdown script enables Secure Boot in eFuse; the bootloader must
 # refuse to boot an unlocked board instead of burning eFuses itself. ESP-IDF only
-# offers this option under "Allow potentially insecure options"; secure-build.py
+# offers this option under "Allow potentially insecure options"; secure-build.mjs
 # rejects every other option in that menu.
 CONFIG_SECURE_BOOT_INSECURE=y
 CONFIG_SECURE_BOOT_REQUIRE_ALREADY_ENABLED=y

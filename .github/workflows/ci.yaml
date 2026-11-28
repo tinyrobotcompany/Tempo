@@ -95,6 +95,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
       - name: Checkout tested ESP-IDF revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -120,12 +123,12 @@ jobs:
         run: |
           test ! -f .env
           source .artifacts/esp-idf/export.sh
-          TEMPO_ESPSECURE_FROM_PATH=1 python3 tests/test_secure_build.py
+          TEMPO_ESPSECURE_FROM_PATH=1 node --test .github/scripts/secure-build.test.mjs
           umask 077
           key_dir=$(mktemp -d)
           trap 'rm -rf "$key_dir"' EXIT
           espsecure generate-signing-key --version 2 --scheme rsa3072 "$key_dir/disposable.pem"
-          python3 scripts/secure-build.py build --build-dir build-host/secure-build --signing-key "$key_dir/disposable.pem" --output build-host/secure-release
+          node scripts/secure-build.mjs build --build-dir build-host/secure-build --signing-key "$key_dir/disposable.pem" --output build-host/secure-release
   changeset:
     name: Changeset Check
     runs-on: ubuntu-24.04

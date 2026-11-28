@@ -27,7 +27,7 @@ Locked boards run Secure Boot v2 and flash encryption in **Development** mode. T
 1. **Secure Boot signature** (RSA-3072, RSA-PSS) over the application image. Espressif recommends RSA on ESP32-P4 (about 14.8 ms to verify, against about 61.1 ms for ECDSA-P256) and marks ECDSA Secure Boot v2 on this chip as not recommended. Source: [ESP32-P4 Secure Boot v2](https://docs.espressif.com/projects/esp-idf/en/latest/esp32p4/security/secure-boot-v2.html).
 2. **OTA manifest signature** (ECDSA P-256, `firmware/main/ota_public.pem`), unchanged and still checked separately by the device.
 
-`scripts/secure-build.py` layers `firmware/sdkconfig.defaults`, `sdkconfig.rev3` and `sdkconfig.production` into a separate generated sdkconfig (the committed development `firmware/sdkconfig` is not used or changed). `check-config` runs after configuration and again after compiling, and fails the build unless every guard below holds. `sign` signs the app and the bootloader with `espsecure sign-data --version 2`, verifies them with the derived public key, and proves that a one-bit tampered image and an image signed by a fresh disposable key are both rejected. Only then does the workflow sign the OTA manifest; `ota-release.py package` also refuses an image without a matching Secure Boot v2 signature block.
+`scripts/secure-build.mjs` layers `firmware/sdkconfig.defaults`, `sdkconfig.rev3` and `sdkconfig.production` into a separate generated sdkconfig (the committed development `firmware/sdkconfig` is not used or changed). `check-config` runs after configuration and again after compiling, and fails the build unless every guard below holds. `sign` signs the app and the bootloader with `espsecure sign-data --version 2`, verifies them with the derived public key, and proves that a one-bit tampered image and an image signed by a fresh disposable key are both rejected. Only then does the workflow sign the OTA manifest; `ota-release.py package` also refuses an image without a matching Secure Boot v2 signature block.
 
 Secrets, both in the main-only **production-ota** environment:
 
@@ -38,7 +38,7 @@ Pull requests build and sign the production profile in the pinned ESP-IDF 6.1.1 
 
 ### Required production options
 
-These are the options `scripts/secure-build.py check-config` enforces (`REQUIRED`, `FORBIDDEN` and `INSECURE_GATED` in the script). The factory lockdown depends on this list.
+These are the options `scripts/secure-build.mjs check-config` enforces (`REQUIRED`, `FORBIDDEN` and `INSECURE_GATED` in the script). The factory lockdown depends on this list.
 
 Must be set:
 
@@ -68,7 +68,7 @@ Espressif default kept: `CONFIG_SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS` is not set. B
 On the Mac, activate the pinned ESP-IDF 6.1.1 environment (as for `scripts/idf.sh`), then:
 
 ```sh
-python3 scripts/secure-build.py build --signing-key /absolute/path/outside/the/repo/secure_boot_signing_key.pem
+node scripts/secure-build.mjs build --signing-key /absolute/path/outside/the/repo/secure_boot_signing_key.pem
 ```
 
 The key is read in place from the path you pass. The command refuses a key stored inside this checkout, never copies it, and never flashes or burns eFuses. It compiles into `build-host/secure-build/` and writes the signed set to `build-host/secure-release/`:
@@ -78,7 +78,7 @@ The key is read in place from the path you pass. The command refuses a key store
 - `secure_boot_public_key.pem`: the public key extracted from the signing key, for the factory Secure Boot digest (`espsecure digest-sbv2-public-key`)
 - `SHA256SUMS` for all of the above
 
-`--build-dir` and `--output` change those folders. Flashing and eFuse steps belong to the factory runbook. `python3 scripts/secure-build.py check-config <sdkconfig>` checks any generated sdkconfig on its own.
+`--build-dir` and `--output` change those folders. Flashing and eFuse steps belong to the factory runbook. `node scripts/secure-build.mjs check-config <sdkconfig>` checks any generated sdkconfig on its own.
 
 ## Initial activation
 

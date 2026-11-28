@@ -42,7 +42,7 @@ GitHub-hosted assets require no separate domain or web hosting. Devices use publ
 
 ## Acceptance and activation checklist
 
-1. Run host suites and build the signed bootstrap with `scripts/secure-build.py build` (see RELEASING.md).
+1. Run host suites and build the signed bootstrap with `scripts/secure-build.mjs build` (see RELEASING.md).
 2. Install bootstrap over USB; provision the existing PRIM credential and verify transport.
 3. Select hourly testing or press Check now. Never set customer defaults to hourly.
 4. Publish two successive versions through the reviewed main workflow; check matching device versions and visible release notes.
