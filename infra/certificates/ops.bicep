@@ -53,7 +53,7 @@ resource rules 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [for alert 
     windowSize: alert.window
     autoMitigate: true
     criteria: { allOf: [{
-      query: 'ContainerAppConsoleLogs_CL | where Log_s has_any (${join(map(alert.events, event => '\'${event}\''), ', ')})'
+      query: 'ContainerAppConsoleLogs_CL | where ${join(map(alert.events, event => 'Log_s contains_cs \'${event}\''), ' or ')}'
       timeAggregation: 'Count'
       operator: 'GreaterThanOrEqual'
       threshold: alert.minimum
