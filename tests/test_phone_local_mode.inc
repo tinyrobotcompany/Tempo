@@ -58,6 +58,11 @@ static void local_mode_tests(void)
  /* Behaviour 2: the display offers Local mode once renewal has failed for 7 days. */
  renew_after=time(NULL)-6*86400;assert(!(query()&STATION_LOCAL_OFFER_RENEWAL));
  renew_after=time(NULL)-7*86400-1;assert(query()&STATION_LOCAL_OFFER_RENEWAL);renew_after=0;
+ /* ... or as soon as the certificate has expired. */
+ expires_at=time(NULL)+60;assert(!(query()&STATION_LOCAL_OFFER_EXPIRED));
+ expires_at=time(NULL)-1;assert((query()&STATION_LOCAL_OFFER_EXPIRED)&&!(query()&STATION_LOCAL_OFFER_RENEWAL));expires_at=0;
+ /* Offers are only offers: none of them opens port 80. */
+ assert(http_starts==4);
  /* Behaviour 4: turning off. A failed save keeps it on. */
  unsigned before=rotations;
  local_save_error=ESP_FAIL;station_phone_local_mode(STATION_LOCAL_REQUEST_OFF);station_phone_maintenance();
@@ -82,8 +87,22 @@ static int boot_case(const char *name)
 {
  station_settings_t initial=station_defaults();network.connected=true;fail_start=false;fail_route=false;
  station_phone_link_t link;httpd_req_t r;
- if(!strcmp(name,"--boot-local-unlocked")){
-  /* Unlocked board: no identity, so HTTPS cannot start; saved Local mode still works after reboot. */
+ if(!strcmp(name,"--boot-unlocked")){
+  /* Unlocked board, Local mode never chosen: HTTPS cannot start, the display only OFFERS
+     Local mode, and port 80 stays closed until the user confirms on the display. */
+  fail_start=true;renew_after=time(NULL)-30*86400;expires_at=time(NULL)-86400;
+  assert(station_phone_start(&initial)==ESP_FAIL&&!http_running&&http_starts==0);
+  for(unsigned i=0;i<5;i++)station_phone_maintenance();
+  unsigned flags=query();
+  assert((flags&STATION_LOCAL_OFFER_NO_HTTPS)&&(flags&STATION_LOCAL_OFFER_EXPIRED)&&(flags&STATION_LOCAL_OFFER_RENEWAL)&&!(flags&STATION_LOCAL_ON));
+  assert(http_starts==0&&!http_running&&local_saves==0&&saved_local==STATION_LOCAL_MODE_OFF);
+  station_phone_link(&link);assert(!link.online);
+  /* The display's confirmed request is the only thing that opens port 80. */
+  station_phone_local_mode(STATION_LOCAL_REQUEST_ON);assert(http_starts==0);
+  station_phone_maintenance();assert(http_running&&http_starts==1&&saved_local==STATION_LOCAL_MODE_ON);
+  station_phone_link(&link);assert(link.online&&!strcmp(link.url,FIXTURE_IP_TOKEN("172.20.10.2","abababababababababababababababab")));
+ }else if(!strcmp(name,"--boot-local-unlocked")){
+  /* Unlocked board where the user already confirmed Local mode on the display before this reboot. */
   saved_local=STATION_LOCAL_MODE_ON;fail_start=true;
   assert(station_phone_start(&initial)==ESP_FAIL&&http_running&&http_route_count==11&&route_count==0);
   unsigned flags=query();assert((flags&STATION_LOCAL_ON)&&(flags&STATION_LOCAL_OFFER_NO_HTTPS)&&!(flags&STATION_LOCAL_HTTPS_READY));

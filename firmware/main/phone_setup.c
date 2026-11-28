@@ -72,11 +72,12 @@ static void local_maintenance(void)
     local_rotated=false;
 }
 /* Renewal starts at the certificate's midpoint and success moves the date forward.
-   A clock before 2024 is not synchronised yet. */
-static bool renewal_overdue(void)
+   A clock before 2024 is not synchronised yet, so nothing is offered. */
+static unsigned certificate_offers(void)
 {
-    int64_t due=station_identity_renew_after();time_t now=time(NULL);
-    return due>0&&now>=1704067200&&(int64_t)now-due>=7*86400;
+    int64_t due=station_identity_renew_after(),expires=station_identity_expires_at(),now=time(NULL);
+    if(now<1704067200)return 0;
+    return (expires>0&&now>=expires?STATION_LOCAL_OFFER_EXPIRED:0)|(due>0&&now-due>=7*86400?STATION_LOCAL_OFFER_RENEWAL:0);
 }
 static void check_phone_dns(void)
 {
@@ -351,7 +352,7 @@ unsigned station_phone_local_mode(int request)
     if(atomic_load(&local_request)!=STATION_LOCAL_QUERY||mode==STATION_LOCAL_MODE_ROTATE)flags|=STATION_LOCAL_BUSY;
     if(failed)flags|=STATION_LOCAL_FAILED;
     if(!ready&&tls!=ESP_OK)flags|=STATION_LOCAL_OFFER_NO_HTTPS;
-    if(renewal_overdue())flags|=STATION_LOCAL_OFFER_RENEWAL;
+    flags|=certificate_offers();
     if(ready&&net.connected&&dns_ready)flags|=STATION_LOCAL_HTTPS_READY;
     return flags;
 }

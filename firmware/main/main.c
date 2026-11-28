@@ -116,6 +116,7 @@ void app_main(void)
     station_ui_start(&settings, (station_ui_actions_t){
         .update_status=station_update_status,.update_request=station_update_request,
         .phone_forget=station_phone_forget, .phone_link=station_phone_link, .phone_take=station_phone_take, .phone_publish=station_phone_publish,
+        .phone_local_mode=station_phone_local_mode,
         .transport_search=station_transport_search,.transport_search_status=station_transport_search_status,.transport_search_select=station_transport_search_select,
         .transport_line_map=station_transport_line_map,.transport_line_map_status=station_transport_line_map_status,.transport_line_stop_select=station_transport_line_stop_select,.transport_nearby_reset=station_transport_nearby_reset,
         .map_tile_acquire=station_map_tile_acquire,.map_tile_release=station_map_tile_release,.map_cancel_pending=station_map_cancel_pending,

@@ -12,3 +12,4 @@
 #define STATION_LOCAL_OFFER_NO_HTTPS 8u   /* No usable identity/certificate: HTTPS is not running. */
 #define STATION_LOCAL_OFFER_RENEWAL 16u   /* Certificate renewal overdue by 7 days or more. */
 #define STATION_LOCAL_HTTPS_READY 32u     /* The HTTPS page is reachable with a valid certificate. */
+#define STATION_LOCAL_OFFER_EXPIRED 64u   /* The installed certificate has expired. */

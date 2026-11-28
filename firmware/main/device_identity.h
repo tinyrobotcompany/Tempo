@@ -13,3 +13,5 @@ esp_err_t station_identity_sign(const char *body, char *signature, size_t capaci
 esp_err_t station_identity_install(const char *chain, int64_t *renew_after);
 bool station_identity_changed(void);
 int64_t station_identity_renew_after(void);
+/* Read-only: installed certificate notAfter (Unix seconds), 0 when none is installed. */
+int64_t station_identity_expires_at(void);

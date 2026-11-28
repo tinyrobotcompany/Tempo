@@ -758,6 +758,7 @@ static void update_local_controls(unsigned local)
     const char *text="";
     if(local&STATION_LOCAL_FAILED)text="Could not change Local mode. Please retry.";
     else if(on&&(local&STATION_LOCAL_HTTPS_READY))text="Secure HTTPS works again. You can turn off Local mode.";
+    else if(!on&&(local&STATION_LOCAL_OFFER_EXPIRED))text="Tempo's security certificate has expired.\nIf your phone can't open the page, use Local mode.";
     else if(!on&&(local&STATION_LOCAL_OFFER_NO_HTTPS))text="Secure HTTPS is not available on this display.\nYou can use Local mode (not encrypted) instead.";
     else if(!on&&(local&STATION_LOCAL_OFFER_RENEWAL))text="Tempo could not renew its certificate for 7 days.\nIf your phone can't open the page, use Local mode.";
     set_label_if_changed(phone_local_status,text);

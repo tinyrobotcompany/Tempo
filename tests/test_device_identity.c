@@ -109,14 +109,17 @@ int main(void){
  assert(station_identity_sign("{}",output,1)!=0);
  crypto_error=-1;assert(station_identity_sign("{}",output,sizeof(output))!=0);crypto_error=0;
  assert(station_identity_install(NULL,NULL)==ESP_ERR_INVALID_ARG);
+ int64_t no_cert=station_identity_expires_at();
  assert(station_identity_install("chain",NULL)==ESP_ERR_INVALID_ARG&&!stored_cert[0]);
  int64_t renewed=0;assert(station_identity_install("",&renewed)!=0);
  verify_error=-1;assert(station_identity_install("chain",&renewed)!=0&&!stored_cert[0]);verify_error=0;
  parse_error=-1;assert(station_identity_install("chain",&renewed)!=0);parse_error=0;
  commit_error=-1;assert(station_identity_install("chain",&renewed)!=0&&!station_identity_changed());commit_error=0;
+ assert(station_identity_expires_at()==no_cert); /* Rejected or unsaved certificates never change expiry. */
  assert(station_identity_install("chain",&renewed)==0&&renewed>0&&station_identity_renew_after()==renewed);
+ assert(station_identity_expires_at()==epoch(&(mbedtls_x509_time){2027,3,1,0,0,0}));
  assert(station_identity_install("chain",&renewed)==0); /* Duplicate delivery must preserve pending reload. */
- assert(station_identity_changed()&&!station_identity_changed());assert(station_identity_init()==0&&station_identity_renew_after()==renewed);
+ assert(station_identity_changed()&&!station_identity_changed());assert(station_identity_init()==0&&station_identity_renew_after()==renewed&&station_identity_expires_at()==epoch(&(mbedtls_x509_time){2027,3,1,0,0,0}));
  assert(station_identity_install("chain",&renewed)==0&&!station_identity_changed());
  int64_t eastern=renewed;setenv("TZ","JST-9",1);tzset();
  assert(station_identity_install("chain",&renewed)==0&&renewed==eastern);

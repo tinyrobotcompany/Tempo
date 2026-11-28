@@ -22,8 +22,9 @@ esp_err_t station_pairing_rotate(char token[33]){rotations++;if(rotate_fail)retu
 static station_local_mode_t saved_local;static esp_err_t local_load_error,local_save_error;static unsigned local_saves;
 esp_err_t station_local_mode_load(station_local_mode_t *m){*m=STATION_LOCAL_MODE_OFF;if(local_load_error)return local_load_error;*m=saved_local;return ESP_OK;}
 esp_err_t station_local_mode_save(station_local_mode_t m){local_saves++;if(local_save_error)return local_save_error;saved_local=m;return ESP_OK;}
-static int64_t renew_after;
+static int64_t renew_after,expires_at;
 int64_t station_identity_renew_after(void){return renew_after;}
+int64_t station_identity_expires_at(void){return expires_at;}
 /* The lock must never be re-entered or released twice. */
 static bool lock_held,lock_fail;static unsigned lock_takes;
 SemaphoreHandle_t xSemaphoreCreateMutex(void){static int lock;return lock_fail?NULL:(SemaphoreHandle_t)&lock;}

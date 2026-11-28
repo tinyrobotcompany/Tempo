@@ -72,9 +72,9 @@ for it, phone payloads cannot carry it, and it is stored as its own NVS key
 and `tests/test_phone_local_mode.inc` pin this.
 
 The display offers Local mode (it never enables it) when HTTPS cannot start (no
-device identity, for example an unlocked development board), or when certificate
-renewal has been overdue for 7 days or more. Renewal starts at the certificate's
-midpoint, so for certificates of 14 days or longer this offer appears before expiry.
+device identity, for example an unlocked development board), when the installed
+certificate has expired, or when renewal has been overdue for 7 days or more. In
+every case port 80 stays closed until the customer confirms on the display.
 
 While on, port 80 serves the same page and authenticated API as HTTPS, HTTPS keeps
 running if available, and the QR shows `http://<current IPv4>/#token=…`. The page
@@ -94,8 +94,8 @@ about device identity, certificates or the cloud service.
 
 If Tiny Robot Company's certificate service ever stops, device certificates expire
 within about 90 days and the HTTPS page stops working. Every device keeps a working
-phone page forever through Local mode: once renewal has been overdue for 7 days the
-display offers it, and the customer can switch it on. Local mode needs no cloud
+phone page forever through Local mode: once renewal has been overdue for 7 days, or
+the certificate has expired, the display offers it, and the customer can switch it on. Local mode needs no cloud
 service, DNS name or certificate. Weather, transport and the display keep working
 independently of the certificate service.
 

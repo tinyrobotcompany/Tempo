@@ -107,6 +107,7 @@ static void local_mode_ui_tests(void)
  local_flags=STATION_LOCAL_BUSY;phone_ticks();assert(contains_text(lv_screen_active(),"Replacing the pairing code"));
  /* Automatic offers: no identity, or renewal failing for 7 days. */
  dns_pending=false;local_flags=STATION_LOCAL_OFFER_NO_HTTPS;phone_ticks();assert(contains_text(lv_screen_active(),"Secure HTTPS is not available on this display"));
+ local_flags=STATION_LOCAL_OFFER_EXPIRED;phone_ticks();assert(contains_text(lv_screen_active(),"certificate has expired"));
  local_flags=STATION_LOCAL_OFFER_RENEWAL;phone_ticks();assert(contains_text(lv_screen_active(),"could not renew its certificate for 7 days"));
  local_flags=STATION_LOCAL_FAILED;phone_ticks();assert(contains_text(lv_screen_active(),"Could not change Local mode"));
  status.connected=false;local_flags=0;phone_ticks();assert(hidden_button("Can't open the page?"));status.connected=true;phone_ticks();
