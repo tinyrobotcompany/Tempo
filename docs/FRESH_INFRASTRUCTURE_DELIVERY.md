@@ -141,8 +141,14 @@ has succeeded. Do the steps back to back:
    themselves. A device that used all four attempts sends a fresh signed
    request after the one-day error cooldown.
 
-Rolling back means setting `staging` through a reviewed change and running the
-bootstrap again.
+**No working rollback yet.** A bootstrap re-run against a CA where the key is
+already registered fails: acme's `new_account` raises `ConflictError`, which
+`bootstrap.py` does not handle. That covers going back to staging, and also a
+second production run (for example, rotating the DNS credential: the new
+credential is stored, then the job fails). Key Vault is private, so an operator
+cannot restore the earlier `acme-account-uri` version by hand. Make the
+bootstrap idempotent (use the existing account's URI on conflict) before
+relying on a rollback or a re-run.
 
 ACME `staging` means test certificates, not an additional Azure environment. Live
 certificate issuance requires DNS credentials, CA account/terms setup and the
