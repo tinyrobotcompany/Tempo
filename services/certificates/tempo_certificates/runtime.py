@@ -13,12 +13,8 @@ from acme import messages
 from .app import create_azure_store
 from .dns import Spaceship
 from .issuer import AcmeIssuer
-from .worker import Worker, cleanup_nonces, report_expiring_certificates
+from .worker import Worker, cleanup_nonces
 from .secret_cache import SecretCache
-
-LOG = logging.getLogger("tempo.certificates")
-RATE_LIMITED = "urn:ietf:params:acme:error:rateLimited"
-EXPIRY_CHECK_SECONDS = 3600
 
 
 class CloudIssuer:
@@ -35,20 +31,15 @@ class CloudIssuer:
                                 self.environment, self.dns, roots)
             return issuer.issue(name, csr, checkpoint)
         except messages.Error as error:
-            if error.typ == RATE_LIMITED:
-                LOG.warning("ca_rate_limited")
             if error.typ in ("urn:ietf:params:acme:error:unauthorized",
                               "urn:ietf:params:acme:error:accountDoesNotExist"):
                 self.vault.invalidate("acme-account-key", "acme-account-uri")
             raise
 
 
-def run_cycle(store, vault, environment, lane=None, check_expiry=False):
+def run_cycle(store, vault, environment, lane=None):
     # Housekeeping precedes external secret/provider access and job enumeration.
-    now = int(time.time())
-    cleanup_nonces(store, now)
-    if check_expiry:
-        report_expiring_certificates(store, now)
+    cleanup_nonces(store, int(time.time()))
     credentials = json.loads(vault.get_secret("spaceship-credentials").value)
     dns = Spaceship(environment["DNS_DOMAIN"], environment["DEVICE_SUFFIX"],
                     credentials["key"], credentials["secret"],
@@ -68,18 +59,13 @@ def main():
         credential = DefaultAzureCredential(managed_identity_client_id=os.environ.get("AZURE_CLIENT_ID"))
         vault = SecretCache(SecretClient(os.environ["KEY_VAULT_URL"], credential, logging_enable=False))
         store = None
-        next_expiry_check = 0.0
         while True:
             try:
                 if store is None:
                     store = create_azure_store()
-                # Hourly, in one lane only, so the expiry alert sees one event per hour.
-                check = lane == "device" and time.monotonic() >= next_expiry_check
-                if check:
-                    next_expiry_check = time.monotonic() + EXPIRY_CHECK_SECONDS
-                run_cycle(store, vault, os.environ, lane, check_expiry=check)
+                run_cycle(store, vault, os.environ, lane)
             except Exception:
-                LOG.warning("worker_cycle_failed lane=%s", lane)
+                logging.getLogger("tempo.certificates").warning("worker_cycle_failed lane=%s", lane)
             time.sleep(30)
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(run_lane, lane) for lane in ("dns", "device")]

@@ -7,7 +7,6 @@ from .protocol import Rejected, validate_address, validate_csr
 
 LOG = logging.getLogger("tempo.certificates")
 LEASE_SECONDS = 900
-EXPIRY_WARNING_SECONDS = 14 * 86400
 
 
 class LostLease(Exception):
@@ -19,18 +18,6 @@ def cleanup_nonces(store, now):
         store.expire_nonces(now)
     except Exception:
         LOG.warning("nonce_cleanup_failed admission=worker")
-
-
-def report_expiring_certificates(store, now):
-    # Renewal starts halfway through the lifetime, so this means renewal is stuck.
-    # Only a count is logged: no device identifiers or hostnames enter telemetry.
-    try:
-        count = store.expiring_certificates(now, now + EXPIRY_WARNING_SECONDS)
-    except Exception:
-        LOG.warning("certificate_expiry_check_failed")
-        return
-    if count:
-        LOG.warning("certificate_expiring_soon count=%d", count)
 
 
 class Worker:

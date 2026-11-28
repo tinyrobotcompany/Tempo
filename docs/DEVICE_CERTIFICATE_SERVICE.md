@@ -114,31 +114,36 @@ burn eFuses during an ordinary update.
   work or issuance quota consumption. Investigate `device_job_invalid` events;
   existing certificates are retained. After the one-day error cooldown, a corrected
   signed request can create a new job.
-- Log alert rules in `infra/certificates/ops.bicep` count these service log
-  events in the workspace's `ContainerAppConsoleLogs_CL` table and email the
+- Log alert rules in `infra/certificates/ops.bicep` match service log events
+  **by name**, whatever language or host emits them. They read Container Apps
+  console output (`ContainerAppConsoleLogs_CL`) and Application Insights traces
+  (`AppTraces`, e.g. Azure Functions) in the ops workspace, and email the
   `tempo-westeurope-alerts` action group (recipient: `ALERT_EMAIL` secret, see
   `FRESH_INFRASTRUCTURE_DELIVERY.md`). Each rule emails once when it fires and
   once when it resolves.
 
-  | Event | Fires when | Severity |
-  | --- | --- | --- |
-  | `worker_cycle_failed` | any, in 30 minutes | 1 |
-  | `device_job_failed` | 3 or more in 1 hour | 2 |
-  | `device_job_invalid` | any, in 30 minutes | 2 |
-  | `nonce_cleanup_failed` | any, in 30 minutes | 2 |
-  | `nonce_cleanup_budget_reached` | any, in 30 minutes | 3 |
-  | `certificate_expiring_soon` or `certificate_expiry_check_failed` | any, in 2 hours | 1 |
-  | `ca_rate_limited` | any, in 30 minutes | 1 |
+  **Log-event contract.** A service emits one log line (or trace) per event,
+  and its message contains the exact snake_case name below, case-sensitive.
+  Extra `key=value` fields may follow. No private material, request bodies,
+  hostnames, addresses or provider error text may appear.
 
-  The worker's device lane counts enabled devices whose certificate expires
-  within 14 days once an hour and logs only that count. Devices renew halfway
-  through the lifetime, so this means renewal has been failing for weeks.
-  `ca_rate_limited` is logged when Let's Encrypt returns an ACME `rateLimited`
-  error; the CA's detail text is not logged. Both events need an image built
-  from this code and a reviewed `imageDigest` change; until then those two
-  rules cannot fire. DNS credential rotation failures surface as
-  `worker_cycle_failed` / `device_job_failed`. Log events omit private material.
-  Budgets are not configured by this template.
+  | Event | Emitted when | Alert fires when | Severity |
+  | --- | --- | --- | --- |
+  | `worker_cycle_failed` | a background worker cycle fails as a whole | any, in 30 minutes | 1 |
+  | `device_job_failed` | one certificate/DNS job attempt fails (retryable) | 3 or more in 1 hour | 2 |
+  | `device_job_invalid` | a persisted job is invalid and stopped | any, in 30 minutes | 2 |
+  | `nonce_cleanup_failed` | an expired-nonce sweep fails | any, in 30 minutes | 2 |
+  | `nonce_cleanup_budget_reached` | a sweep hits its deletion cap | any, in 30 minutes | 3 |
+  | `certificate_expiring_soon` | hourly: at least one enabled device's certificate expires within 14 days (log only a count) | any, in 2 hours | 1 |
+  | `certificate_expiry_check_failed` | the hourly expiry check itself fails | any, in 2 hours | 1 |
+  | `ca_rate_limited` | the CA returns ACME `urn:ietf:params:acme:error:rateLimited` | any, in 30 minutes | 1 |
+
+  The current Python service emits the first five. `certificate_expiring_soon`,
+  `certificate_expiry_check_failed` and `ca_rate_limited` are for the
+  replacement backend. Until it emits them, those rules cannot fire. Devices
+  renew halfway through the certificate lifetime, so an expiry alert means
+  renewal has been failing for weeks. Budgets are not configured by this
+  template.
 - Host tests exercise signatures, replay, cross-device/name denial, malformed CSR,
   address policy, provider mutation scoping, worker recovery and API bounds.
   Run `bash scripts/test-certificates.sh`. Infrastructure validation belongs to

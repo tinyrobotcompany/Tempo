@@ -39,11 +39,16 @@ expected='[
 jq -e --argjson want "$expected" '[.template.variables.alerts[] | {events, minimum, window}] == $want' <<<"$ops" >/dev/null \
   || fail 'alert events/thresholds differ from the reviewed contract'
 jq -e --arg minimum "[variables('alerts')[copyIndex()].minimum]" '.template.resources | (if type == "object" then [.[]] else . end) | map(select(.type == "Microsoft.Insights/scheduledQueryRules"))[0].properties.criteria.allOf[0] |
-  .operator == "GreaterThanOrEqual" and .threshold == $minimum and (.query | test("ContainerAppConsoleLogs_CL") and test("contains_cs") and (test("has_any|\\bhas\\b") | not))' <<<"$ops" >/dev/null \
-  || fail 'rule criteria do not count matching console log events'
-# Every alerted event is actually logged by the service, so names cannot drift.
+  .operator == "GreaterThanOrEqual" and .threshold == $minimum and (.query | test("variables\\(.logs.\\)") and test("contains_cs") and (test("has_any|\\bhas\\b") | not))' <<<"$ops" >/dev/null \
+  || fail 'rule criteria do not count matching log events by name'
+# Language-neutral source: Container Apps console logs and Application Insights
+# traces (Functions), tolerating whichever table does not exist yet.
+jq -e '.template.variables.logs | test("^union isfuzzy=true ") and test("ContainerAppConsoleLogs_CL \\| project TimeGenerated, Message = Log_s") and test("AppTraces \\| project TimeGenerated, Message")' <<<"$ops" >/dev/null \
+  || fail 'alerts must read both console logs and Application Insights traces'
+# Event names are the cross-component contract: snake_case and documented.
 while IFS= read -r event; do
-  grep -rqE "LOG\.warning\(\"$event( |\")" "$root/services/certificates/tempo_certificates" || fail "service never logs $event"
+  [[ "$event" =~ ^[a-z]+(_[a-z]+)+$ ]] || fail "event name $event is not snake_case"
+  grep -q "\`$event\`" "$root/docs/DEVICE_CERTIFICATE_SERVICE.md" || fail "event $event is not in the documented log-event contract"
 done < <(jq -r '.template.variables.alerts[].events[]' <<<"$ops")
 # No recipient address is committed anywhere in infrastructure delivery.
 if grep -EIrn '[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}' "$root/infra/certificates" "$root"/.github/workflows/infrastructure-*.yaml; then

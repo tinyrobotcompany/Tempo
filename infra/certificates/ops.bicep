@@ -22,11 +22,15 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
     emailReceivers: [{ name: 'operator', emailAddress: alertEmail, useCommonAlertSchema: true }]
   }
 }
-// Service log events (stderr of the Container Apps, via the legacy console table).
+// Alerts match service log events by NAME, whatever emits them: Container Apps
+// console output or Application Insights traces (e.g. Azure Functions). isfuzzy
+// tolerates a table that does not exist yet. Contract: the log message contains
+// the exact snake_case event name (see docs/DEVICE_CERTIFICATE_SERVICE.md).
 // Every rule is stateful: one email when it fires, one when it resolves.
+var logs = 'union isfuzzy=true (ContainerAppConsoleLogs_CL | project TimeGenerated, Message = Log_s), (AppTraces | project TimeGenerated, Message)'
 var alerts = [
   { name: 'worker-cycle-failed', severity: 1, events: ['worker_cycle_failed'], minimum: 1, window: 'PT30M', every: 'PT15M'
-    text: 'A worker lane failed a whole cycle (store, Key Vault or DNS credentials unavailable).' }
+    text: 'A background worker cycle failed (store, Key Vault or DNS credentials unavailable).' }
   { name: 'device-job-failed', severity: 2, events: ['device_job_failed'], minimum: 3, window: 'PT1H', every: 'PT15M'
     text: 'Three or more certificate/DNS job attempts failed within one hour.' }
   { name: 'device-job-invalid', severity: 2, events: ['device_job_invalid'], minimum: 1, window: 'PT30M', every: 'PT15M'
@@ -53,7 +57,7 @@ resource rules 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [for alert 
     windowSize: alert.window
     autoMitigate: true
     criteria: { allOf: [{
-      query: 'ContainerAppConsoleLogs_CL | where ${join(map(alert.events, event => 'Log_s contains_cs \'${event}\''), ' or ')}'
+      query: '${logs} | where ${join(map(alert.events, event => 'Message contains_cs \'${event}\''), ' or ')}'
       timeAggregation: 'Count'
       operator: 'GreaterThanOrEqual'
       threshold: alert.minimum

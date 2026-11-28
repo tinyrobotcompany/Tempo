@@ -162,9 +162,6 @@ class TableFake:
             return iter([dict(row) for row in self.rows.values()
                          if row["RowKey"] in ("device", "dns") and row.get("next_attempt", parameters["now"]+1) <= parameters["now"]
                          and row.get("state") in ("pending", "running")])
-        if "expires_at" in query:
-            return iter([dict(row) for row in self.rows.values() if row["RowKey"] == "device"
-                         and parameters["now"] < row.get("expires_at", 0) <= parameters["horizon"]])
         return iter([dict(row) for row in self.rows.values()
                      if row["RowKey"].startswith("nonce-") and row["expires"] < parameters["now"]
                      and ("identifier" not in parameters or row["PartitionKey"] == parameters["identifier"])])
@@ -314,67 +311,3 @@ def test_authentication_precedes_nonce_admission_and_status_retries_are_fresh(se
     with pytest.raises(Rejected, match="replayed_request"):
         service.handle(*request)
     assert service.handle(*signed(key, memory)).status == 200
-
-
-def expiry_store():
-    table, registry = TableFake(), TableFake()
-    day = 86400
-    for name, expires, enabled in (("soon", NOW + 13 * day, True), ("boundary", NOW + 14 * day, True),
-                                   ("later", NOW + 15 * day, False), ("healthy", NOW + 60 * day, True),
-                                   ("expired", NOW - 1, True), ("disabled", NOW + day, False)):
-        table.rows[(name, "device")] = Entity(PartitionKey=name, RowKey="device", expires_at=expires)
-        registry.rows[(name, "identity")] = Entity(PartitionKey=name, RowKey="identity", public_key="k",
-                                                   hostname=name, enabled=enabled)
-    table.rows[("none", "device")] = Entity(PartitionKey="none", RowKey="device", state="pending")
-    return TableStore(table, registry)
-
-
-def test_expiry_count_covers_enabled_devices_inside_fourteen_days():
-    from tempo_certificates.worker import EXPIRY_WARNING_SECONDS
-    assert EXPIRY_WARNING_SECONDS == 14 * 86400
-    assert expiry_store().expiring_certificates(NOW, NOW + EXPIRY_WARNING_SECONDS) == 2
-
-
-def test_expiry_report_logs_only_a_count(caplog):
-    from tempo_certificates.worker import report_expiring_certificates
-    report_expiring_certificates(expiry_store(), NOW)
-    assert "certificate_expiring_soon count=2" in caplog.text
-    assert "soon" not in caplog.text.replace("expiring_soon", "")
-    caplog.clear()
-    healthy = Mock()
-    healthy.expiring_certificates.return_value = 0
-    report_expiring_certificates(healthy, NOW)
-    assert caplog.text == ""
-    broken = Mock()
-    broken.expiring_certificates.side_effect = RuntimeError("table unavailable")
-    report_expiring_certificates(broken, NOW)
-    assert "certificate_expiry_check_failed" in caplog.text
-
-
-def test_expiry_check_precedes_vault_access_and_is_optional():
-    from tempo_certificates.runtime import run_cycle
-    store, vault = Mock(), Mock()
-    store.expiring_certificates.return_value = 0
-    vault.get_secret.side_effect = RuntimeError("vault unavailable")
-    with pytest.raises(RuntimeError):
-        run_cycle(store, vault, {})
-    store.expiring_certificates.assert_not_called()
-    with pytest.raises(RuntimeError):
-        run_cycle(store, vault, {}, "device", check_expiry=True)
-    store.expiring_certificates.assert_called_once()
-
-
-@pytest.mark.parametrize("typ,logged", [("urn:ietf:params:acme:error:rateLimited", True),
-                                        ("urn:ietf:params:acme:error:serverInternal", False)])
-def test_ca_rate_limit_is_logged_without_detail(monkeypatch, caplog, typ, logged):
-    from acme import messages
-    import tempo_certificates.runtime as runtime
-    failing = Mock()
-    failing.return_value.issue.side_effect = messages.Error(typ=typ, detail="secret-detail")
-    monkeypatch.setattr(runtime, "AcmeIssuer", failing)
-    vault = Mock()
-    vault.get_secret.return_value.value = "value"
-    with pytest.raises(messages.Error):
-        runtime.CloudIssuer(vault, "production", Mock()).issue("name", "csr", Mock())
-    assert ("ca_rate_limited" in caplog.text) is logged
-    assert "secret-detail" not in caplog.text
