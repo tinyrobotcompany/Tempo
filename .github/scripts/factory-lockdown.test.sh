@@ -6,8 +6,16 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/bin" "$tmp/build/config" "$tmp/build/bootloader" "$tmp/build/partition_table" "$tmp/unit"
-run="$root/scripts/factory-lockdown.mjs"
+mkdir -p "$tmp/bin" "$tmp/build" "$tmp/unit" "$tmp/repo/scripts"
+# Run a copy, so the production config gate next to it can be a stub or #57's real one.
+cp "$root/scripts/factory-lockdown.mjs" "$tmp/repo/scripts/"
+run="$tmp/repo/scripts/factory-lockdown.mjs"
+cat > "$tmp/stub-gate.mjs" <<'JS'
+import fs from 'node:fs';
+fs.appendFileSync(process.env.CALLS, 'gate ' + process.argv.slice(2).join(' ') + '\n');
+process.exit(process.env.MOCK_GATE === 'reject' ? 1 : 0);
+JS
+cp "$tmp/stub-gate.mjs" "$tmp/repo/scripts/secure-build.mjs"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 cat > "$tmp/bin/espefuse" <<'MOCK'
@@ -95,42 +103,44 @@ openssl pkey -in "$tmp/id.pem" -pubout -out "$tmp/ec-sign-pub.pem"
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 2>/dev/null | openssl pkey -pubout > "$tmp/backup-pub.pem"
 b=$tmp/build sg=$tmp/signed
 mkdir -p "$sg"
-write_build() {
-  node - "$b" "$sg" "$@" <<'JS'
+write_build_inner() {
+  node - "$b" "$sg" "$tmp/sign-pub.pem" "$@" <<'JS'
 const fs = require('node:fs');
 const { createHash } = require('node:crypto');
-const [build, signed, ...changes] = process.argv.slice(2);
-const config = { IDF_TARGET: 'esp32p4', SECURE_BOOT: true, SECURE_BOOT_V2_ENABLED: true, SECURE_SIGNED_APPS_RSA_SCHEME: true,
-  SECURE_FLASH_ENC_ENABLED: true, SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT: true,
-  SECURE_FLASH_ENCRYPTION_AES128: true, SECURE_FLASH_ENCRYPTION_KEY_SOURCE_EFUSES: true,
-  SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC: true, TEMPO_PRODUCTION_IDENTITY: true,
-  TEMPO_IDENTITY_HMAC_KEY_ID: 5, NVS_ENCRYPTION: true, NVS_SEC_KEY_PROTECT_USING_FLASH_ENC: true,
-  PARTITION_TABLE_CUSTOM_FILENAME: 'partitions-secure.csv', PARTITION_TABLE_OFFSET: 0x10000,
-  SECURE_FLASH_REQUIRE_ALREADY_ENABLED: true };
+const [build, signed, publicKey, ...changes] = process.argv.slice(2);
+// Factory-relevant lines of a #57 production sdkconfig (the gate itself is stubbed or real).
+const config = { CONFIG_IDF_TARGET: '"esp32p4"', CONFIG_SECURE_FLASH_ENCRYPTION_KEY_SOURCE_EFUSES: 'y',
+  CONFIG_SECURE_FLASH_ENCRYPTION_AES128: 'y', CONFIG_PARTITION_TABLE_OFFSET: '0x10000',
+  CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID: '5', CONFIG_SECURE_INSECURE_ALLOW_DL_MODE: 'y' };
 // Layout ab-8mb-secure-v1: a 0xD000-byte signed bootloader fits below the table at 0x10000.
-const images = { 'bootloader.bin': [0x2000, 0xD000, 'bootloader/'], 'partition-table.bin': [0x10000, 0xC00, 'partition_table/'],
-  'ota_data_initial.bin': [0x17000, 0x2000, ''], 'weather_station.bin': [0x20000, 0x10000, ''] };
-let tamper = false, extra = false;
+const images = { 'bootloader.bin': [0x2000, 0xD000], 'partition-table.bin': [0x10000, 0xC00],
+  'ota_data_initial.bin': [0x17000, 0x2000], 'weather_station.bin': [0x20000, 0x10000] };
+let tamper = false, extra = false, key = publicKey, omit = '';
 for (const change of changes) {
-  const [key, value] = change.split('=');
-  if (key === 'BOOTLOADER_SIZE') images['bootloader.bin'][1] = parseInt(value, 16);
-  else if (key === 'TABLE_AT') images['partition-table.bin'][0] = parseInt(value, 16);
-  else if (key === 'TAMPER') tamper = true;
-  else if (key === 'EXTRA') extra = true;
-  else config[key] = JSON.parse(value);
+  const [name, value] = change.split('=');
+  if (name === 'BOOTLOADER_SIZE') images['bootloader.bin'][1] = parseInt(value, 16);
+  else if (name === 'TABLE_AT') images['partition-table.bin'][0] = parseInt(value, 16);
+  else if (name === 'TAMPER') tamper = true;
+  else if (name === 'EXTRA') extra = true;
+  else if (name === 'RELEASE_KEY') key = value;
+  else if (name === 'OMIT_SUM') omit = value;
+  else if (value === '') delete config[name];
+  else config[name] = value;
 }
-fs.writeFileSync(build + '/config/sdkconfig.json', JSON.stringify(config));
-const list = Object.entries(images).map(([name, [offset, , folder]]) => '0x' + offset.toString(16) + ' ' + folder + name);
-fs.writeFileSync(build + '/encrypted_flash_args', '--flash-mode dio --flash-size 32MB --encrypt ' + list.join(' ') + (extra ? ' 0x30000 storage.bin' : '') + '\n');
-let sums = '';
-for (const [name, [, size]] of Object.entries(images)) {
-  fs.writeFileSync(signed + '/' + name, Buffer.alloc(size));
-  sums += createHash('sha256').update(Buffer.alloc(size)).digest('hex') + '  ' + name + '\n';
-}
-fs.writeFileSync(signed + '/SHA256SUMS', sums);
+const extraLines = process.env.EXTRA_CONFIG ? process.env.EXTRA_CONFIG + '\n' : '';
+fs.writeFileSync(build + '/sdkconfig', (process.env.BASE_CONFIG ?? '') + Object.entries(config).map(([k, v]) => `${k}=${v}\n`).join('') + extraLines);
+for (const [name, [, size]] of Object.entries(images)) fs.writeFileSync(signed + '/' + name, Buffer.alloc(size));
+fs.copyFileSync(key, signed + '/secure_boot_public_key.pem');
+fs.writeFileSync(signed + '/flash_args', '--flash-mode dio --flash-freq 80m --flash-size 32MB\n'
+  + Object.entries(images).map(([name, [offset]]) => '0x' + offset.toString(16) + ' ' + name + '\n').join('')
+  + (extra ? '0x30000 storage.bin\n' : ''));
+const sums = [...Object.keys(images), 'secure_boot_public_key.pem', 'flash_args'].filter(n => n !== omit)
+  .map(n => createHash('sha256').update(fs.readFileSync(signed + '/' + n)).digest('hex') + '  ' + n + '\n');
+fs.writeFileSync(signed + '/SHA256SUMS', sums.join(''));
 if (tamper) fs.appendFileSync(signed + '/weather_station.bin', 'x');
 JS
 }
+write_build() { write_build_inner "$@"; }
 manifest() { printf '{"verified": %s, "usb_mode": "%s"}\n' "${1:-true}" "${2:-USB-Serial/JTAG}" > "$tmp/unit/manifest.json"; }
 common=(--build-dir "$b" --signed-dir "$sg" --signing-public-key "$tmp/sign-pub.pem" --backup-signing-public-key "$tmp/backup-pub.pem")
 device=(--port /dev/cu.mock --record-dir "$tmp/unit" --execute)
@@ -148,43 +158,49 @@ out=$(node "$run" "${common[@]}" --record-dir "$tmp/plan")
 grep -q 'DRY RUN' <<<"$out" && [[ $(grep -c IRREVERSIBLE <<<"$out") == 9 ]] || fail 'dry run plan incomplete'
 grep -q 'burn-key BLOCK_KEY5 .<KEY-PIPE>. HMAC_UP' <<<"$out" || fail 'HMAC step missing from plan'
 if grep -q ENABLE_SECURITY_DOWNLOAD <<<"$out"; then fail 'secure download step without config'; fi
-write_build SECURE_ENABLE_SECURE_ROM_DL_MODE=true
+write_build CONFIG_SECURE_ENABLE_SECURE_ROM_DL_MODE=y
 node "$run" "${common[@]}" --record-dir "$tmp/plan" | grep -q ENABLE_SECURITY_DOWNLOAD || fail 'secure download step missing'
 
 # 2. Host-side refusals happen before any device command, even with --execute.
 refuse() { # refuse NAME SETUP...
   local name=$1; shift
   write_build; manifest; blank_state; : > "$CALLS"
-  if (eval "$*" && answers "${all_answers[@]}" | node "$run" "${args[@]}") >/dev/null 2>&1; then fail "accepted: $name"; fi
+  if (run_prefix=(); eval "$*" && answers "${all_answers[@]}" | node ${run_prefix[@]+"${run_prefix[@]}"} "$run" "${args[@]}") >/dev/null 2>&1; then fail "accepted: $name"; fi
   [[ $(device_calls) == 0 ]] || fail "device touched despite: $name"
 }
 base='args=("${common[@]}" "${device[@]}")'
 refuse private-key "$base; args[5]=$tmp/sign.pem"
 refuse ecdsa-signing-key "$base; args[5]=$tmp/ec-sign-pub.pem"
-refuse release-mode "$base; write_build SECURE_FLASH_ENCRYPTION_MODE_RELEASE=true"
-refuse no-dev-mode "$base; write_build SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT=false"
-refuse rom-download-disabled "$base; write_build SECURE_DISABLE_ROM_DL_MODE=true"
-refuse wrong-hmac-slot "$base; write_build TEMPO_IDENTITY_HMAC_KEY_ID=-1"
-refuse wrong-target "$base; write_build 'IDF_TARGET=\"esp32s3\"'"
+refuse gate-rejects "$base; export MOCK_GATE=reject"
+refuse no-gate "$base; rm $tmp/repo/scripts/secure-build.mjs"; cp "$tmp/stub-gate.mjs" "$tmp/repo/scripts/secure-build.mjs"
+refuse no-sdkconfig "$base; rm $b/sdkconfig"
+refuse rom-download-disabled "$base; write_build CONFIG_SECURE_DISABLE_ROM_DL_MODE=y"
+refuse allow-rd-dis "$base; write_build CONFIG_SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS=y"
+refuse key-manager "$base; write_build CONFIG_SECURE_FLASH_ENCRYPTION_KEY_SOURCE_EFUSES="
+refuse aes256 "$base; write_build CONFIG_SECURE_FLASH_ENCRYPTION_AES128="
+refuse wrong-hmac-slot "$base; write_build CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID=2"
+refuse wrong-target "$base; write_build 'CONFIG_IDF_TARGET=\"esp32s3\"'"
+refuse table-offset-config "$base; write_build CONFIG_PARTITION_TABLE_OFFSET=0x8000"
 refuse bootloader-overlap "$base; write_build BOOTLOADER_SIZE=0xF000"
 refuse old-table-offset "$base; write_build TABLE_AT=0x8000"
-refuse table-offset-config "$base; write_build PARTITION_TABLE_OFFSET=32768"
-refuse old-layout "$base; write_build 'PARTITION_TABLE_CUSTOM_FILENAME=\"partitions.csv\"'"
-refuse no-nvs-encryption "$base; write_build NVS_ENCRYPTION=false"
-refuse insecure-boot "$base; write_build SECURE_BOOT_INSECURE=true"
 refuse tampered-signed-image "$base; write_build TAMPER=1"
 refuse unsigned-extra-image "$base; write_build EXTRA=1"
+refuse unhashed-flash-args "$base; write_build OMIT_SUM=flash_args"
 refuse no-signed-set "$base; rm $sg/SHA256SUMS"
+refuse other-release-key "$base; write_build RELEASE_KEY=$tmp/backup-pub.pem"
 refuse no-backup-key "$base; args=(\"\${args[@]:0:6}\" \"\${args[@]:8}\")"
 refuse same-backup-key "$base; args[7]=$tmp/sign-pub.pem"
 refuse ecdsa-backup-key "$base; args[7]=$tmp/ec-sign-pub.pem"
 refuse bad-signature "$base; export MOCK_BADSIG=weather_station.bin"
-refuse no-encrypted-args "$base; mv $b/encrypted_flash_args $b/x"; mv "$b/x" "$b/encrypted_flash_args"
 refuse no-backup "$base; rm $tmp/unit/manifest.json"
 refuse unverified-backup "$base; manifest false"
 refuse usb-otg "$base; manifest true USB-OTG"
 refuse unreviewed-chip "$base; args+=(--chip esp32s3)"
 refuse no-port 'args=("${common[@]}" --record-dir "$tmp/unit" --execute)'
+# Keys reach espefuse through /dev/fd/3 (macOS fdesc semantics): any other OS is refused.
+not_mac='data:text/javascript,Object.defineProperty(process,"platform",{value:"linux"})'
+refuse not-macos "$base; run_prefix=(--import '$not_mac')"
+refuse not-macos-identity "args=(--extract-identity $tmp/none.log --out $tmp/x); run_prefix=(--import '$not_mac')"
 
 # 3. A wrong signing-backup phrase stops before any device command.
 write_build; manifest; blank_state; : > "$CALLS"
@@ -206,7 +222,7 @@ out=$(answers "${all_answers[@]}" | node "$run" "${common[@]}" "${device[@]}" 2>
 order=$(grep -o -E 'erase-flash|burn-key BLOCK_KEY[0-9]|SPI_BOOT_CRYPT_CNT 1|DIS_DIRECT_BOOT|REVOKE[0-9]|SECURE_BOOT_EN|write-protect-efuse RD_DIS|write-flash' "$CALLS" | tr '\n' ,)
 [[ "$order" == 'erase-flash,burn-key BLOCK_KEY0,burn-key BLOCK_KEY5,burn-key BLOCK_KEY2,burn-key BLOCK_KEY3,SPI_BOOT_CRYPT_CNT 1,DIS_DIRECT_BOOT,REVOKE2,SECURE_BOOT_EN,write-protect-efuse RD_DIS,write-flash,' ]] || fail "wrong order: $order"
 signed_real=$(cd "$sg" && pwd -P)
-grep -q "write-flash --flash-mode dio --flash-size 32MB --encrypt 0x2000 $signed_real/bootloader.bin 0x10000 $signed_real/partition-table.bin 0x17000 $signed_real/ota_data_initial.bin 0x20000 $signed_real/weather_station.bin" "$CALLS" || fail 'signed images not flashed at the secure layout offsets'
+grep -q "write-flash --flash-mode dio --flash-freq 80m --flash-size 32MB --encrypt 0x2000 $signed_real/bootloader.bin 0x10000 $signed_real/partition-table.bin 0x17000 $signed_real/ota_data_initial.bin 0x20000 $signed_real/weather_station.bin" "$CALLS" || fail 'signed images not flashed at the secure layout offsets'
 if grep 'write-flash' "$CALLS" | grep -q "$b"; then fail 'flashed an unsigned build image'; fi
 [[ $(sort -u "$KEYS" | grep -c .) == 2 && $(grep -c . "$KEYS") == 2 ]] || fail "expected two distinct piped keys: $(cat $KEYS)"
 while read -r key; do
@@ -214,6 +230,7 @@ while read -r key; do
   if grep -q "$key" <<<"$out"; then fail 'key printed'; fi
 done < "$KEYS"
 grep -q 'eFuses match the plan' <<<"$out" || fail 'verification not reported'
+grep -q "^gate check-config $b/sdkconfig$" "$CALLS" || fail 'production config gate not run on the build sdkconfig'
 
 # 6. Re-running a finished unit skips every burn.
 : > "$CALLS"
@@ -239,7 +256,32 @@ answers "${all_answers[@]:1:10}" | node "$run" "${common[@]}" --virtual-efuse "$
 if grep -q esptool "$CALLS"; then fail 'virtual rehearsal ran esptool'; fi
 grep -q -- '--virt --path-efuse-file' "$CALLS" || fail 'virtual rehearsal used a port'
 
-# 10. Identity extraction from a boot log.
+# 10. The real production gate from #57 accepts its own profile and refuses an extra
+# insecure option. Uses the tree copy, or #57's branch until it is merged.
+real_gate="$tmp/real-gate.mjs"
+if [[ -f "$root/scripts/secure-build.mjs" ]]; then cp "$root/scripts/secure-build.mjs" "$real_gate"
+elif git -C "$root" show origin/feat/release-signing:scripts/secure-build.mjs > "$real_gate" 2>/dev/null; then :
+else rm -f "$real_gate"; fi
+if [[ -f "$real_gate" ]]; then
+  cp "$real_gate" "$tmp/repo/scripts/secure-build.mjs"
+  # Path via the environment: as argv[1] the module would run its own CLI.
+  base_config=$(GATE="$real_gate" node --input-type=module -e "
+    const sb = await import(process.env.GATE);
+    const lines = Object.entries(sb.REQUIRED).map(([k, v]) => k + '=' + v);
+    lines.push('CONFIG_TEMPO_ENROLLMENT_URL=\"https://api.example.test/v1/device\"',
+      'CONFIG_BOOTLOADER_APP_SECURE_VERSION=1', 'CONFIG_BOOTLOADER_APP_SEC_VER_SIZE_EFUSE_FIELD=16');
+    console.log(lines.join('\n'));")
+  BASE_CONFIG="$base_config"$'\n' write_build_inner; blank_state; : > "$CALLS"
+  node "$run" "${common[@]}" --record-dir "$tmp/plan" >/dev/null 2>"$tmp/err" || fail "real #57 gate refused its own profile: $(cat "$tmp/err")"
+  BASE_CONFIG="$base_config"$'\n' EXTRA_CONFIG=CONFIG_SECURE_BOOT_ALLOW_JTAG=y write_build_inner
+  if node "$run" "${common[@]}" --record-dir "$tmp/plan" >/dev/null 2>"$tmp/err"; then fail 'real #57 gate accepted ALLOW_JTAG'; fi
+  grep -q 'check-config rejected' "$tmp/err" || fail "insecure option not refused by the gate: $(cat "$tmp/err")"
+  echo 'Real #57 production gate: own profile accepted, extra insecure option refused.'
+else
+  echo 'NOTE: scripts/secure-build.mjs (#57) not available; real-gate check runs once #57 is merged.'
+fi
+
+# 11. Identity extraction from a boot log.
 id=$(openssl pkey -pubin -in "$tmp/id-pub.pem" -outform DER | shasum -a 256 | cut -c1-32)
 log() { { printf 'I (812) boot: ESP-IDF\n\033[0;32mI (1200) identity: Manufacturing PUBLIC identity for %s:\r\n' "$1"; sed 's/$/\r/' "$tmp/id-pub.pem"; printf '\033[0m\n'; } ; }
 log "$id" > "$tmp/boot.log"; log "$id" >> "$tmp/boot.log"

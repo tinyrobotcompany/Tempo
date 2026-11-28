@@ -39,22 +39,19 @@ const PROFILES = {
   },
 };
 const UNREVIEWED = new Set(['esp32s3', 'esp32c6']);
-// The production profile from scripts/secure-build.py (layout ab-8mb-secure-v1).
-const REQUIRED_CONFIG = {
-  SECURE_BOOT: true, SECURE_BOOT_V2_ENABLED: true, SECURE_SIGNED_APPS_RSA_SCHEME: true,
-  SECURE_FLASH_ENC_ENABLED: true, SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT: true,
-  SECURE_FLASH_ENCRYPTION_AES128: true, SECURE_FLASH_ENCRYPTION_KEY_SOURCE_EFUSES: true,
-  SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC: true, TEMPO_PRODUCTION_IDENTITY: true,
-  NVS_ENCRYPTION: true, NVS_SEC_KEY_PROTECT_USING_FLASH_ENC: true,
-  PARTITION_TABLE_CUSTOM_FILENAME: 'partitions-secure.csv',
+// The production profile itself is checked by scripts/secure-build.mjs check-config
+// (one list, owned by the release tooling). Only what this factory plan relies on
+// is checked here: the eFuse key it burns, the HMAC slot, the layout and USB re-flash.
+const FACTORY_CONFIG = {
+  CONFIG_SECURE_FLASH_ENCRYPTION_KEY_SOURCE_EFUSES: 'y', CONFIG_SECURE_FLASH_ENCRYPTION_AES128: 'y',
+  CONFIG_PARTITION_TABLE_OFFSET: '0x10000',
 };
-const FORBIDDEN_CONFIG = ['SECURE_FLASH_ENCRYPTION_MODE_RELEASE', 'SECURE_DISABLE_ROM_DL_MODE',
-  'SECURE_FLASH_ENCRYPTION_KEY_SOURCE_KEY_MGR', 'SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS',
-  'SECURE_BOOT_INSECURE', 'SECURE_BOOT_BUILD_SIGNED_BINARIES', 'SECURE_BOOT_ALLOW_JTAG',
-  'EFUSE_VIRTUAL', 'SECURE_BOOT_V2_FORCE_ENABLE_ECDSA'];
-// SECURE_BOOT_REQUIRE_ALREADY_ENABLED depends on SECURE_BOOT_INSECURE, so it is not asked for.
-const RECOMMENDED_CONFIG = ['SECURE_FLASH_REQUIRE_ALREADY_ENABLED'];
+const FACTORY_FORBIDDEN = ['CONFIG_SECURE_DISABLE_ROM_DL_MODE', 'CONFIG_SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS',
+  'CONFIG_SECURE_FLASH_ENCRYPTION_KEY_SOURCE_KEY_MGR'];
 const SIGNED_SET = ['bootloader.bin', 'partition-table.bin', 'ota_data_initial.bin', 'weather_station.bin'];
+const PUBLIC_KEY = 'secure_boot_public_key.pem';
+// Everything scripts/secure-build.mjs sign writes into the signed folder.
+const SIGNED_FILES = [...SIGNED_SET, PUBLIC_KEY, 'flash_args'];
 const PEM = '-----BEGIN PUBLIC KEY-----\\n(?:[A-Za-z0-9+/=]{1,64}\\n){2,12}-----END PUBLIC KEY-----\\n?';
 const IDENTITY_RE = new RegExp('Manufacturing PUBLIC identity for ([0-9a-f]{32}):\\s*\\n(' + PEM + ')', 'g');
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
@@ -129,22 +126,31 @@ function runHost(command, failure) {
   return result.stdout;
 }
 
-function flashArguments(build, signed, profile) {
-  // encrypted_flash_args from the build, with every image swapped for its signed copy.
-  const tokens = fs.readFileSync(path.join(build, 'encrypted_flash_args'), 'utf8').split(/\s+/).filter(Boolean);
+function readConfig(file) {
+  const values = {};
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    const at = line.indexOf('=');
+    if (line.startsWith('CONFIG_') && at > 0) values[line.slice(0, at)] = line.slice(at + 1);
+  }
+  return values;
+}
+
+function flashArguments(signed, profile) {
+  // The signed set's own flash_args (hash-checked), every image encrypted on the chip.
+  const [options, ...lines] = fs.readFileSync(path.join(signed, 'flash_args'), 'utf8').split('\n');
+  const tokens = [...options.split(/\s+/).filter(Boolean), '--encrypt'];
   const images = [];
-  tokens.forEach((token, i) => {
-    if (!/^0x[0-9a-fA-F]+$/.test(token) || i + 1 >= tokens.length) return;
-    const name = path.basename(tokens[i + 1]);
-    if (!SIGNED_SET.includes(name)) {
-      throw new Refused(`encrypted_flash_args lists ${name}, which is not in the signed set.`);
+  for (const line of lines.filter(l => l.trim())) {
+    const [offset, name, extra] = line.trim().split(/\s+/);
+    if (extra !== undefined || !/^0x[0-9a-fA-F]+$/.test(offset) || !SIGNED_SET.includes(name)) {
+      throw new Refused(`flash_args line '${line.trim()}' is not an image of the signed set.`);
     }
     const file = fs.realpathSync(path.join(signed, name));
-    tokens[i + 1] = file;
-    images.push([parseInt(token, 16), fs.statSync(file).size, name]);
-  });
+    tokens.push(offset, file);
+    images.push([parseInt(offset, 16), fs.statSync(file).size, name]);
+  }
   if (images.map(([, , n]) => n).sort().join() !== [...SIGNED_SET].sort().join()) {
-    throw new Refused('encrypted_flash_args does not flash exactly the signed release set.');
+    throw new Refused('flash_args does not flash exactly the signed release set.');
   }
   for (const [name, offset] of Object.entries(profile.offsets)) {
     if (!images.some(([o, , n]) => o === offset && n === name)) {
@@ -162,33 +168,33 @@ function flashArguments(build, signed, profile) {
   return tokens;
 }
 
+const der = pem => openssl(['pkey', '-pubin', '-outform', 'DER'], pem).toString('hex');
+
 function checkBuild(args, profile) {
   // Host-only checks that must pass before anything touches a device.
-  const build = args.buildDir;
-  const configPath = path.join(build, 'config', 'sdkconfig.json');
-  if (!fs.existsSync(configPath)) throw new Refused(`${configPath} is missing; build the signed firmware first.`);
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  if (config.IDF_TARGET !== args.chip) {
-    throw new Refused(`Build target '${config.IDF_TARGET}' does not match --chip ${args.chip}.`);
+  const sdkconfig = path.join(args.buildDir, 'sdkconfig');
+  if (!fs.existsSync(sdkconfig)) throw new Refused(`${sdkconfig} is missing; run scripts/secure-build.mjs build first.`);
+  const gate = path.join(ROOT, 'scripts', 'secure-build.mjs');
+  if (!fs.existsSync(gate)) throw new Refused('scripts/secure-build.mjs (the production config gate) is missing.');
+  const checked = spawnSync(process.execPath, [gate, 'check-config', sdkconfig], { encoding: 'utf8' });
+  if (checked.status !== 0) {
+    throw new Refused('secure-build.mjs check-config rejected the build:\n' + (checked.stderr || checked.stdout).trim());
   }
-  const wrong = Object.entries(REQUIRED_CONFIG).filter(([k, v]) => config[k] !== v).map(([k]) => k);
-  if (![0x10000, '0x10000'].includes(config.PARTITION_TABLE_OFFSET)) wrong.push('PARTITION_TABLE_OFFSET (must be 0x10000)');
-  wrong.push(...FORBIDDEN_CONFIG.filter(k => config[k]));
-  const hmacId = blockIndex(profile.hmac[0]);
-  if (config.TEMPO_IDENTITY_HMAC_KEY_ID !== hmacId) wrong.push(`TEMPO_IDENTITY_HMAC_KEY_ID (must be ${hmacId})`);
-  if (wrong.length) {
-    throw new Refused('Build is not a Development-mode Secure Boot v2 build for this plan: ' + wrong.join(', '));
+  const config = readConfig(sdkconfig);
+  if (config.CONFIG_IDF_TARGET !== `"${args.chip}"`) {
+    throw new Refused(`Build target ${config.CONFIG_IDF_TARGET} does not match --chip ${args.chip}.`);
   }
-  const notes = RECOMMENDED_CONFIG.filter(k => !config[k]).map(k => `Recommended build option not set: CONFIG_${k}`);
-  if (!fs.existsSync(path.join(build, 'encrypted_flash_args'))) {
-    throw new Refused('encrypted_flash_args missing: not a Development-mode encrypted build.');
-  }
+  const wrong = Object.entries(FACTORY_CONFIG).filter(([k, v]) => config[k] !== v).map(([k, v]) => `${k} (must be ${v})`);
+  wrong.push(...FACTORY_FORBIDDEN.filter(k => config[k] === 'y').map(k => `${k} (must not be set)`));
+  const hmacId = String(blockIndex(profile.hmac[0]));
+  if (config.CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID !== hmacId) wrong.push(`CONFIG_TEMPO_IDENTITY_HMAC_KEY_ID (must be ${hmacId})`);
+  if (wrong.length) throw new Refused('Build does not match this factory plan: ' + wrong.join(', '));
   const signed = args.signedDir;
   const sums = path.join(signed, 'SHA256SUMS');
-  if (!fs.existsSync(sums)) throw new Refused(`${sums} is missing; run scripts/secure-build.py build first.`);
+  if (!fs.existsSync(sums)) throw new Refused(`${sums} is missing; run scripts/secure-build.mjs build first.`);
   const listed = Object.fromEntries(fs.readFileSync(sums, 'utf8').split('\n').filter(Boolean)
     .map(line => line.split('  ')).map(([hash, name]) => [name, hash]));
-  if (Object.keys(listed).sort().join() !== [...SIGNED_SET].sort().join()) {
+  if (Object.keys(listed).sort().join() !== [...SIGNED_FILES].sort().join()) {
     throw new Refused('SHA256SUMS does not list exactly the signed release set.');
   }
   for (const [name, want] of Object.entries(listed)) {
@@ -196,12 +202,15 @@ function checkBuild(args, profile) {
       throw new Refused(`${name} does not match SHA256SUMS; rebuild the signed set.`);
     }
   }
+  if (der(fs.readFileSync(args.signingPublicKey)) !== der(fs.readFileSync(path.join(signed, PUBLIC_KEY)))) {
+    throw new Refused(`--signing-public-key is not the key that signed this release (${PUBLIC_KEY}).`);
+  }
   for (const image of ['bootloader.bin', 'weather_station.bin']) {
     runHost(['espsecure', 'verify-signature', '--version', '2', '--keyfile', args.signingPublicKey,
       path.join(signed, image)], `${image} is not signed by the given Secure Boot key.`);
   }
-  const flash = flashArguments(build, signed, profile);
-  return { notes, secureDownload: Boolean(config.SECURE_ENABLE_SECURE_ROM_DL_MODE), flash };
+  const flash = flashArguments(signed, profile);
+  return { notes: [], secureDownload: config.CONFIG_SECURE_ENABLE_SECURE_ROM_DL_MODE === 'y', flash };
 }
 
 function espefuse(args, ...rest) {
@@ -460,7 +469,7 @@ function parse(argv) {
   };
 }
 
-const USAGE = `Usage: node scripts/factory-lockdown.mjs --signing-public-key RELEASE.pem
+const USAGE = `macOS only. Usage: node scripts/factory-lockdown.mjs --signing-public-key RELEASE.pem
          --backup-signing-public-key BACKUP.pem [--record-dir UNIT] [--port PORT --execute]
        [--build-dir build-host/secure-build] [--signed-dir build-host/secure-release]
        [--virtual-efuse FILE [--init-virtual]] [--chip esp32p4]
@@ -481,6 +490,10 @@ async function main(argv) {
     return 0;
   }
   try {
+    // Keys reach espefuse through /dev/fd/3, which relies on macOS fdesc semantics.
+    if (process.platform !== 'darwin') {
+      throw new Refused(`This factory tool runs only on macOS (this is ${process.platform}); see docs/FACTORY_RUNBOOK.md.`);
+    }
     if (UNREVIEWED.has(args.chip)) {
       throw new Refused(`${args.chip} is accepted as a parameter, but its eFuse profile is not reviewed yet.`);
     }
@@ -506,8 +519,7 @@ async function main(argv) {
       throw new Refused('Give both --signing-public-key and --backup-signing-public-key (PUBLIC key files).');
     }
     for (const key of keys) checkPublicPem(fs.readFileSync(key, 'latin1'), 'rsa3072');
-    const ders = keys.map(key => openssl(['pkey', '-pubin', '-outform', 'DER'], fs.readFileSync(key)).toString('hex'));
-    if (ders[0] === ders[1]) throw new Refused('The backup signing key must be a different, independent key.');
+    if (der(fs.readFileSync(keys[0])) === der(fs.readFileSync(keys[1]))) throw new Refused('The backup signing key must be a different, independent key.');
     if (args.execute && !args.virtualEfuse) {
       if (!args.port) throw new Refused('--execute needs --port (or --virtual-efuse for a rehearsal).');
       const manifestPath = args.recordDir ? path.join(args.recordDir, 'manifest.json') : null;
