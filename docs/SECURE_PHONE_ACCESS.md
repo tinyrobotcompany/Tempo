@@ -68,7 +68,7 @@ plain-HTTP path is **Local mode**, which the customer chooses by touch on the di
 under the QR code). A confirmation screen states that traffic on the Wi-Fi is not
 encrypted. No phone, HTTP, cloud or OTA path can switch it on: there is no API route
 for it, phone payloads cannot carry it, and it is stored as its own NVS key
-(`station/local_mode`) outside the settings blob. `tests/test_local_mode_contract.py`
+(`station/local_mode`) outside the settings blob. `tests/test_local_mode_contract.mjs`
 and `tests/test_phone_local_mode.inc` pin this.
 
 The display offers Local mode (it never enables it) when HTTPS cannot start (no

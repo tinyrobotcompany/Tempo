@@ -20,5 +20,6 @@ done
 node tests/test_phone_connection.js
 node tests/test_phone_reconnect_ui.js
 node tests/test_phone_local_mode.js
+node --test tests/test_local_mode_contract.mjs
 
 node tests/test_update_ui.js
